@@ -1,0 +1,49 @@
+# systemd-Unit fuer den Linux-Server:  sudo cp transitplanner.service /etc/systemd/system/
+# sudo systemctl daemon-reload && sudo systemctl enable --now transitplanner
+# .env schuetzen:  sudo chown root:transitplanner .env && sudo chmod 640 .env
+# Haertung pruefen: systemd-analyze security transitplanner
+[Unit]
+Description=TransitPlanner backend (MOTIS/Transitous proxy)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=transitplanner
+WorkingDirectory=/opt/transitplanner/backend
+EnvironmentFile=/opt/transitplanner/backend/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node src/server.js
+Restart=on-failure
+RestartSec=3
+# Haertung
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+ProtectProc=invisible
+ProcSubset=pid
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelLogs=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RemoveIPC=true
+UMask=0077
+# V8 braucht W^X-Ausnahmen fuer den JIT, daher bleibt MemoryDenyWriteExecute aus.
+
+[Install]
+WantedBy=multi-user.target
