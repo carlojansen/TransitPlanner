@@ -2,7 +2,7 @@
 
 | Meilenstein | Inhalt | Stand |
 |---|---|---|
-| 1 | Node.js-Backend (Express 5, MOTIS 2 / Transitous, /api/locations, /api/routes, /api/refresh) | auf Transitous umgestellt, Live-Smoke-Test erfolgreich (24.10.), Security-Review nachgebessert – **wartet auf Freigabe** |
+| 1 | Node.js-Backend (Express 5, MOTIS 2 / Transitous, /api/locations, /api/routes, /api/refresh) | fertig, auf dem Server live (24.10.), **von Carlo freigegeben (24.10.)** |
 | 2 | Swift Core-Engine & SwiftData, Netzwerk-/Security-Layer (TLS 1.3, ephemeral, SPKI-Pinning) | offen |
 | 3 | SwiftUI-Interface & Animationen, Navigations-State-Machine | offen |
 | 4 | Erinnerungen, WidgetKit, ActivityKit | offen |
@@ -76,6 +76,15 @@ Offen, bevor die App über den Eigengebrauch hinausgeht:
 - [ ] LICENSE wählen und ergänzen.
 - [ ] Kontakt mit Transitous (Matrix) aufnehmen.
 - [x] Spezifikation Abschnitt 7 und Meilenstein-1-Prompt von `db-vendo-client` auf Transitous aktualisiert.
+
+## Release-Aufgaben (bewusst ans Ende gestellt, Entscheidung Carlo 24.10.)
+- [ ] LICENSE wählen und ergänzen (Empfehlung MIT; Transitous verlangt Open Source vor breiter Nutzung).
+- [ ] Transitous per Matrix kontaktieren (privat, nicht kommerziell, Last: max. 60 Anfragen/min, typisch wenige).
+- [ ] Backup-SPKI-Schlüssel erzeugen (`deploy/spki-hash.sh new-backup`), offline verwahren, beide Pins in die App.
+- [ ] Eigene Domain statt Hetzner-Hostname (Caddyfile, App-Host, neue Pins).
+- [ ] Projekt-Kontaktadresse für User-Agent prüfen (aktuell Repo-URL), Repo öffentlich machen.
+- [ ] OSM-Namensnennung und Transitous-Quellenlink in der App.
+- [ ] Bearer-Token durch App Attest ersetzen, bevor die App über den Eigengebrauch hinausgeht.
 
 ## UI/UX
 Pausiert bis zum 25.10. Figma-Datei "TransitPlanner – Design-Plan": Übersicht mit Zustandsfluss, Farb-Tokens (hell/dunkel) und Typografie vorhanden. Es fehlen Komponenten, Screens, Dynamic Island/Widgets, Statistik, Quellenangabe-Screen und Fehlerzustände.
