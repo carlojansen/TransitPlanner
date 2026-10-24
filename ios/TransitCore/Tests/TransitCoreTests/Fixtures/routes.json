@@ -1,0 +1,124 @@
+{
+  "journeys": [
+    {
+      "refreshToken": "dGVzdC1pdGluZXJhcnktMQ==",
+      "departure": "2026-10-24T06:00:00Z",
+      "arrival": "2026-10-24T06:42:00Z",
+      "durationSeconds": 2520,
+      "transfers": 1,
+      "modes": ["tram", "regional"],
+      "cancelled": false,
+      "realtime": true,
+      "hasPolylines": true,
+      "legs": [
+        {
+          "index": 0, "mode": "walk",
+          "origin": { "kind": "coordinate", "id": null, "name": null, "latitude": 51.2201, "longitude": 6.7905 },
+          "destination": { "kind": "stop", "id": "de-DELFI_de:05111:18235", "name": "Duesseldorf Hbf", "latitude": 51.21996, "longitude": 6.79432 },
+          "departure": "2026-10-24T06:00:00Z", "plannedDeparture": "2026-10-24T06:00:00Z", "departureDelaySeconds": null,
+          "arrival": "2026-10-24T06:05:00Z", "plannedArrival": "2026-10-24T06:05:00Z", "arrivalDelaySeconds": null,
+          "durationSeconds": 300, "realtime": false, "cancelled": false,
+          "polyline": { "type": "LineString", "coordinates": [[6.7905, 51.2201], [6.79432, 51.21996]] },
+          "isTransfer": false, "distanceMeters": 280, "durationSource": "motis-osm"
+        },
+        {
+          "index": 1, "mode": "tram",
+          "origin": { "kind": "stop", "id": "de-DELFI_de:05111:18235", "name": "Duesseldorf Hbf", "latitude": 51.21996, "longitude": 6.79432, "modes": ["tram"] },
+          "destination": { "kind": "stop", "id": "de-DELFI_de:05111:18100", "name": "Bilk S", "latitude": 51.2045, "longitude": 6.7755 },
+          "departure": "2026-10-24T06:08:00Z", "plannedDeparture": "2026-10-24T06:06:00Z", "departureDelaySeconds": 120,
+          "arrival": "2026-10-24T06:18:00Z", "plannedArrival": "2026-10-24T06:16:00Z", "arrivalDelaySeconds": 120,
+          "durationSeconds": 600, "realtime": true, "cancelled": false,
+          "polyline": { "type": "LineString", "coordinates": [[6.79432, 51.21996], [6.7755, 51.2045]] },
+          "line": { "name": "STR 704", "productName": "STR", "fahrtNr": "123", "operator": "Rheinbahn", "color": "#E2001A", "textColor": "#FFFFFF" },
+          "direction": "Derendorf", "tripId": "trip-1",
+          "departurePlatform": "2", "plannedDeparturePlatform": "1", "arrivalPlatform": null, "plannedArrivalPlatform": null,
+          "platformChanged": true, "loadFactor": null,
+          "stopovers": [
+            { "stop": { "kind": "stop", "id": "de:x:1", "name": "Graf-Adolf-Platz", "latitude": 51.215, "longitude": 6.78 },
+              "arrival": "2026-10-24T06:12:00Z", "plannedArrival": "2026-10-24T06:10:00Z", "arrivalDelaySeconds": 120,
+              "departure": "2026-10-24T06:12:30.000Z", "plannedDeparture": "2026-10-24T06:10:30Z", "departureDelaySeconds": 120,
+              "platform": null, "plannedPlatform": null, "cancelled": false }
+          ],
+          "remarks": [ { "type": "warning", "code": "DETOUR", "summary": "Umleitung", "text": "Umleitung wegen Bauarbeiten" } ]
+        },
+        {
+          "index": 2, "mode": "walk",
+          "origin": { "kind": "stop", "id": "de-DELFI_de:05111:18100", "name": "Bilk S", "latitude": 51.2045, "longitude": 6.7755 },
+          "destination": { "kind": "stop", "id": "de-DELFI_de:05111:18101", "name": "Bilk S Gleis 3", "latitude": 51.2049, "longitude": 6.7761 },
+          "departure": "2026-10-24T06:18:00Z", "plannedDeparture": "2026-10-24T06:18:00Z", "departureDelaySeconds": null,
+          "arrival": "2026-10-24T06:21:00Z", "plannedArrival": "2026-10-24T06:21:00Z", "arrivalDelaySeconds": null,
+          "durationSeconds": 180, "realtime": false, "cancelled": false, "polyline": null,
+          "isTransfer": true, "distanceMeters": 90, "durationSource": "motis-osm"
+        },
+        {
+          "index": 3, "mode": "regional",
+          "origin": { "kind": "stop", "id": "de-DELFI_de:05111:18101", "name": "Bilk S Gleis 3", "latitude": 51.2049, "longitude": 6.7761 },
+          "destination": { "kind": "stop", "id": "de-DELFI_de:05315:11201", "name": "Koeln Hbf", "latitude": 50.9430, "longitude": 6.9589 },
+          "departure": "2026-10-24T06:23:00Z", "plannedDeparture": "2026-10-24T06:23:00Z", "departureDelaySeconds": 0,
+          "arrival": "2026-10-24T06:38:00Z", "plannedArrival": "2026-10-24T06:38:00Z", "arrivalDelaySeconds": 0,
+          "durationSeconds": 900, "realtime": true, "cancelled": false, "polyline": null,
+          "line": { "name": "RE 5", "productName": "RE", "fahrtNr": "28517", "operator": "National Express", "color": null, "textColor": null },
+          "direction": "Koblenz Hbf", "tripId": "trip-2",
+          "departurePlatform": "3", "plannedDeparturePlatform": "3", "arrivalPlatform": "5", "plannedArrivalPlatform": "5",
+          "platformChanged": false, "loadFactor": null, "stopovers": [], "remarks": []
+        },
+        {
+          "index": 4, "mode": "walk",
+          "origin": { "kind": "stop", "id": "de-DELFI_de:05315:11201", "name": "Koeln Hbf", "latitude": 50.9430, "longitude": 6.9589 },
+          "destination": { "kind": "coordinate", "id": null, "name": null, "latitude": 50.9413, "longitude": 6.9583 },
+          "departure": "2026-10-24T06:38:00Z", "plannedDeparture": "2026-10-24T06:38:00Z", "departureDelaySeconds": null,
+          "arrival": "2026-10-24T06:42:00Z", "plannedArrival": "2026-10-24T06:42:00Z", "arrivalDelaySeconds": null,
+          "durationSeconds": 240, "realtime": false, "cancelled": false, "polyline": null,
+          "isTransfer": false, "distanceMeters": 200, "durationSource": "motis-osm"
+        }
+      ],
+      "remarks": [ { "type": "warning", "code": "DETOUR", "summary": "Umleitung", "text": "Umleitung wegen Bauarbeiten" } ]
+    },
+    {
+      "refreshToken": "dGVzdC1pdGluZXJhcnktMg==",
+      "departure": "2026-10-24T06:10:00Z",
+      "arrival": "2026-10-24T06:40:00Z",
+      "durationSeconds": 1800,
+      "transfers": 0,
+      "modes": ["hyperloop"],
+      "cancelled": false,
+      "realtime": false,
+      "hasPolylines": false,
+      "legs": [
+        {
+          "index": 0, "mode": "walk",
+          "origin": { "kind": "coordinate", "id": null, "name": null, "latitude": 51.2201, "longitude": 6.7905 },
+          "destination": { "kind": "stop", "id": "de-DELFI_de:05111:18235", "name": "Duesseldorf Hbf", "latitude": 51.21996, "longitude": 6.79432 },
+          "departure": "2026-10-24T06:10:00Z", "plannedDeparture": "2026-10-24T06:10:00Z", "departureDelaySeconds": null,
+          "arrival": "2026-10-24T06:15:00Z", "plannedArrival": "2026-10-24T06:15:00Z", "arrivalDelaySeconds": null,
+          "durationSeconds": 300, "realtime": false, "cancelled": false, "polyline": null,
+          "isTransfer": false, "distanceMeters": 280, "durationSource": "motis-osm"
+        },
+        {
+          "index": 1, "mode": "hyperloop",
+          "origin": { "kind": "stop", "id": "de-DELFI_de:05111:18235", "name": "Duesseldorf Hbf", "latitude": 51.21996, "longitude": 6.79432 },
+          "destination": { "kind": "stop", "id": "de-DELFI_de:05315:11201", "name": "Koeln Hbf", "latitude": 50.9430, "longitude": 6.9589 },
+          "departure": "2026-10-24T06:20:00Z", "plannedDeparture": "2026-10-24T06:20:00Z", "departureDelaySeconds": null,
+          "arrival": "2026-10-24T06:40:00Z", "plannedArrival": "2026-10-24T06:40:00Z", "arrivalDelaySeconds": null,
+          "durationSeconds": 1200, "realtime": false, "cancelled": false, "polyline": null,
+          "line": null, "direction": null, "tripId": null,
+          "departurePlatform": null, "plannedDeparturePlatform": null, "arrivalPlatform": null, "plannedArrivalPlatform": null,
+          "platformChanged": false, "loadFactor": null, "stopovers": [], "remarks": []
+        }
+      ],
+      "remarks": []
+    }
+  ],
+  "earlierRef": "cursor-earlier",
+  "laterRef": "cursor-later",
+  "walkOnly": false,
+  "removedLongDistance": 0,
+  "fetchedAt": "2026-10-24T06:01:02.000Z",
+  "attribution": {
+    "text": "Fahrplandaten: Transitous (u. a. DELFI). Karten- und Wegdaten: OpenStreetMap-Mitwirkende.",
+    "links": [
+      { "label": "Transitous-Datenquellen", "url": "https://transitous.org/sources/" },
+      { "label": "OpenStreetMap", "url": "https://www.openstreetmap.org/copyright" }
+    ]
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "sourceLanguage": "de",
+  "strings": {
+    "Die Anfrage war ungültig.": {
+      "extractionState": "manual"
+    },
+    "Zugang zum Fahrplan-Server fehlt oder ist abgelaufen.": {
+      "extractionState": "manual"
+    },
+    "Haltestelle nicht mehr bekannt. Bitte neu suchen.": {
+      "extractionState": "manual"
+    },
+    "Keine Verbindung gefunden.": {
+      "extractionState": "manual"
+    },
+    "Die Verbindung ist nicht mehr aktuell. Bitte neu suchen.": {
+      "extractionState": "manual"
+    },
+    "Zu viele Anfragen. Bitte kurz warten.": {
+      "extractionState": "manual"
+    },
+    "Fahrplandaten sind gerade nicht erreichbar.": {
+      "extractionState": "manual"
+    },
+    "Fahrplandaten antworten zu langsam.": {
+      "extractionState": "manual"
+    },
+    "Unerwartete Antwort vom Fahrplan-Server.": {
+      "extractionState": "manual"
+    },
+    "Keine Internetverbindung.": {
+      "extractionState": "manual"
+    },
+    "Sichere Verbindung zum Server nicht möglich.": {
+      "extractionState": "manual"
+    },
+    "Zugangsdaten konnten nicht gelesen werden.": {
+      "extractionState": "manual"
+    },
+    "Standortzugriff ist nicht erlaubt.": {
+      "extractionState": "manual"
+    },
+    "Standort ist gerade nicht verfügbar.": {
+      "extractionState": "manual"
+    },
+    "Abgebrochen.": {
+      "extractionState": "manual"
+    }
+  },
+  "version": "1.0"
+}

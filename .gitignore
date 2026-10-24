@@ -7,3 +7,9 @@ xcuserdata/
 DerivedData/
 *.xcodeproj/project.xcworkspace/xcuserdata/
 build/
+
+# iOS: aus ios/project.yml generiert (xcodegen generate)
+ios/*.xcodeproj/
+ios/TransitPlanner/Info.plist
+.build/
+.swiftpm/
