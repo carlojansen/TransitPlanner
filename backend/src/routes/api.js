@@ -6,7 +6,12 @@ function parse(schema, input) {
 	const r = schema.safeParse(input);
 	if (!r.success) {
 		// Nur Feldpfad + Meldung zurueckgeben, nie die Eingabewerte selbst.
-		const details = r.error.issues.map((i) => (i.path.length ? `${i.path.join('.')}: ${i.message}` : i.message));
+		// Unbekannte Felder: fester Text, keine vom Client gewaehlten Feldnamen.
+		const details = r.error.issues.map((i) => {
+			const path = i.path.join('.');
+			const msg = i.code === 'unrecognized_keys' ? 'unknown_field' : i.message;
+			return path ? `${path}: ${msg}` : msg;
+		});
 		throw new TransitError(ErrorCode.INVALID_REQUEST, {details});
 	}
 	return r.data;

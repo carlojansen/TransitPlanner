@@ -13,7 +13,7 @@ User=transitplanner
 WorkingDirectory=/opt/transitplanner/backend
 EnvironmentFile=/opt/transitplanner/backend/.env
 Environment=NODE_ENV=production
-ExecStart=/usr/bin/node src/server.js
+ExecStart=/usr/bin/node --max-old-space-size=384 src/server.js
 Restart=on-failure
 RestartSec=3
 # Haertung
@@ -43,6 +43,10 @@ RestrictSUIDSGID=true
 RestrictRealtime=true
 RemoveIPC=true
 UMask=0077
+MemoryMax=512M
+TasksMax=64
+DevicePolicy=closed
+KeyringMode=private
 # V8 braucht W^X-Ausnahmen fuer den JIT, daher bleibt MemoryDenyWriteExecute aus.
 
 [Install]

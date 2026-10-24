@@ -17,11 +17,11 @@ let client;
 let app;
 const auth = {Authorization: `Bearer ${TOKEN}`};
 
-function build(overrides) {
+function build(overrides, cfg = config, logger) {
 	client = createFakeClient(overrides);
 	const gate = createUpstreamGate({limit: 1000, intervalMs: 1000, maxQueue: 50, minRemainingMs: 0});
 	const service = createTransitService({client, gate, timeoutMs: 200});
-	app = createApp({config, service});
+	app = createApp({config: cfg, service, logger});
 }
 
 beforeEach(() => build());
@@ -92,6 +92,77 @@ describe('Sicherheit', () => {
 			origin: {type: 'coordinate', latitude: 51.22, longitude: 6.79, name: 'Musterstr. 1'},
 			destination: {type: 'stop', id: 'de-DELFI_de:05315:11201'},
 		}).expect(400);
+	});
+
+	it('Body-Parser-Fehler (falsches Charset, kaputtes JSON) sind INVALID_REQUEST statt INTERNAL', async () => {
+		const r = await request(app).post('/api/refresh').set(auth).set('Content-Type', 'application/json; charset=latin1')
+			.send('{"refreshToken":"x"}').expect(400);
+		expect(r.body.error.code).toBe('INVALID_REQUEST');
+		await request(app).post('/api/refresh').set(auth).set('Content-Type', 'application/json').send('{kaputt').expect(400);
+	});
+
+	it('unbekannte Felder erscheinen nicht mit Namen in details', async () => {
+		const r = await request(app).post('/api/refresh').set(auth).send({refreshToken: 'abc', geheimesFeld: 1}).expect(400);
+		expect(JSON.stringify(r.body)).not.toContain('geheimesFeld');
+		expect(r.body.error.details).toContain('unknown_field');
+	});
+
+	it('Limit pro IP fuer Routen greift vor dem globalen Zaehler (8/min)', async () => {
+		const body = {origin: {type: 'stop', id: 'de-DELFI_de:05111:18235'}, destination: {type: 'stop', id: 'de-DELFI_de:05315:11201'}};
+		for (let i = 0; i < 8; i++) await request(app).post('/api/routes').set(auth).set('X-Forwarded-For', '10.1.0.1').send(body).expect(200);
+		for (let i = 0; i < 5; i++) {
+			const r = await request(app).post('/api/routes').set(auth).set('X-Forwarded-For', '10.1.0.1').send(body).expect(429);
+			expect(r.body.error.code).toBe('RATE_LIMITED');
+			expect(r.headers['retry-after']).toBe('60');
+		}
+		// Globaler Zaehler (30) hat nur 8 verbraucht: 22 weitere von anderen IPs gehen durch.
+		for (let i = 0; i < 22; i++) await request(app).post('/api/routes').set(auth).set('X-Forwarded-For', `10.2.0.${Math.floor(i / 7)}`).send(body).expect(200);
+	});
+
+	it('Limits pro IP fuer locations (20/min) und refresh (12/min)', async () => {
+		for (let i = 0; i < 20; i++) await request(app).get('/api/locations?query=Koeln').set(auth).set('X-Forwarded-For', '10.3.0.1').expect(200);
+		await request(app).get('/api/locations?query=Koeln').set(auth).set('X-Forwarded-For', '10.3.0.1').expect(429);
+		await request(app).get('/api/locations?query=Koeln').set(auth).set('X-Forwarded-For', '10.3.0.2').expect(200);
+		for (let i = 0; i < 12; i++) await request(app).post('/api/refresh').set(auth).set('X-Forwarded-For', '10.3.0.3').send({}).expect(400);
+		await request(app).post('/api/refresh').set(auth).set('X-Forwarded-For', '10.3.0.3').send({}).expect(429);
+	});
+
+	it('akzeptiert Tokens aus API_TOKENS zusaetzlich zu API_TOKEN', async () => {
+		const second = 'second-token-0123456789-abcdefghijklmnop';
+		const cfg = loadConfig({NODE_ENV: 'test', USER_AGENT: UA, API_TOKEN: TOKEN, API_TOKENS: ` ${second} `, RATE_LIMIT_PER_MINUTE: '1000', LOG_LEVEL: 'silent'});
+		build(undefined, cfg);
+		await request(app).get('/api/locations?query=Koeln').set('Authorization', `Bearer ${second}`).expect(200);
+		await request(app).get('/api/locations?query=Koeln').set(auth).expect(200);
+		await request(app).get('/api/locations?query=Koeln').set('Authorization', 'Bearer nope').expect(401);
+		expect(() => loadConfig({USER_AGENT: UA, API_TOKEN: TOKEN, API_TOKENS: 'kurz'})).toThrow(/API_TOKENS/);
+	});
+
+	it('sendet keine RateLimit-Header, aber Retry-After bei 429', async () => {
+		const ok = await request(app).get('/api/locations?query=Koeln').set(auth).expect(200);
+		expect(Object.keys(ok.headers).filter((h) => /^ratelimit/i.test(h))).toEqual([]);
+		for (let i = 0; i < 20; i++) await request(app).get('/api/locations?query=Koeln').set(auth);
+		const r = await request(app).get('/api/locations?query=Koeln').set(auth).expect(429);
+		expect(Object.keys(r.headers).filter((h) => /^ratelimit/i.test(h))).toEqual([]);
+		expect(r.headers['retry-after']).toBe('60');
+	});
+
+	it('Zugriffslog nennt bei 404 keinen Pfad', async () => {
+		const lines = [];
+		build(undefined, config, {info: (o) => lines.push(o), warn() {}, error() {}});
+		await request(app).get('/api/geheim-pfad').set(auth).expect(404);
+		expect(lines.at(-1).path).toBe('<unmatched>');
+		expect(JSON.stringify(lines)).not.toContain('geheim');
+	});
+
+	it('Nicht-Body-Parser-Fehler bleiben INTERNAL', async () => {
+		build({async plan() { throw new TypeError('x'); }});
+		await request(app).post('/api/routes').set(auth).send({origin: {type: 'stop', id: 'a'}, destination: {type: 'stop', id: 'b'}}).expect(500);
+	});
+
+	it('lehnt Tokens mit Leerzeichen oder ueber 512 Zeichen ab', () => {
+		expect(() => loadConfig({USER_AGENT: UA, API_TOKEN: `${TOKEN} x`})).toThrow(/API_TOKEN/);
+		expect(() => loadConfig({USER_AGENT: UA, API_TOKEN: 'a'.repeat(513)})).toThrow(/API_TOKEN/);
+		expect(() => loadConfig({USER_AGENT: UA, API_TOKEN: TOKEN, API_TOKENS: `${TOKEN}, ${'b'.repeat(513)}`})).toThrow(/API_TOKENS/);
 	});
 
 	it('begrenzt die Body-Groesse', async () => {
@@ -351,6 +422,7 @@ describe('POST /api/routes', () => {
 
 	it('hat ein eigenes, globales Rate-Limit fuer Routensuchen', async () => {
 		// Standard: 60 Upstream-Anfragen/Minute -> 30 Routensuchen/Minute fuer alle Clients zusammen
+		build(undefined, loadConfig({NODE_ENV: 'test', USER_AGENT: UA, API_TOKEN: TOKEN, RATE_LIMIT_PER_MINUTE: '1000', RATE_LIMIT_ROUTES_PER_MINUTE: '100', LOG_LEVEL: 'silent'}));
 		for (let i = 0; i < 15; i++) await request(app).post('/api/routes').set(auth).set('X-Forwarded-For', '10.0.0.1').send(body).expect(200);
 		for (let i = 0; i < 15; i++) await request(app).post('/api/routes').set(auth).set('X-Forwarded-For', '10.0.0.2').send(body).expect(200);
 		const r = await request(app).post('/api/routes').set(auth).set('X-Forwarded-For', '10.0.0.3').send(body).expect(429);

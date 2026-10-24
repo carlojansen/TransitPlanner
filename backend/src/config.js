@@ -6,6 +6,9 @@ import {z} from 'zod';
 // duerfen von Anwendungen nicht genutzt werden.
 const FORBIDDEN_MOTIS_HOSTS = [/^staging\.api\.transitous\.org$/i, /(^|\.)motis-project\.(org|de)$/i, /(^|\.)spline\.de$/i];
 
+// Token: 32-512 Zeichen, nur druckbares ASCII ohne Leerzeichen (passt zum Bearer-Parser).
+const token = z.string().min(32).max(512).regex(/^[\x21-\x7E]+$/);
+
 const schema = z.object({
 	NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 	HOST: z.string().default('127.0.0.1'),
@@ -24,13 +27,20 @@ const schema = z.object({
 	}),
 
 	// Gemeinsames Geheimnis zwischen App und Backend (Bearer). Mindestens 32 Zeichen.
-	API_TOKEN: z.string().min(32),
+	API_TOKEN: token,
+	// Optional: weitere gueltige Tokens, kommagetrennt (Rotation ohne Ausfall). Jedes mindestens 32 Zeichen.
+	API_TOKENS: z.string().default('').transform((s) => s.split(',').map((t) => t.trim()).filter(Boolean))
+		.pipe(z.array(token)),
 
 	// Hinter Caddy/Reverse-Proxy: Anzahl vertrauenswuerdiger Proxy-Hops fuer req.ip.
 	TRUST_PROXY: z.coerce.number().int().min(0).max(5).default(1),
 
 	// Schutz des Backends selbst (pro Client-IP).
 	RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(60),
+	// Zusaetzliche Limits pro Client-IP fuer teure Pfade.
+	RATE_LIMIT_LOCATIONS_PER_MINUTE: z.coerce.number().int().min(1).default(20),
+	RATE_LIMIT_ROUTES_PER_MINUTE: z.coerce.number().int().min(1).default(8),
+	RATE_LIMIT_REFRESH_PER_MINUTE: z.coerce.number().int().min(1).default(12),
 
 	// Ruecksicht auf Transitous (ehrenamtlich betrieben): feste Obergrenze fuer ausgehende Anfragen.
 	// Standard 1 Anfrage je 1000 ms = 60/Minute.

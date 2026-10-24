@@ -1,6 +1,6 @@
 // Fachlogik von Meilenstein 1. Unabhaengig von Express, damit sie mit einem Fake-Client testbar ist.
 // Datenquelle: MOTIS 2 (Transitous). Zum Wechsel weg von der DB-Navigator-API siehe docs/STATUS.md.
-import {createHash} from 'node:crypto';
+import {createHmac, randomBytes} from 'node:crypto';
 import {TransitError, ErrorCode, mapUpstreamError, upstreamStatus} from '../lib/errors.js';
 import {createUpstreamGate} from '../lib/upstreamGate.js';
 import {mapPlace, mapMatch, mapJourney, isLongDistanceItinerary, hasReconstructionFailure} from '../lib/mapper.js';
@@ -55,8 +55,10 @@ export function dedupeStops(places) {
 	return out;
 }
 
-// Cache-Schluessel ohne Klartext der Sucheingabe im Speicher.
-const hashKey = (s) => createHash('sha256').update(s, 'utf8').digest('base64url');
+// Cache-Schluessel ohne Klartext von Suchtext oder Koordinaten im Speicher: HMAC mit pro Prozess
+// zufaelligem Schluessel (nicht rueckrechenbar, auch nicht per Woerterbuch/Koordinatenraster).
+const cacheSecret = randomBytes(32);
+const hashKey = (s) => createHmac('sha256', cacheSecret).update(s, 'utf8').digest('base64url');
 
 // App-Endpunkt -> MOTIS fromPlace/toPlace ("lat,lon" oder Stop-ID).
 // Adressen gehen nur als Koordinate raus, nie mit Namen (Zero-Knowledge), gerundet auf 4 Stellen (~11 m):
@@ -113,7 +115,7 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 
 		if (!hasCoord) throw new TransitError(ErrorCode.INVALID_REQUEST, {details: ['query oder lat/lon erforderlich']});
 
-		const key = `${fLat},${fLon}`;
+		const key = hashKey(`${fLat},${fLon}`);
 		let places = nearbyCache.get(key);
 		if (!places) {
 			// MOTIS hat keinen Umkreis-Endpunkt: Haltestellen im umschliessenden Rechteck holen, lokal auf den Radius filtern.

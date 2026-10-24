@@ -10,7 +10,7 @@ muss der Name im Caddyfile und der Pin/Host in der App geändert werden.
 3. Benutzer `transitplanner` (System, ohne Login). Code unter `/opt/transitplanner/backend`.
 4. Code kopieren: `rsync -a --delete --exclude node_modules --exclude .env backend/ root@<IP>:/opt/transitplanner/backend/`
    danach auf dem Server `npm ci && npm test && npm prune --omit=dev`.
-5. `.env` nur auf dem Server: `API_TOKEN` per `openssl rand -base64 32`, `USER_AGENT` mit Kontakt-URL; `chown root:transitplanner`, `chmod 640`.
+5. `.env` nur auf dem Server: `API_TOKEN` per `openssl rand -base64 32`, `USER_AGENT` mit Kontakt-URL; optional `API_TOKENS` (kommagetrennt, Token-Rotation) und `RATE_LIMIT_LOCATIONS_PER_MINUTE`/`RATE_LIMIT_ROUTES_PER_MINUTE`/`RATE_LIMIT_REFRESH_PER_MINUTE` (Standards 20/8/12); `chown root:transitplanner`, `chmod 640`.
 6. `deploy/transitplanner.service` nach `/etc/systemd/system/`, `systemctl enable --now transitplanner`.
 7. `deploy/Caddyfile` nach `/etc/caddy/Caddyfile` (Host eintragen), `/var/log/caddy` gehört `caddy`, dann `systemctl restart caddy`.
 

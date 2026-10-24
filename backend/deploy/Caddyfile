@@ -22,6 +22,8 @@ api.example.de {
 				request>headers>Authorization delete
 				request>remote_ip delete
 				request>client_ip delete
+				resp_headers>Ratelimit-Policy delete
+				resp_headers>Ratelimit delete
 			}
 		}
 	}

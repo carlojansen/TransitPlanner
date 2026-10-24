@@ -1,10 +1,10 @@
 # API-Vertrag Backend <-> App (v0.2, Meilenstein 1)
 
 Basis-URL: `https://<deine-domain>` (TLS 1.3, SPKI-gepinnt). Alle `/api/*`-Endpunkte verlangen
-`Authorization: Bearer <API_TOKEN>` und antworten mit `Cache-Control: no-store`.
+`Authorization: Bearer <API_TOKEN>` (zusätzlich gelten die Tokens aus `API_TOKENS`, kommagetrennt, für Rotation) und antworten mit `Cache-Control: no-store`.
 
 Datenquelle: MOTIS 2 über [Transitous](https://transitous.org) (offene Fahrplan- und Echtzeitdaten, u. a. DELFI).
-Jede Antwort enthält `attribution {text, links:[{label, url}]}` (Transitous-Quellen und OpenStreetMap); die App muss Text und Links sichtbar anzeigen (Transitous-Nutzungsregel, OSM-Lizenz).
+Jede erfolgreiche `/api`-Antwort (200) enthält `attribution {text, links:[{label, url}]}` (Transitous-Quellen und OpenStreetMap); die App muss Text und Links sichtbar anzeigen (Transitous-Nutzungsregel, OSM-Lizenz).
 
 ## Zero-Knowledge-Regeln
 - Die App sendet nur Koordinaten, Stop-IDs, Haltestellen-Suchtexte, Zeiten und Filter. Unbekannte Felder werden mit `400` abgelehnt.
@@ -54,7 +54,11 @@ Es werden nur Haltestellen geliefert. `modes`, `area`, `distanceMeters` optional
 | `results` | `4` | 1–6 |
 | `laterThan` / `earlierThan` | – | Paging mit `laterRef`/`earlierRef` der vorherigen Antwort. **Alle übrigen Felder unverändert mitschicken** (MOTIS-Regel). Schließen sich gegenseitig aus. |
 
-Rate-Limit: eigenes, **globales** Limit für Routensuchen (Standard 30/min für alle Clients zusammen), weil Routing für Transitous teuer ist.
+Rate-Limit: eigenes, **globales** Limit für Routensuchen (Standard 30/min für alle Clients zusammen), weil Routing für Transitous teuer ist. Davor greift ein Limit pro IP (Standard 8/min); abgewiesene Anfragen verbrauchen das globale Limit nicht.
+
+**Suche in der App:** Die Haltestellensuche wird entprellt (mindestens 300 ms nach der letzten Eingabe, ab 2 Zeichen, oder sofort bei Return). Bei `RATE_LIMITED` zeigt die App ein Inline-Banner statt Dialog. Es werden keine `RateLimit-*`-Header gesendet, nur `Retry-After`.
+
+**Rate-Limits (alle `429 RATE_LIMITED` mit `Retry-After`)**: allgemein 60/min pro IP für alle `/api/*`; zusätzlich pro IP `/api/routes` 8/min, `/api/locations` 20/min, `/api/refresh` 12/min; global `/api/routes` 30/min. Konfigurierbar über `.env` (`RATE_LIMIT_*`).
 
 Antwort `200`:
 ```json
@@ -138,7 +142,7 @@ Ein echter Ausfall (GTFS-RT) kommt dagegen als `200` mit `cancelled: true`.
 
 ## Fehler
 Immer `{"error": {"code": "...", "message": "...", "details": [...]?, "retryAfterSeconds": n?}}`.
-`details` enthält nur Feldpfade, nie Eingabewerte.
+`details` enthält nur Feldpfade, nie Eingabewerte; bei unbekannten Feldern den festen Text `unknown_field` statt des Feldnamens. Fehlerhafte Requests (falscher Content-Type/Charset, zu großer oder ungültiger Body) ergeben ebenfalls `INVALID_REQUEST` (400).
 
 | Code | HTTP | Bedeutung für die App |
 |---|---|---|
@@ -147,7 +151,7 @@ Immer `{"error": {"code": "...", "message": "...", "details": [...]?, "retryAfte
 | `NOT_FOUND` | 404 | Ressource unbekannt; bei `/api/routes`: Stop-ID unbekannt (z. B. nach Datenaktualisierung), Favorit neu suchen |
 | `NO_CONNECTIONS` | 404 | ruhiges Inline-Banner „Keine Verbindung gefunden“ |
 | `REFRESH_EXPIRED` | 410 | Route neu suchen, Live Activity aktualisieren |
-| `RATE_LIMITED` | 429 | `Retry-After` beachten |
+| `RATE_LIMITED` | 429 | `Retry-After` beachten; die App zeigt ein Inline-Banner |
 | `UPSTREAM_UNAVAILABLE` | 502 | Transitous nicht erreichbar/gedrosselt/gesperrt oder Backend-Warteschlange voll, Cache zeigen, `Retry-After` beachten |
 | `UPSTREAM_TIMEOUT` | 504 | wie oben |
 | `INTERNAL` | 500 | generisch |
