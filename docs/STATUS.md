@@ -59,7 +59,9 @@ Offen, bevor die App über den Eigengebrauch hinausgeht:
 - **SPKI-Pin:** Caddy nutzt `reuse_private_keys`. Zusätzlich mit `deploy/spki-hash.sh new-backup` einen Offline-Backup-Schlüssel erzeugen und beide Pins in der App hinterlegen.
 - **Server:** siehe Abschnitt "Hosting und Veröffentlichung".
 
-## Hosting und Veröffentlichung (Planung, 24.10.2026)
+## Hosting und Veröffentlichung (24.10.2026)
+- **Live:** Server steht (Hetzner CAX11, Falkenstein), Backend und Caddy laufen, TLS 1.3, Let's-Encrypt-Zertifikat, 70 Tests grün auf arm64, Live-Suche über Transitous erfolgreich. Details: `docs/DEPLOYMENT.md`.
+- **Offen:** zweiter SPKI-Pin (Backup-Schlüssel), eigene Domain statt rDNS-Name, Transitous kontaktieren.
 - **Das Backend läuft nicht auf Carlos Rechnern**, sondern auf einem gemieteten Server in Deutschland.
 - **Plan:** Einstieg mit kleinster Stufe (2 vCPU, 4 GB reichen für den Proxy), monatlich kündbar, später vergrößern. Kandidat: Hetzner Cloud (Nürnberg/Falkenstein), Resize "nur CPU und RAM". IONOS VPS L Plus nur, wenn ohne lange Bindung und Preis inkl. MwSt. nach der Aktionsphase bekannt. Strato ist keine Alternative (teurer, weniger Leistung).
 - **Voraussetzungen:** Domain/Subdomain (Let's Encrypt, SPKI-Pinning), SSH nur per Key, Firewall (443 offen, 22 nur eigene IP), `.env` mit Token nur auf dem Server anlegen.
@@ -70,7 +72,7 @@ Offen, bevor die App über den Eigengebrauch hinausgeht:
 - [x] `.env` ist in `.gitignore` und war nie im Verlauf.
 - [x] History und Docs durchsucht (24.10.): kein Token, kein Schlüssel, keine internen IPs oder Hosts. Treffer sind nur Testwerte und die private Gmail-Adresse.
 - [x] Kontaktadresse: frisches Repo (24.10.), Autor = GitHub-noreply-Adresse, User-Agent-Kontakt in `.env.example` = Repo-URL. Die private Gmail steht nirgends mehr.
-- [ ] Bearer-Token vor dem ersten Server-Betrieb neu erzeugen (nie im Repo gewesen).
+- [x] Bearer-Token auf dem Server neu erzeugt (nur dort in `.env`).
 - [ ] LICENSE wählen und ergänzen.
 - [ ] Kontakt mit Transitous (Matrix) aufnehmen.
 - [x] Spezifikation Abschnitt 7 und Meilenstein-1-Prompt von `db-vendo-client` auf Transitous aktualisiert.
