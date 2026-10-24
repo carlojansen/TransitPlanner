@@ -19,8 +19,8 @@ public struct BackendConfig: Sendable, Hashable {
     public static let production = BackendConfig(
         host: "static.18.209.104.178.clients.your-server.de",
         primaryPin: "/G2ucqajVU17fdDE+oayjXlVEGDIEqe0/eo+4dK6i9Q=",
-        // OFFEN (docs/STATUS.md, Release-Aufgaben): Backup-Pin mit `spki-hash.sh new-backup` erzeugen und hier eintragen.
-        backupPin: nil
+        // Offline-Backup-Schluessel (Carlo, 24.10.2026); der private Schluessel liegt nicht im Repo.
+        backupPin: "0hkYwM2uh2/AMns6RP22FPaDZ2Zk/GjJVRHdz4hqvWI="
     )
 
     /// Basis-URL, immer https.

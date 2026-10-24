@@ -3,7 +3,7 @@
 | Meilenstein | Inhalt | Stand |
 |---|---|---|
 | 1 | Node.js-Backend (Express 5, MOTIS 2 / Transitous, /api/locations, /api/routes, /api/refresh) | fertig, auf dem Server live (24.10.), **von Carlo freigegeben (24.10.)** |
-| 2 | Swift Core-Engine & SwiftData, Netzwerk-/Security-Layer (TLS 1.3, ephemeral, SPKI-Pinning) | umgesetzt (24.10.), Review-Befunde (NACHBESSERN) behoben, Tests grün, **wartet auf Re-Review und Freigabe**; Backup-Pin fehlt |
+| 2 | Swift Core-Engine & SwiftData, Netzwerk-/Security-Layer (TLS 1.3, ephemeral, SPKI-Pinning) | umgesetzt (24.10.), Review-Befunde (NACHBESSERN) behoben, Tests grün, von Carlo freigegeben und committet (24.10.); Backup-Pin eingetragen, Release-Gate grün |
 | 3 | SwiftUI-Interface & Animationen, Navigations-State-Machine | offen |
 | 4 | Erinnerungen, WidgetKit, ActivityKit | offen |
 | 5 | Statistik-Dashboard (Swift Charts) | offen |
@@ -68,7 +68,7 @@ Nur Logik, keine UI (UI/UX pausiert bis 25.10.). Code unter `ios/`, Projekt per 
 - Prädiktives Pre-Fetching (2.2) ist als API vorhanden (`nearbyStops`), der Auslöser beim App-Start kommt mit der UI.
 
 **Grenzen / offen:**
-- **Backup-Pin fehlt.** Meilenstein 2 ist ohne zweiten Pin nicht release-fertig (Schlüsselverlust = App tot bis Update).
+- **Backup-Pin eingetragen (24.10.):** `0hkYwM2uh2/AMns6RP22FPaDZ2Zk/GjJVRHdz4hqvWI=`. Das Schema `TransitPlanner-ReleaseGate` ist grün. Der private Schlüssel liegt im Schlüsselbund; Offline-Kopie bei Carlo (nicht im Repo).
 - Token-Eingabe in die Keychain braucht UI (Meilenstein 3); bis dahin kein Live-Test der App gegen den Server.
 - MKDirections hat kein Limit paralleler Anfragen; bei Drosselung durch Apple begrenzen.
 - Echte CoreLocation-/MapKit-Aufrufe sind nur über Fakes getestet (brauchen Gerät/Netz).
@@ -107,7 +107,7 @@ Offen, bevor die App über den Eigengebrauch hinausgeht:
 
 ## Hosting und Veröffentlichung (24.10.2026)
 - **Live:** Server steht (Hetzner CAX11, Falkenstein), Backend und Caddy laufen, TLS 1.3, Let's-Encrypt-Zertifikat, 70 Tests grün auf arm64, Live-Suche über Transitous erfolgreich. Details: `docs/DEPLOYMENT.md`.
-- **Offen:** zweiter SPKI-Pin (Backup-Schlüssel), eigene Domain statt rDNS-Name, Transitous kontaktieren.
+- **Offen:** eigene Domain statt rDNS-Name, Transitous kontaktieren.
 - **Das Backend läuft nicht auf Carlos Rechnern**, sondern auf einem gemieteten Server in Deutschland.
 - **Plan:** Einstieg mit kleinster Stufe (2 vCPU, 4 GB reichen für den Proxy), monatlich kündbar, später vergrößern. Kandidat: Hetzner Cloud (Nürnberg/Falkenstein), Resize "nur CPU und RAM". IONOS VPS L Plus nur, wenn ohne lange Bindung und Preis inkl. MwSt. nach der Aktionsphase bekannt. Strato ist keine Alternative (teurer, weniger Leistung).
 - **Voraussetzungen:** Domain/Subdomain (Let's Encrypt, SPKI-Pinning), SSH nur per Key, Firewall (443 offen, 22 nur eigene IP), `.env` mit Token nur auf dem Server anlegen.
