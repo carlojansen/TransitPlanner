@@ -1,6 +1,6 @@
 # Deployment-Runbook (Hetzner Cloud, Stand 24.10.2026)
 
-Server: CAX11 (arm64, 2 vCPU, 4 GB), Ubuntu 26.04, Falkenstein. Firewall `transitplanner`: 22 nur eigene IP, 80 und 443 offen.
+Server: CAX11 (arm64, 2 vCPU, 4 GB), Ubuntu 26.04, Falkenstein. Firewall `transitplanner`: 22 nur eigene IP, 80 und 443 offen. Wechselt die eigene öffentliche IP (`curl https://api.ipify.org`), läuft SSH in einen Timeout; dann die Regel in der Hetzner Console anpassen.
 Host: `static.18.209.104.178.clients.your-server.de` (Hetzner-rDNS, an die IP gebunden). Bei Umzug oder eigener Domain
 muss der Name im Caddyfile und der Pin/Host in der App geändert werden.
 

@@ -2,7 +2,7 @@
 
 | Meilenstein | Inhalt | Stand |
 |---|---|---|
-| 1 | Node.js-Backend (Express 5, MOTIS 2 / Transitous, /api/locations, /api/routes, /api/refresh) | fertig, auf dem Server live (24.10.), **von Carlo freigegeben (24.10.)** |
+| 1 | Node.js-Backend (Express 5, MOTIS 2 / Transitous, /api/locations, /api/routes, /api/refresh) | fertig, auf dem Server live (24.10.), **von Carlo freigegeben (24.10.)**; Audit-Fixes committet (be2abc8), Deploy offen (SSH gesperrt, siehe "Backend-Audit") |
 | 2 | Swift Core-Engine & SwiftData, Netzwerk-/Security-Layer (TLS 1.3, ephemeral, SPKI-Pinning) | umgesetzt (24.10.), Review-Befunde (NACHBESSERN) behoben, Tests grün, von Carlo freigegeben und committet (24.10.); Backup-Pin eingetragen, Release-Gate grün |
 | 3 | SwiftUI-Interface & Animationen, Navigations-State-Machine | offen |
 | 4 | Erinnerungen, WidgetKit, ActivityKit | offen |
@@ -38,7 +38,7 @@ Abweichungen von SPEZIFIKATION 7 durch den Wechsel:
 Nur Logik, keine UI (UI/UX pausiert bis 25.10.). Code unter `ios/`, Projekt per `cd ios && xcodegen generate`.
 
 **Gebaut (`ios/TransitCore`, Swift Package, Swift 6, Strict Concurrency):**
-- `BackendConfig`: einzige Stelle für Host und Pins. Primärer Pin `/G2ucqajVU17fdDE+oayjXlVEGDIEqe0/eo+4dK6i9Q=` (ECDSA P-256, am 24.10. gegen das Live-Zertifikat geprüft), Backup-Slot vorhanden, aber leer. `isPinningReleaseReady` ist erst mit zwei verschiedenen Pins `true`.
+- `BackendConfig`: einzige Stelle für Host und Pins. Primärer Pin `/G2ucqajVU17fdDE+oayjXlVEGDIEqe0/eo+4dK6i9Q=` (ECDSA P-256, am 24.10. gegen das Live-Zertifikat geprüft), Backup-Pin seit 24.10. eingetragen. `isPinningReleaseReady` ist erst mit zwei verschiedenen Pins `true`.
 - `TransitError`: die 9 Backend-Codes mit identischen Rohwerten; ein Test liest `docs/API.md` und bricht bei Abweichung. Zusätzlich lokale Fälle mit Präfix `CLIENT_` (offline, Pinning, Dekodierung, Token fehlt, Keychain, Standort, Abbruch).
 - Codable-Modelle nach API.md v0.2 (Journey, Leg, Place, Stopover, Remark, Line, Polyline, Attribution, Antworten). Unbekannte `mode`-Werte werden `.unknown` statt Dekodierfehler.
 - `TransitAPIClient` (actor): Bearer aus der Keychain, fester User-Agent, Umkreis auf 3 / Routing auf 4 Nachkommastellen gerundet, Textsuche ohne Standort, `Retry-After` sperrt weitere Anfragen lokal (max. 300 s), keine Weiterleitungen.
@@ -60,7 +60,7 @@ Nur Logik, keine UI (UI/UX pausiert bis 25.10.). Code unter `ios/`, Projekt per 
 - Pinning nur auf das Leaf (beide Pins sind Leaf-Schlüssel, Caddy `reuse_private_keys`). Unterstützt EC P-256/P-384; RSA scheitert bewusst.
 - Kein NSPinnedDomains in der Info.plist: Host und Pins sollen nur an einer Stelle stehen.
 - MKDirections `calculateETA` statt voller Route (die Geometrie liefert das Backend).
-- Bundle-ID vorläufig `de.carlojansen.transitplanner` (bitte bestätigen).
+- Bundle-ID `de.carlojansen.transitplanner` (von Carlo bestätigt, 24.10.).
 
 **Abweichungen von der Spezifikation:**
 - "Parallele DB- und MKDirections-Abfrage": Die Fußwege hängen von den Haltestellen der Antwort ab, deshalb läuft erst das Backend, dann alle Fußwege parallel. Progressiv wie in 2.2 (erst Skelett, dann Gehzeiten).
@@ -99,10 +99,24 @@ Offen, bevor die App über den Eigengebrauch hinausgeht:
 - **Rufbusse/AST** (MOTIS-Modus ODM) sind bewusst ausgeschlossen (Voranmeldung nötig).
 - **Keine Auslastung, keine Wagenreihung** (Transitous liefert das nicht).
 
+## Backend-Audit (24.10.2026)
+Vollständiges Audit des Backends durch `security-hig-reviewer`: kein Blocker im Bestand, 3 mittlere und 7 niedrige Befunde. Behoben vom `backend-engineer`, Re-Review mit **FREIGABE**, 79/79 Tests grün, `npm audit` ohne Befund. Commit be2abc8.
+- **Body-Parser-Fehler** (z. B. falscher Zeichensatz) liefern `400 INVALID_REQUEST` statt `500`, ohne Error-Log. Nur echte body-parser-Fehlertypen mit Status < 500.
+- **Limits pro IP** nach der Authentifizierung: `/api/locations` 20/min, `/api/refresh` 12/min, `/api/routes` 8/min vor dem globalen Routenlimit (abgewiesene Anfragen zählen nicht global). Über `.env` einstellbar (`RATE_LIMIT_*_PER_MINUTE`). Hinweis: Mehrere Geräte hinter einer IP (CGNAT, WLAN) teilen sich das Limit.
+- **Keine `RateLimit-*`-Header mehr** (Blocker aus dem Review): express-rate-limit schrieb einen gekürzten, ungesalzenen IP-Hash (`pk=`) in die Antwort, und Caddy loggt Antwort-Header. Jetzt `standardHeaders: false`, zusätzlich löscht der Caddy-Log-Filter die Header. `Retry-After` bleibt.
+- **Token-Rotation:** `API_TOKENS` (kommagetrennt) zusätzlich zu `API_TOKEN`, timing-safe gegen alle Einträge. Tokens 32–512 Zeichen, druckbares ASCII, beim Start geprüft.
+- **Fehler-`details`** enthalten nur Feldpfade; unbekannte Felder erscheinen als `unknown_field`.
+- **Cache-Schlüssel** für Suchtexte und Umkreis-Koordinaten als HMAC-SHA256 mit Zufallsschlüssel pro Prozess.
+- **Zugriffslog:** bei 404 `<unmatched>` statt Pfad (kein beliebiger Text im Log). Offen (niedrig): festen Routennamen statt Platzhalter loggen.
+- **systemd:** `MemoryMax=512M`, `TasksMax=64`, `DevicePolicy=closed`, `KeyringMode=private`, Node mit `--max-old-space-size=384`. `PrivateUsers=true` bewusst weggelassen (Lesbarkeit der `.env` ungeprüft, geringer Mehrwert).
+
+**Deploy offen:** SSH (Port 22) ist nur für Carlos IP freigegeben; seine öffentliche IP hat sich geändert. Carlo passt die Hetzner-Firewall-Regel an, danach: Code per rsync, `npm ci && npm test && npm prune --omit=dev`, Unit-Datei und Caddyfile kopieren, `caddy validate`, `systemctl daemon-reload`, Neustart Backend, Reload Caddy, Smoke-Test.
+
 ## Offene Punkte / Risiken
-- **Tests:** `npm test` crashte mit Node 26 / Vitest 5 (rolldown) nach altem Install; nach `rm -rf node_modules && npm ci` laufen alle 70 Tests grün.
+- **Tests:** `npm test` crashte mit Node 26 / Vitest 5 (rolldown) nach altem Install; nach `rm -rf node_modules && npm ci` laufen alle Tests grün (aktuell 79).
 - **Live-Test:** Cloud- und Mac-Sandbox sperren `api.transitous.org`; der Smoke-Test läuft nur im macOS-Terminal.
-- **SPKI-Pin:** Caddy nutzt `reuse_private_keys`. Zusätzlich mit `deploy/spki-hash.sh new-backup` einen Offline-Backup-Schlüssel erzeugen und beide Pins in der App hinterlegen.
+- **SPKI-Pin:** Caddy nutzt `reuse_private_keys`. Backup-Pin ist in der App; der Offline-Backup-Schlüssel muss von Carlo außerhalb der iCloud verwahrt werden.
+- **SSH-Zugang:** Die Firewall-Regel hängt an Carlos wechselnder IP. Bei jedem IP-Wechsel muss sie angepasst werden.
 - **Server:** siehe Abschnitt "Hosting und Veröffentlichung".
 
 ## Hosting und Veröffentlichung (24.10.2026)
@@ -126,11 +140,16 @@ Offen, bevor die App über den Eigengebrauch hinausgeht:
 ## Release-Aufgaben (bewusst ans Ende gestellt, Entscheidung Carlo 24.10.)
 - [ ] LICENSE wählen und ergänzen (Empfehlung MIT; Transitous verlangt Open Source vor breiter Nutzung).
 - [ ] Transitous per Matrix kontaktieren (privat, nicht kommerziell, Last: max. 60 Anfragen/min, typisch wenige).
-- [ ] Backup-SPKI-Schlüssel erzeugen (`deploy/spki-hash.sh new-backup`), offline verwahren, beide Pins in die App.
+- [x] Backup-SPKI-Schlüssel erzeugt, beide Pins in der App (24.10.). Offen bei Carlo: Schlüssel offline außerhalb der iCloud verwahren.
+- [ ] Lizenz in `backend/package.json` (derzeit `UNLICENSED`, `private: true`) zusammen mit LICENSE anpassen.
 - [ ] Eigene Domain statt Hetzner-Hostname (Caddyfile, App-Host, neue Pins).
 - [ ] Projekt-Kontaktadresse für User-Agent prüfen (aktuell Repo-URL), Repo öffentlich machen.
 - [ ] OSM-Namensnennung und Transitous-Quellenlink in der App.
 - [ ] Bearer-Token durch App Attest ersetzen, bevor die App über den Eigengebrauch hinausgeht.
 
 ## UI/UX
-Pausiert bis zum 25.10. Figma-Datei "TransitPlanner – Design-Plan": Übersicht mit Zustandsfluss, Farb-Tokens (hell/dunkel) und Typografie vorhanden. Es fehlen Komponenten, Screens, Dynamic Island/Widgets, Statistik, Quellenangabe-Screen und Fehlerzustände.
+Pausiert bis zum 25.10. Figma-Datei "TransitPlanner – Design-Plan" (am 24.10. über Chrome gelesen; die Figma-MCP-Schnittstelle ist durch das Starter-Limit blockiert, Lesen über den Browser funktioniert). Vorhanden: Übersicht mit Zustandsfluss, Farb-Tokens (hell/dunkel), Typografie, Screens Start, Suche, Routenauswahl (hell/dunkel), Navigation, Sperrbildschirm/Live Activity, Dynamic Island/Widgets, Statistik, erste Komponenten.
+- **Widerspruch:** Screen "2 Suche" zeigt Haltestellen und Adressen parallel mit Debounce 250 ms. Das verletzt die Pflichtschalter-Regel (Schalter "Adresse / Haltestelle", nie beide Quellen, Debounce mindestens 300 ms oder Return). Muss vor der Umsetzung angepasst werden.
+- **Fehlt noch:** Quellenangabe-Screen, Fehler- und Leerzustände (Rate-Limit-Banner, offline), Token-Eingabe.
+- **Vorbereitung:** Recherche für Meilenstein 3 in `docs/RESEARCH-M3.md`.
+- **Einstieg Meilenstein 3:** schmaler Testbildschirm (Token-Eingabe in die Keychain, Suche mit Pflichtschalter, Verbindungsliste, Quellenangabe), damit die App gegen den Server testbar wird; danach Design laut Figma.
