@@ -3,7 +3,7 @@
 | Meilenstein | Inhalt | Stand |
 |---|---|---|
 | 1 | Node.js-Backend (Express 5, MOTIS 2 / Transitous, /api/locations, /api/routes, /api/refresh) | fertig, auf dem Server live (24.10.), **von Carlo freigegeben (24.10.)** |
-| 2 | Swift Core-Engine & SwiftData, Netzwerk-/Security-Layer (TLS 1.3, ephemeral, SPKI-Pinning) | offen |
+| 2 | Swift Core-Engine & SwiftData, Netzwerk-/Security-Layer (TLS 1.3, ephemeral, SPKI-Pinning) | umgesetzt (24.10.), Review-Befunde (NACHBESSERN) behoben, Tests grün, **wartet auf Re-Review und Freigabe**; Backup-Pin fehlt |
 | 3 | SwiftUI-Interface & Animationen, Navigations-State-Machine | offen |
 | 4 | Erinnerungen, WidgetKit, ActivityKit | offen |
 | 5 | Statistik-Dashboard (Swift Charts) | offen |
@@ -33,6 +33,52 @@ Abweichungen von SPEZIFIKATION 7 durch den Wechsel:
 - **Fehlerbodies von Transitous werden verworfen**, nur der HTTP-Status wird klassifiziert (Bodies können Eingaben spiegeln).
 - **Auth:** gemeinsamer Bearer-Token (in der App in der Keychain). Vor einer öffentlichen Version durch App Attest ersetzen.
 - **TLS:** Node lauscht nur auf `127.0.0.1`; Caddy terminiert ausschließlich TLS 1.3 und filtert Query-Strings, IPs und Auth-Header aus dem Log.
+
+## Meilenstein 2: Core-Engine (24.10.2026)
+Nur Logik, keine UI (UI/UX pausiert bis 25.10.). Code unter `ios/`, Projekt per `cd ios && xcodegen generate`.
+
+**Gebaut (`ios/TransitCore`, Swift Package, Swift 6, Strict Concurrency):**
+- `BackendConfig`: einzige Stelle für Host und Pins. Primärer Pin `/G2ucqajVU17fdDE+oayjXlVEGDIEqe0/eo+4dK6i9Q=` (ECDSA P-256, am 24.10. gegen das Live-Zertifikat geprüft), Backup-Slot vorhanden, aber leer. `isPinningReleaseReady` ist erst mit zwei verschiedenen Pins `true`.
+- `TransitError`: die 9 Backend-Codes mit identischen Rohwerten; ein Test liest `docs/API.md` und bricht bei Abweichung. Zusätzlich lokale Fälle mit Präfix `CLIENT_` (offline, Pinning, Dekodierung, Token fehlt, Keychain, Standort, Abbruch).
+- Codable-Modelle nach API.md v0.2 (Journey, Leg, Place, Stopover, Remark, Line, Polyline, Attribution, Antworten). Unbekannte `mode`-Werte werden `.unknown` statt Dekodierfehler.
+- `TransitAPIClient` (actor): Bearer aus der Keychain, fester User-Agent, Umkreis auf 3 / Routing auf 4 Nachkommastellen gerundet, Textsuche ohne Standort, `Retry-After` sperrt weitere Anfragen lokal (max. 300 s), keine Weiterleitungen.
+- `PinnedSessionTransport`: `ephemeral`, TLS 1.3, `waitsForConnectivity` (mit 45-s-Obergrenze), kein URLCache, keine Cookies/Credentials; Delegate prüft Systemvertrauen + Hostname + Leaf-SPKI-SHA-256 (fail closed).
+- `KeychainSecretStore`: `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, Data-Protection-Keychain. Token, Schlüssel für lokale Verschlüsselung, refreshTokens geplanter Fahrten.
+- `CoreLocationService` (nur CoreLocation, `CLLocationUpdate.liveUpdates`, Genauigkeit/Alter/Timeout), `SearchService` (MKLocalSearch nur mit Region aus dem GPS-Fix; ohne Fix keine Adresssuche, Haltestellen trotzdem).
+- `HybridRouteCalculator`: Skelett vom Backend, danach alle eindeutigen Fußwege parallel per `withThrowingTaskGroup` über `MKDirections` (.walking, ETA) x `WalkingPaceFactor`; Fallback auf MOTIS-Dauer bei Fehler oder Weg < 25 m; Umstiegs-Puffer (`TransferCheck`), Ankunft inkl. letztem Fußweg.
+- `WalkingPaceFactor`: lernend (erst Mittelwert, dann Glättung 0.2), Ausreißer und Wege < 60 s verworfen, Bereich 0.5–2.0, manueller Override.
+- `DepartureScheduler`: `Aufbruch = Abfahrt (inkl. Echtzeit) - kalibrierter Zugangsweg - Stationspuffer (120 s)`, Stufen T-15/T-5/T-0, Neuplanung nach Refresh (verschieben ab 60 s, Ausfall oder unmöglicher Umstieg = `connectionLost`).
+- SwiftData: `FavoritePlace`, `RecentSearch`, `PlannedTrip` (Orte/Labels/Kalender-Kennung AES-GCM-verschlüsselt, Schlüssel in der Keychain), `CachedStop`, `PaceProfile`. Store ohne iCloud, Ordner und Dateien `completeUntilFirstUserAuthentication`.
+- `TripRequest`-Protokoll mit `TripTrigger` (manuell, Favorit, Kalender) und `TripRequestProvider` als Einhängepunkt für EventKit. `routesRequest()` ist die einzige Umwandlung in einen Backend-Request (nur Punkte, Zeit, Filter).
+- App-Target `TransitPlanner`: nur leerer Einstiegspunkt, Standort-Begründung, `PrivacyInfo.xcprivacy` (präziser Standort, nicht verknüpft, kein Tracking, App-Funktion; keine Required-Reason-APIs).
+
+**Tests (nach Nachbesserung):** `swift test` (macOS): 56/56 grün. `xcodebuild test` Schema `TransitPlanner` (iPhone 17, iOS 26.5, `-parallel-testing-enabled NO`): 56/56 Paket-Tests + Keychain-Test im App-Host grün, Release-Gate übersprungen. Schema `TransitPlanner-ReleaseGate`: **rot wie beabsichtigt** (Backup-Pin fehlt). Keychain-Test läuft im App-gehosteten Target, weil Paket-Tests ohne Host `-34018` bekommen. Pin-Test gegen das echte Leaf-Zertifikat (gültig bis 22.01.2027) und Bodies gegen die zod-Schemata des Backends geprüft. `xcodebuild test` blieb auf diesem Mac anfangs beim Start des Test-Runners hängen (Simulator, nicht Code); mit `-parallel-testing-enabled NO` stabil.
+
+**Entscheidungen:**
+- `targetTime` wird in UTC mit `Z` gesendet (gültiges ISO-8601 mit Offset, verrät keine Zeitzone).
+- Lokale Fehler als eigene `CLIENT_*`-Fälle im selben Enum, damit "alle Fehler als TransitError" gilt, ohne Backend-Codes zu verfälschen. Vom Server gesendete `CLIENT_*`-Codes werden ignoriert.
+- Pinning nur auf das Leaf (beide Pins sind Leaf-Schlüssel, Caddy `reuse_private_keys`). Unterstützt EC P-256/P-384; RSA scheitert bewusst.
+- Kein NSPinnedDomains in der Info.plist: Host und Pins sollen nur an einer Stelle stehen.
+- MKDirections `calculateETA` statt voller Route (die Geometrie liefert das Backend).
+- Bundle-ID vorläufig `de.carlojansen.transitplanner` (bitte bestätigen).
+
+**Abweichungen von der Spezifikation:**
+- "Parallele DB- und MKDirections-Abfrage": Die Fußwege hängen von den Haltestellen der Antwort ab, deshalb läuft erst das Backend, dann alle Fußwege parallel. Progressiv wie in 2.2 (erst Skelett, dann Gehzeiten).
+- Widget-Target `TransitPlannerWidgets` noch nicht angelegt (Meilenstein 4). `CompletedTrip`-Statistikmodell folgt in Meilenstein 5. Live-GPS-Stream für die Navigation folgt mit der State-Machine in Meilenstein 3.
+- Prädiktives Pre-Fetching (2.2) ist als API vorhanden (`nearbyStops`), der Auslöser beim App-Start kommt mit der UI.
+
+**Grenzen / offen:**
+- **Backup-Pin fehlt.** Meilenstein 2 ist ohne zweiten Pin nicht release-fertig (Schlüsselverlust = App tot bis Update).
+- Token-Eingabe in die Keychain braucht UI (Meilenstein 3); bis dahin kein Live-Test der App gegen den Server.
+- MKDirections hat kein Limit paralleler Anfragen; bei Drosselung durch Apple begrenzen.
+- Echte CoreLocation-/MapKit-Aufrufe sind nur über Fakes getestet (brauchen Gerät/Netz).
+
+**Nachbesserung nach Security-Review (24.10.):**
+- **Blocker behoben, dann verschärft (Carlo, 24.10.):** Suchmodus ist Pflicht. `SearchService.search(_:scope:)` hat keinen Standardwert; `.address` sucht nur lokal per MKLocalSearch, `.stops` nur im Backend (ohne Standort). Die frühere Adress-Heuristik entfällt, weil sie Straßen ohne Endung nicht erkannte. Die Oberfläche (Meilenstein 3) muss den Schalter „Adresse / Haltestelle“ sichtbar zeigen, mit Debounce von mindestens 300 ms oder Suche bei Return.
+- Sichtbare Texte mit Umlauten über `String(localized:)` und String Catalog (`TransitCore/Resources/Localizable.xcstrings`, `TransitPlanner/InfoPlist.xcstrings`), Entwicklungssprache Deutsch.
+- Pinning-Tests mit eigener Test-CA und Leaf (richtiger Pin, falscher Pin, nur CA-Pin, falscher Host, ohne Anker) und Delegate-Tests (Host-Abweichung, fehlender Trust, fremde Auth-Methode, Redirect = nil). Prüfdatum fest, Tests altern nicht.
+- Niedrig-Befunde: `+`/`&`/`=` im Query werden prozentkodiert; fremde Challenge-Arten `performDefaultHandling`; Transport-Initializer nur noch `internal`; `Accept-Language: de` fest; `Retry-After` nur bei 429/502/503/504; Keychain-Schlüssel mit falscher Länge wirft `keychainFailure` statt zu überschreiben; `regionPriority = .required`; Session wird beim Freigeben des Transports mit `finishTasksAndInvalidate` beendet; `RoutesRequest.results` ist `private(set)`.
+- **Release-Sperre:** `ReleaseGateTests` schlägt fehl, solange `BackendConfig.production.isPinningReleaseReady` false ist. Nur im Schema `TransitPlanner-ReleaseGate` (Release-Konfiguration) aktiv; im normalen Lauf übersprungen.
 
 ## Transitous-Nutzungsregeln (https://transitous.org/api/)
 Umgesetzt: User-Agent mit Name, Version und Kontakt (beim Start erzwungen); keine Staging-/internen Endpunkte

@@ -8,7 +8,7 @@ Jede Antwort enthält `attribution {text, links:[{label, url}]}` (Transitous-Que
 
 ## Zero-Knowledge-Regeln
 - Die App sendet nur Koordinaten, Stop-IDs, Haltestellen-Suchtexte, Zeiten und Filter. Unbekannte Felder werden mit `400` abgelehnt.
-- **Adressen verlassen das Gerät nie als Text.** Adresssuche macht die App lokal per `MKLocalSearch` (mit expliziter Region); ans Backend geht nur die Koordinate.
+- **Adressen verlassen das Gerät nie als Text.** Die App hat einen Pflichtschalter mit zwei Suchmodi. Im Modus „Adresse“ läuft die Suche lokal per `MKLocalSearch` (mit expliziter Region aus dem GPS-Fix), ans Backend geht dann nur die gewählte Koordinate. Ein Suchtext geht nur an `GET /api/locations?query=`, wenn der Nutzer ausdrücklich den Modus „Haltestelle“ gewählt hat. Es gibt keine automatische Erkennung, die einen Text selbst ans Backend schickt. Wer im Haltestellen-Modus eine Adresse eintippt, sendet sie bewusst als Suchtext (ohne Standort); die UI weist darauf hin.
 - Haltestellen-Textsuchen gehen **ohne** Standort an Transitous; die Nähe-Sortierung passiert im Backend. Der Cache speichert nur einen Hash des Suchtexts.
 - Umkreissuchen: die App rundet auf 3 Nachkommastellen (~110 m), das Backend rundet zusätzlich (Defense in Depth).
 - **Routing mit Koordinaten:** Start/Ziel gehen auf 4 Nachkommastellen (~11 m) gerundet an Transitous. Das ist genau genug für den Fußweg, verrät aber die ungefähre Lage (z. B. die Straße der Wohnung). Wer das vermeiden will, wählt in der App eine Haltestelle als Start.
