@@ -55,14 +55,19 @@ Orientiere deine Implementierungen, Architektur-Patterns und Sicherheitsprüfung
 ## 4. Teil B: Apple Design & HIG Spezifikation
 
 ### 4.1 Visuelle Hierarchie, Materialien und Farben
-1. **Native Materialien statt starrer Hintergrundfarben:**
-   * Alle Overlays über der Karte (Bottom Sheet, Floating Guidance Banner, Schnellzugriff-Buttons) nutzen Apples System-Materialien: `.background(.ultraThinMaterial)` für schwebende Karten-Buttons und `.background(.regularMaterial)` für das Bottom Sheet und das Guidance Banner.
+1. **Liquid Glass (iOS 26) statt eigener Materialien** (Entscheidung Carlo, 24.10.2026: so nativ wie möglich):
+   * Glass nur in der Bedien- und Navigationsebene über der Karte, nie im Inhalt (Listen, Karten-Cards).
+   * Bottom Sheet: System-Sheet ohne `presentationBackground`; das Glass kommt automatisch. `List`/`Form` im Sheet mit `.scrollContentBackground(.hidden)`.
+   * Schwebende Buttons: `.buttonStyle(.glass)` bzw. `.glassProminent` für die eine Hauptaktion. Kartensteuerung über die System-Controls (`MapUserLocationButton`, `MapCompass`, `MapScaleView` in `.mapControls`), nicht nachbauen.
+   * Guidance Banner und Top Chrome: `glassEffect(.regular, in: .rect(cornerRadius: 16))`; benachbarte Glass-Elemente in einem gemeinsamen `GlassEffectContainer`, Übergänge per `glassEffectID`. Kein Glass auf Glass.
+   * Kein eigenes Opazitäts- oder Blur-Tuning: Bei „Transparenz reduzieren“ und „Kontrast erhöhen“ passt das System Glass selbst an.
+   * Materialien (`.regularMaterial` usw.) nur noch in der Inhaltsebene, wo kein Glass vorgesehen ist.
 2. **Semantische Systemfarben & Kontrast:**
    * Verwende ausschließlich adaptive Systemfarben (`Color.primary`, `Color.secondary`, `Color(uiColor: .systemBackground)`, `Color(uiColor: .secondarySystemGroupedBackground)`).
    * Verkehrsmittel-Farben (Tram: Rot, S-Bahn: Grün, U-Bahn: Blau, Bus: Violett, Regio: Orange) müssen im Light Mode und Dark Mode sowie bei aktiviertem „Kontrast erhöhen“ (`accessibilityContrast == .high`) die WCAG-AAA-Kontrastwerte erfüllen.
 3. **Schatten und Ränder:**
    * Nutze kontinuierliche Eckradien (`RoundedRectangle(cornerRadius: 16, style: .continuous)`).
-   * Kombiniere schwebende Panels mit einem subtilen 0.5pt Innenrand (`.strokeBorder(.white.opacity(0.15), lineWidth: 0.5)`), um im Dark Mode eine klare Trennung zur Karte zu gewährleisten.
+   * Kein eigener Innenrand auf Glass (das System zeichnet die Kante). Ein 0.5pt-Rand (`.strokeBorder(.separator, lineWidth: 0.5)`) nur für Inhalts-Cards ohne Glass im Dark Mode.
 
 ### 4.2 Typografie, Zahlen und SF Symbols
 1. **Typografische Disziplin:**
@@ -80,7 +85,17 @@ Orientiere deine Implementierungen, Architektur-Patterns und Sicherheitsprüfung
    * Alle primären Aktionen (Suchfeld im Ruhezustand, Auswahl der Hero Card, Start-Button für die Navigation) befinden sich in der unteren Bildschirmhälfte innerhalb des Bottom Sheets.
    * Jedes interaktive Element besitzt eine minimale Touch-Fläche von `44 x 44 pt` (`.contentShape(Rectangle())`).
 2. **Unterbrechbare Physik-Animationen:**
-   * Lineare Animationen (`.linear`) sind für UI-Übergänge verboten. Nutze ausschließlich unterbrechbare Feder-Animationen: `.spring(duration: 0.35, bounce: 0.1)` für Sheet-Wechsel und `.snappy(duration: 0.25)` für Mikro-Interaktionen (Filter-Toggles, Aufklappen von Zwischenhalten).
+   * Lineare Animationen (`.linear`) sind für UI-Übergänge verboten. Nur unterbrechbare Federn, ausschließlich über die zentralen Konstanten in `Motion` (keine Werte direkt im View-Code). Werte nach Apple *Designing Fluid Interfaces* (Dämpfung 1.0 = kein Überschwingen, Standard; Überschwingen nur, wenn eine Geste Schwung mitgibt):
+
+     | Konstante | Wert | Einsatz |
+     |---|---|---|
+     | `Motion.standard` | `.spring(response: 0.4, dampingFraction: 1.0)` | Zustandswechsel, Morphing, Kamerafahrten, Ein-/Ausblenden von Overlays |
+     | `Motion.micro` | `.spring(response: 0.25, dampingFraction: 1.0)` | Mikro-Interaktionen (Schalter, Aufklappen von Zwischenhalten) |
+     | `Motion.momentum` | `.spring(response: 0.3, dampingFraction: 0.8)` | nur nach Wisch-/Ziehgesten mit Schwung, mit Übergabe der Gestengeschwindigkeit |
+
+   * Sheet-Rastpunkte animiert das System selbst; dort keine eigene Feder.
+   * Animationen starten immer vom aktuellen Bildschirmwert (SwiftUI-Federn tun das von selbst); Eingaben werden während einer Animation nie gesperrt.
+   * Bei `accessibilityReduceMotion`: `.transition(.opacity)` statt Bewegung, Kamera ohne Fahrt setzen.
 3. **Barrierefreiheit (Accessibility First):**
    * Unterstütze `Dynamic Type` von `.xSmall` bis `.accessibility3`. Bei extremen Schriftgrößen wechselt die horizontale „Leg-Bar“ (Verkehrsmittel-Leiste) über `ViewThatFits` automatisch in eine vertikale Liste.
    * Gruppiere zusammengehörige Informationen (z. B. die gesamte Hero Card) für VoiceOver mit `.accessibilityElement(children: .combine)` und liefere einen präzisen gesprochenen String (z. B. „Beste Verbindung: In 7 Minuten losgehen. 6 Minuten Fußweg, dann Straßenbahn 4 Richtung Hauptbahnhof. Pünktlich.“).
@@ -96,7 +111,7 @@ Bevor du als Agent eine Datei oder ein Modul ausgibst, prüfe intern folgende 7 
 3. **Privacy-Leak-Check:** Werden in diesem Modul Daten an das Backend gesendet, die dort nicht zwingend für das Routing gebraucht werden?
 4. **VPN-Check:** Verlässt sich eine `MapKit`- oder Netzwerk-Funktion auf implizite IP-Lokalisierung statt auf explizite `CoreLocation`-Parameter?
 5. **Layout-Jitter-Check:** Haben alle dynamischen Zeit- und Distanz-Labels `.monospacedDigit()` und `.contentTransition(.numericText())`?
-6. **HIG-Material-Check:** Werden native System-Materialien, semantische Farben und kontinuierliche Eckradien (`style: .continuous`) verwendet?
+6. **HIG-Material-Check:** Wird Liquid Glass nur in der Bedienebene und ohne eigenes Tuning verwendet, kommen alle Animationen aus `Motion`, werden semantische Farben und kontinuierliche Eckradien (`style: .continuous`) verwendet?
 7. **Error-Resilience:** Sind alle `try`-Aufrufe sauber über typisierte Fehler (`enum TransitError: LocalizedError`) abgefangen und in ein ruhiges, nicht-blockierendes Inline-Banner (statt eines störenden `Alert`-Popups) übersetzt?
 
 ---

@@ -5,7 +5,7 @@ Die Anwendung ist ein hochreaktiver, multimodaler Routenplaner für iOS, spezial
 
 ### Kernprinzipien der iOS-App:
 1. **Zero-Latency & Reaktivität:** Die App reagiert verzögerungsfrei (120Hz ProMotion-Ziel). Netzwerkanfragen blockieren niemals den Main-Thread. Lokales Caching (`SwiftData`), Request-Debouncing und Optimistic UI sorgen für sofortiges visuelles Feedback.
-2. **Offenes, adaptives Layout nach Apple Design-Vorlagen:** Einsatz nativer iOS-Materialien (`ultraThinMaterial`), dynamischer Typografie (`Dynamic Type`) und einer persistenten Karten-Arbeitsfläche mit kontextabhängigen Overlays statt starrer Bildschirmwechsel.
+2. **Offenes, adaptives Layout nach Apple Design-Vorlagen:** Einsatz von Liquid Glass (iOS 26) in der Bedienebene, Apple-Karten (MapKit) als Basis, dynamischer Typografie (`Dynamic Type`) und einer persistenten Karten-Arbeitsfläche mit kontextabhängigen Overlays statt starrer Bildschirmwechsel.
 3. **VPN-Resilienz:** Ausschließliche Nutzung von Hardware-GPS (`CoreLocation`) für Standort und Such-Bias. Sämtliche Fahrplan-Abfragen laufen über das eigene Backend mit deutscher Server-IP.
 4. **In-App-Navigation mit persönlichen Gehzeiten:** Durchgängige Wegführung (Fußweg, Fahrzeug, Umstieg) innerhalb der App. Die Gehzeit-Berechnung von Apple Maps wird anhand der realen historischen Gehgeschwindigkeit des Nutzers kalibriert.
 5. **Systemweite Präsenz:** Nahtlose Integration in den Sperrbildschirm, die Dynamic Island (`ActivityKit`), den Home-Bildschirm (`WidgetKit`) sowie zeitkritische Erinnerungen (`UserNotifications` & `EventKit`).
@@ -44,7 +44,7 @@ Das Layout ist offen und zustandsgetrieben formuliert, sodass Views fließend in
   * Steuert Suche, Routenauswahl (Hero Card + Alternativen) und Fahrt-Details über drei dynamische Rastpunkte (`height(140)`, `fraction(0.50)`, `large`).
 
 ### 3.2Animations-System (Fluid Interfaces)
-Alle Zustandsübergänge folgen physikalischen Feder-Kurven (`Spring(duration: 0.35, bounce: 0.12)`):
+Alle Zustandsübergänge folgen physikalischen Feder-Kurven aus den zentralen `Motion`-Konstanten (siehe AGENT.md 4.3; Standard `.spring(response: 0.4, dampingFraction: 1.0)`):
 
 1. **Card-to-Navigation Morphing (`matchedGeometryEffect`):**
    Tippt der Nutzer auf der „Hero Card“ auf „Start“, kollabiert die Karte nicht einfach: Die multimodale Fortschrittsleiste (Leg-Bar) löst sich aus der Card und gleitet per `matchedGeometryEffect` direkt in das untere Kompaktsheet oder das obere Guidance Banner.

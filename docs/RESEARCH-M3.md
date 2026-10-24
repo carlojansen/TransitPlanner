@@ -11,9 +11,10 @@ Kennzeichnung: **[Doku]** = in Apple-Doku/WWDC-Transkript nachgelesen, **[Erfahr
    `.ultraThinMaterial` für schwebende Buttons. Unter iOS 26 bekommen Sheets mit Teilhöhe automatisch Liquid Glass; Apple rät
    ausdrücklich, `presentationBackground` zu entfernen. Schwebende Buttons sollten `.buttonStyle(.glass)` bzw. `glassEffect`
    nutzen. Vorschlag: AGENT.md 4.1 auf „System-Glass (automatisch), Materialien nur in der Inhaltsebene“ ändern. Der 0.5-pt-Innenrand
-   entfällt auf Glass.
+   entfällt auf Glass. **Entschieden (Carlo, 24.10.): umgesetzt in AGENT.md 4.1.**
 2. **Spring-Werte uneinheitlich:** SPEZIFIKATION 3.2 `bounce: 0.12`, AGENT.md 4.3 `bounce: 0.1`. Vorschlag: eine Konstante
-   `Motion.sheet = .spring(duration: 0.35, bounce: 0.12)` und `Motion.micro = .snappy(duration: 0.25)`.
+   `Motion.sheet = .spring(duration: 0.35, bounce: 0.12)` und `Motion.micro = .snappy(duration: 0.25)`. **Entschieden (Carlo, 24.10.): stattdessen
+   `Motion.standard`/`micro`/`momentum` nach Apple-Werten, siehe AGENT.md 4.3.**
 3. **`matchedGeometryEffect` funktioniert nicht über die Sheet-Grenze** (Sheet und Haupt-View sind getrennte Präsentations-Hierarchien)
    **[Erfahrung]**. Das Morphing „Leg-Bar aus der Hero Card ins Guidance Banner oben“ (SPEZIFIKATION 3.2.1) geht so nicht direkt.
    Vorschlag in Abschnitt 6.
@@ -303,7 +304,7 @@ static func next(_ phase: Phase, _ event: Event) -> Phase?   // nil = ungültige
 ```
 
 **Übergänge und Animation:**
-- `Motion.sheet = .spring(duration: 0.35, bounce: 0.12)`, `Motion.micro = .snappy(duration: 0.25)`. Kein `.linear`, auch nicht in
+- Konstanten laut AGENT.md 4.3 (`Motion.standard`, `Motion.micro`, `Motion.momentum`). Kein `.linear`, auch nicht in
   Keyframes.
 - Reduce Motion: `@Environment(\.accessibilityReduceMotion)`; dann `.transition(.opacity)` statt `.move`/Morphing und Kamera ohne
   Fahrt setzen (AGENT.md 4.3.3).
