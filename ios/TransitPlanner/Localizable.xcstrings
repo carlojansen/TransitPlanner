@@ -1,0 +1,30 @@
+{
+  "sourceLanguage" : "de",
+  "strings" : {
+    "%lld Umstiege" : {
+      "localizations" : {
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : { "stringUnit" : { "state" : "translated", "value" : "%lld Umstieg" } },
+              "other" : { "stringUnit" : { "state" : "translated", "value" : "%lld Umstiege" } }
+            }
+          }
+        }
+      }
+    },
+    "In %lld Minuten losgehen" : {
+      "localizations" : {
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : { "stringUnit" : { "state" : "translated", "value" : "In %lld Minute losgehen" } },
+              "other" : { "stringUnit" : { "state" : "translated", "value" : "In %lld Minuten losgehen" } }
+            }
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

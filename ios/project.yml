@@ -56,6 +56,18 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/TransitPlanner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TransitPlanner
         BUNDLE_LOADER: $(TEST_HOST)
+  TransitPlannerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: TransitPlannerUITests
+    dependencies:
+      - target: TransitPlanner
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.carlojansen.transitplanner.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: TransitPlanner
 schemes:
   TransitPlanner:
     build:
@@ -65,6 +77,7 @@ schemes:
       targets:
         - package: TransitCore/TransitCoreTests
         - TransitPlannerTests
+        - TransitPlannerUITests
   # Release-Sperre: aktiviert den Test, der ohne zweiten SPKI-Pin fehlschlaegt (erwarteter Blocker).
   TransitPlanner-ReleaseGate:
     build:
