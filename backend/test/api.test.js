@@ -559,6 +559,69 @@ describe('Datenqualitaet (aus dem Live-Test)', () => {
 		const r = await request(app).post('/api/routes').set(auth).send({origin: {type: 'stop', id: 'de-DELFI_de:05111:18235'}, destination: {type: 'stop', id: 'de-DELFI_de:05315:11201'}}).expect(200);
 		expect(r.body.journeys[0].legs[0]).toMatchObject({departurePlatform: '1', platformChanged: false, line: {name: 'RB48', fahrtNr: '10123'}});
 	});
+
+	it('Fusswege mit Schritten (Ebenen, Treppe, Aufzug), ohne OSM-IDs und Schritt-Geometrie', async () => {
+		const w = {...walk(), steps: [
+			{relativeDirection: 'DEPART', distance: 40.4, fromLevel: 0, toLevel: 0, streetName: ' Breslauer Platz ', osmWay: 123, polyline: {points: 'abc', precision: 7, length: 2}, exit: '', stayOn: false, area: false},
+			{relativeDirection: 'STAIRS', distance: 12, fromLevel: 0, toLevel: 1, streetName: '', osmWay: 456},
+			{relativeDirection: 'ELEVATOR', distance: 0, fromLevel: 1, toLevel: -0.5, streetName: ''},
+			{relativeDirection: 'TELEPORT', distance: Number.NaN, fromLevel: 'x', streetName: null},
+			{relativeDirection: 'TELEPORT', distance: 5},
+			5, 'x', null,
+		]};
+		build({async plan() { return {itineraries: [itinerary({legs: [w, leg()]})]}; }});
+		const r = await request(app).post('/api/routes').set(auth).send({origin: {type: 'stop', id: 'de-DELFI_de:05111:18235'}, destination: {type: 'stop', id: 'de-DELFI_de:05315:11201'}}).expect(200);
+		expect(r.body.journeys[0].legs[0].steps).toEqual([
+			{direction: 'depart', distanceMeters: 40, fromLevel: 0, toLevel: 0, streetName: 'Breslauer Platz'},
+			{direction: 'stairs', distanceMeters: 12, fromLevel: 0, toLevel: 1, streetName: null},
+			{direction: 'elevator', distanceMeters: 0, fromLevel: 1, toLevel: -0.5, streetName: null},
+			{direction: 'unknown', distanceMeters: 5, fromLevel: null, toLevel: null, streetName: null},
+		]);
+		const {mapSteps} = await import('../src/lib/mapper.js');
+		expect(mapSteps(null)).toEqual([]);
+		expect(mapSteps({})).toEqual([]);
+		expect(mapSteps(Array.from({length: 100}, () => ({relativeDirection: 'CONTINUE', distance: 10, streetName: 'x'.repeat(500)})))).toHaveLength(60);
+		expect(mapSteps([{relativeDirection: 'CONTINUE', distance: 1, streetName: 'x'.repeat(500)}])[0].streetName).toHaveLength(120);
+		// Fusswege ohne Schritte liefern eine leere Liste
+		build();
+		const plain = await request(app).post('/api/routes').set(auth).send({origin: {type: 'stop', id: 'de-DELFI_de:05111:18235'}, destination: {type: 'stop', id: 'de-DELFI_de:05315:11201'}}).expect(200);
+		expect(plain.body.journeys[0].legs[0].steps).toEqual([]);
+	});
+
+	it('erkennt Schienenersatzverkehr an route_type 714 oder am Namen, nicht an normalen Bussen', async () => {
+		const {isReplacement} = await import('../src/lib/mapper.js');
+		expect(isReplacement({routeType: 714, displayName: 'Bus 3'})).toBe(true);
+		expect(isReplacement({displayName: 'SEV RE5'})).toBe(true);
+		expect(isReplacement({routeLongName: 'Ersatzverkehr Köln - Leverkusen'})).toBe(true);
+		expect(isReplacement({category: {name: 'Schienenersatzverkehr'}})).toBe(true);
+		expect(isReplacement({routeType: 3, displayName: 'Bus 132'})).toBe(false);
+		expect(isReplacement({displayName: 'SEVERIN 5'})).toBe(false);
+		expect(isReplacement({displayName: 'SEV1'})).toBe(true);
+		expect(isReplacement({routeShortName: 'Ersatzbus 12'})).toBe(true);
+		expect(isReplacement({displayName: 'RE 7 Ersatzzug'})).toBe(false);
+		expect(isReplacement({routeLongName: 'über Ersatzhaltestelle Markt'})).toBe(false);
+		const sev = leg({mode: 'BUS', displayName: 'SEV', extra: {routeType: 714, alerts: [{headerText: 'Bauarbeiten', descriptionText: 'Ersatzbusse ab Breslauer Platz', severityLevel: 'WARNING', cause: 'CONSTRUCTION', effect: 'DETOUR'}]}});
+		build({async plan() { return {itineraries: [itinerary({legs: [sev]})]}; }});
+		const r = await request(app).post('/api/routes').set(auth).send({origin: {type: 'stop', id: 'de-DELFI_de:05111:18235'}, destination: {type: 'stop', id: 'de-DELFI_de:05315:11201'}}).expect(200);
+		const l = r.body.journeys[0].legs[0];
+		expect(l).toMatchObject({mode: 'bus', replacement: true});
+		expect(l.remarks[0]).toMatchObject({summary: 'Bauarbeiten', cause: 'CONSTRUCTION', effect: 'DETOUR'});
+	});
+
+	it('Meldungen ohne oder mit ungueltigem cause/effect liefern null', async () => {
+		build({async plan() { return {itineraries: [itinerary({legs: [leg({extra: {alerts: [{headerText: 'x', cause: 'drop table', effect: 42}]}})]})]}; }});
+		const r = await request(app).post('/api/routes').set(auth).send({origin: {type: 'stop', id: 'de-DELFI_de:05111:18235'}, destination: {type: 'stop', id: 'de-DELFI_de:05315:11201'}}).expect(200);
+		expect(r.body.journeys[0].legs[0]).toMatchObject({replacement: false, remarks: [{code: null, cause: null, effect: null}]});
+	});
+
+	it('Refresh ohne Polylines laesst die Schritte weg (Polling bleibt klein)', async () => {
+		const w = {...walk(), steps: [{relativeDirection: 'DEPART', distance: 40, fromLevel: 0, toLevel: 0, streetName: 'A'}]};
+		build({async refreshItinerary(q) { return itinerary({id: q.itineraryId, legs: [w, leg()]}); }});
+		const r = await request(app).post('/api/refresh').set(auth).send({refreshToken: 'aXRpbi0x'}).expect(200);
+		expect(r.body.journey.legs[0].steps).toEqual([]);
+		const full = await request(app).post('/api/refresh').set(auth).send({refreshToken: 'aXRpbi0x', polylines: true}).expect(200);
+		expect(full.body.journey.legs[0].steps).toHaveLength(1);
+	});
 });
 
 describe('Fixture-Plausibilitaet', () => {

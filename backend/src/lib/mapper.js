@@ -89,16 +89,53 @@ export function mapMatch(m) {
 	};
 }
 
+const GTFS_ENUM = /^[A-Z_]{1,40}$/;
+const gtfsEnum = (v) => (typeof v === 'string' && GTFS_ENUM.test(v) ? v : null);
+
 function mapAlerts(alerts) {
 	if (!Array.isArray(alerts)) return [];
 	return alerts
 		.filter((a) => a && (a.headerText || a.descriptionText))
 		.map((a) => ({
 			type: a.severityLevel === 'SEVERE' || a.severityLevel === 'WARNING' ? 'warning' : 'hint',
-			code: a.code ?? a.effect ?? null,
+			code: (typeof a.code === 'string' ? a.code.slice(0, 64) : null) ?? gtfsEnum(a.effect),
 			summary: a.headerText || null,
 			text: a.descriptionText || a.headerText,
+			cause: gtfsEnum(a.cause),
+			effect: gtfsEnum(a.effect),
 		}));
+}
+
+// MOTIS-Richtung (HARD_LEFT) -> App-Richtung (hardLeft), siehe docs/API.md Step
+const DIRECTIONS = new Set(['DEPART', 'CONTINUE', 'LEFT', 'SLIGHTLY_LEFT', 'HARD_LEFT', 'RIGHT', 'SLIGHTLY_RIGHT', 'HARD_RIGHT',
+	'UTURN_LEFT', 'UTURN_RIGHT', 'CIRCLE_CLOCKWISE', 'CIRCLE_COUNTERCLOCKWISE', 'STAIRS', 'ELEVATOR']);
+const camel = (s) => s.toLowerCase().replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+const level = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+const MAX_STEPS = 60; // begrenzt die Antwortgroesse; laengere Wege sind fuer die Bahnhofsfuehrung irrelevant
+
+export function mapSteps(steps) {
+	if (!Array.isArray(steps)) return [];
+	return steps
+		.filter((s) => s && typeof s === 'object')
+		.map((s) => ({
+			direction: DIRECTIONS.has(s.relativeDirection) ? camel(s.relativeDirection) : 'unknown',
+			distanceMeters: typeof s.distance === 'number' && Number.isFinite(s.distance) ? Math.round(s.distance) : null,
+			fromLevel: level(s.fromLevel),
+			toLevel: level(s.toLevel),
+			streetName: typeof s.streetName === 'string' && s.streetName.trim() ? s.streetName.trim().slice(0, 120) : null,
+		}))
+		.filter((s) => s.direction !== 'unknown' || s.distanceMeters !== null)
+		.slice(0, MAX_STEPS);
+}
+
+// Schienenersatzverkehr: GTFS route_type 714 (Rail Replacement Bus) oder Kennzeichnung im Namen.
+// Nicht "Ersatzzug" (Schiene) und nicht "Ersatzhaltestelle".
+const REPLACEMENT_NAME = /\bSEV(?=\b|\d)|ersatzverkehr|\bersatzbus/i;
+export function isReplacement(leg) {
+	if (leg.routeType === 714) return true;
+	return [leg.displayName, leg.routeShortName, leg.routeLongName, leg.category?.name, leg.category?.shortName]
+		.some((s) => typeof s === 'string' && REPLACEMENT_NAME.test(s));
 }
 
 // Encoded Polyline (Praezision aus der Antwort) -> GeoJSON LineString [[lon, lat], ...]
@@ -162,6 +199,8 @@ export function mapLeg(leg, index, {withPolylines = true} = {}) {
 			distanceMeters: typeof leg.distance === 'number' ? Math.round(leg.distance) : null,
 			// Fussgaenger-Routing von MOTIS (OSM). Die App ersetzt die Dauer durch MKDirections x WalkingPaceFactor.
 			durationSource: 'motis-osm',
+			// Wegfuehrung braucht die App nur einmal; Refresh ohne Polylines (Polling) laesst sie weg.
+			steps: withPolylines ? mapSteps(leg.steps) : [],
 		};
 	}
 
@@ -186,6 +225,7 @@ export function mapLeg(leg, index, {withPolylines = true} = {}) {
 		arrivalPlatform: arrPlatform,
 		plannedArrivalPlatform: arrPlanned,
 		platformChanged: Boolean((depPlatform && depPlanned && depPlatform !== depPlanned) || (arrPlatform && arrPlanned && arrPlatform !== arrPlanned)),
+		replacement: isReplacement(leg),
 		loadFactor: null, // Transitous liefert keine Auslastung
 		stopovers: Array.isArray(leg.intermediateStops) ? leg.intermediateStops.map((p) => mapStopover(p, realtime)) : [],
 		remarks: mapAlerts([...(leg.alerts ?? []), ...(leg.from?.alerts ?? []), ...(leg.to?.alerts ?? [])]),

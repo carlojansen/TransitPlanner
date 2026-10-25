@@ -1,4 +1,4 @@
-# API-Vertrag Backend <-> App (v0.2, Meilenstein 1)
+# API-Vertrag Backend <-> App (v0.3: Fußweg-`steps`, `replacement`, `cause`/`effect`)
 
 Basis-URL: `https://<deine-domain>` (TLS 1.3, SPKI-gepinnt). Alle `/api/*`-Endpunkte verlangen
 `Authorization: Bearer <API_TOKEN>` (zusätzlich gelten die Tokens aus `API_TOKENS`, kommagetrennt, für Rotation) und antworten mit `Cache-Control: no-store`.
@@ -105,11 +105,18 @@ Gemeinsame Felder: `index`, `mode`, `origin`, `destination` (Place), `departure`
 Delay-Felder sind `null`, wenn keine Echtzeitdaten vorliegen (nicht `0`).
 
 Fußweg (`mode = "walk"`): `isTransfer` (`true` für jeden Fußweg zwischen zwei Fahrzeugen), `distanceMeters`,
-`durationSource: "motis-osm"` (Fußgänger-Routing auf OSM; die App ersetzt die Dauer durch `MKDirections` x `WalkingPaceFactor`).
+`durationSource: "motis-osm"` (Fußgänger-Routing auf OSM; die App ersetzt die Dauer durch `MKDirections` x `WalkingPaceFactor`),
+`steps [Step]` (Wegbeschreibung aus OSM, leer, wenn MOTIS keine liefert).
+
+Step: `{ "direction": "depart", "distanceMeters": 40, "fromLevel": 0, "toLevel": 1, "streetName": "Breslauer Platz" }`
+- `direction`: `depart` | `continue` | `left` | `slightlyLeft` | `hardLeft` | `right` | `slightlyRight` | `hardRight` | `uturnLeft` | `uturnRight` | `circleClockwise` | `circleCounterclockwise` | `stairs` | `elevator` | `unknown`.
+- `fromLevel`/`toLevel`: OSM-Ebene (Zahl, auch halbe Ebenen) oder `null`. Ein Wechsel heißt Treppe, Rampe oder Aufzug; damit baut die App Texte wie „1 Ebene hoch zu Gleis 7“. Die Qualität hängt vom Indoor-Mapping des Bahnhofs in OSM ab.
+- `streetName`: Name des Wegs aus OSM oder `null`. Keine OSM-IDs, keine Geometrie pro Schritt (die steht in `polyline` des Abschnitts). Höchstens 60 Schritte, `streetName` höchstens 120 Zeichen. Bei `/api/refresh` ohne `polylines` ist `steps` leer (Polling braucht keine Wegführung).
+- Unbekannte `direction`-, `cause`- und `effect`-Werte sind möglich; die App dekodiert tolerant (Fallback `unknown` bzw. `String?`).
 
 Fahrzeug: `line {name, productName, fahrtNr, operator, color, textColor}` (Farben als `#RRGGBB` oder `null`),
 `direction`, `tripId`, `departurePlatform`, `plannedDeparturePlatform`, `arrivalPlatform`, `plannedArrivalPlatform`,
-`platformChanged` (Bool, löst `.warning`-Haptik aus), `loadFactor` (derzeit immer `null`, Transitous liefert keine Auslastung),
+`platformChanged` (Bool, löst `.warning`-Haptik aus), `replacement` (Bool: Schienenersatzverkehr, erkannt an GTFS-`route_type` 714 oder „SEV“/„Ersatz“ im Linien- bzw. Produktnamen; `mode` bleibt dabei meist `bus`), `loadFactor` (derzeit immer `null`, Transitous liefert keine Auslastung),
 `stopovers [Stopover]`, `remarks [Remark]`.
 
 `polyline`: `{type:"LineString", coordinates:[[lon,lat],...]}` oder `null`.
@@ -126,8 +133,10 @@ Koordinaten-Endpunkte haben `id` und `name` = `null`; die App kennt den Namen lo
 ```
 
 ### Remark
-`{ "type": "hint" | "warning", "code": String?, "summary": String?, "text": String }`
-(`warning` bei Schweregrad WARNING/SEVERE der GTFS-RT-Meldung)
+`{ "type": "hint" | "warning", "code": String?, "summary": String?, "text": String, "cause": String?, "effect": String? }`
+(`warning` bei Schweregrad WARNING/SEVERE der GTFS-RT-Meldung). `cause`/`effect` sind die GTFS-RT-Werte unverändert
+(z. B. `CONSTRUCTION`, `STRIKE` bzw. `NO_SERVICE`, `REDUCED_SERVICE`, `SIGNIFICANT_DELAYS`, `DETOUR`, `STOP_MOVED`) oder `null`;
+die App unterscheidet damit Ausfall, Umleitung und verlegte Haltestelle.
 
 ## `POST /api/refresh`
 ```json
