@@ -7,6 +7,7 @@ Reaktiver Nahverkehrs- und Regio-Routenplaner: iOS-App (Swift 6 / SwiftUI) + Nod
 - `docs/AGENT.md` – Wie gebaut wird (Security nach OWASP MASVS-L2, Apple HIG, 7-Punkte-Checkliste).
 - `docs/API.md` – Vertrag zwischen Backend und App. Änderungen hier zuerst, dann Code.
 - `docs/STATUS.md` – Stand der Meilensteine und offene Entscheidungen.
+- `docs/DESIGN.md` – Freigegebenes Design aus Figma (Tokens, Schrift, Maße, Komponenten, Verhalten pro Screen).
 
 ## Agenten-Workflow
 Die Subagents in `.claude/agents/` haben feste Rollen:
