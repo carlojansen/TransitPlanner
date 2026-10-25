@@ -149,7 +149,7 @@ Vollständiges Audit des Backends durch `security-hig-reviewer`: kein Blocker im
 
 ## UI/UX
 Pausiert bis zum 25.10. Figma-Datei "TransitPlanner – Design-Plan" (am 24.10. über Chrome gelesen; die Figma-MCP-Schnittstelle ist durch das Starter-Limit blockiert, Lesen über den Browser funktioniert). Vorhanden: Übersicht mit Zustandsfluss, Farb-Tokens (hell/dunkel), Typografie, Screens Start, Suche, Routenauswahl (hell/dunkel), Navigation, Sperrbildschirm/Live Activity, Dynamic Island/Widgets, Statistik, erste Komponenten.
-- **Widerspruch:** Screen "2 Suche" zeigt Haltestellen und Adressen parallel mit Debounce 250 ms. Das verletzt die Pflichtschalter-Regel (Schalter "Adresse / Haltestelle", nie beide Quellen, Debounce mindestens 300 ms oder Return). Muss vor der Umsetzung angepasst werden.
+- **Behoben (25.10.):** Screen "2 Suche" hat jetzt den Pflichtschalter "Adresse / Haltestelle" unter der Suchleiste; die parallele Orte-Liste ist entfernt, Notizen auf Debounce mindestens 300 ms oder Return aktualisiert. Figma wird über die Plugin-API in der Chrome-Konsole bearbeitet (kein MCP-Limit).
 - **Fehlt noch:** Quellenangabe-Screen, Fehler- und Leerzustände (Rate-Limit-Banner, offline), Token-Eingabe.
 - **Vorbereitung:** Recherche für Meilenstein 3 in `docs/RESEARCH-M3.md`.
 - **Einstieg Meilenstein 3:** schmaler Testbildschirm (Token-Eingabe in die Keychain, Suche mit Pflichtschalter, Verbindungsliste, Quellenangabe), damit die App gegen den Server testbar wird; danach Design laut Figma.
