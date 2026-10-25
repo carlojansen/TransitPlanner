@@ -2,7 +2,7 @@
 
 | Meilenstein | Inhalt | Stand |
 |---|---|---|
-| 1 | Node.js-Backend (Express 5, MOTIS 2 / Transitous, /api/locations, /api/routes, /api/refresh) | fertig, auf dem Server live (24.10.), **von Carlo freigegeben (24.10.)**; Audit-Fixes committet (be2abc8), Deploy offen (SSH gesperrt, siehe "Backend-Audit") |
+| 1 | Node.js-Backend (Express 5, MOTIS 2 / Transitous, /api/locations, /api/routes, /api/refresh) | fertig, auf dem Server live (24.10.), **von Carlo freigegeben (24.10.)**; Audit-Fixes (be2abc8) deployt und geprüft (25.10.) |
 | 2 | Swift Core-Engine & SwiftData, Netzwerk-/Security-Layer (TLS 1.3, ephemeral, SPKI-Pinning) | umgesetzt (24.10.), Review-Befunde (NACHBESSERN) behoben, Tests grün, von Carlo freigegeben und committet (24.10.); Backup-Pin eingetragen, Release-Gate grün |
 | 3 | SwiftUI-Interface & Animationen, Navigations-State-Machine | offen |
 | 4 | Erinnerungen, WidgetKit, ActivityKit | offen |
@@ -110,7 +110,7 @@ Vollständiges Audit des Backends durch `security-hig-reviewer`: kein Blocker im
 - **Zugriffslog:** bei 404 `<unmatched>` statt Pfad (kein beliebiger Text im Log). Offen (niedrig): festen Routennamen statt Platzhalter loggen.
 - **systemd:** `MemoryMax=512M`, `TasksMax=64`, `DevicePolicy=closed`, `KeyringMode=private`, Node mit `--max-old-space-size=384`. `PrivateUsers=true` bewusst weggelassen (Lesbarkeit der `.env` ungeprüft, geringer Mehrwert).
 
-**Deploy offen:** SSH (Port 22) ist nur für Carlos IP freigegeben; seine öffentliche IP hat sich geändert. Carlo passt die Hetzner-Firewall-Regel an, danach: Code per rsync, `npm ci && npm test && npm prune --omit=dev`, Unit-Datei und Caddyfile kopieren, `caddy validate`, `systemctl daemon-reload`, Neustart Backend, Reload Caddy, Smoke-Test.
+**Deployt (25.10.):** healthz ok, `/api/*` ohne Token 401, keine `RateLimit-*`-Header, neue systemd-Grenzen aktiv.
 
 ## Offene Punkte / Risiken
 - **Tests:** `npm test` crashte mit Node 26 / Vitest 5 (rolldown) nach altem Install; nach `rm -rf node_modules && npm ci` laufen alle Tests grün (aktuell 79).
