@@ -24,8 +24,18 @@
 			</array>
 		</dict>
 	</array>
-	<!-- Required-Reason-APIs: derzeit keine (kein UserDefaults, keine Datei-Zeitstempel, kein Systemstart, kein Speicherplatz). -->
+	<!-- Required-Reason-APIs: UserDefaults nur fuer den gemerkten ersten Start (A1, Standort ja/nein), nur innerhalb der App.
+	     Keine Datei-Zeitstempel, kein Systemstart, kein Speicherplatz. -->
 	<key>NSPrivacyAccessedAPITypes</key>
-	<array/>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

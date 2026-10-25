@@ -13,23 +13,25 @@ vor DESIGN.md (Aussehen) vor Figma (Bild). Referenzgerät: iPhone 17, 402 x 874 
 | surface/card | #FFFFFF | #2C2C2E | Karten, Listen, ausgewähltes Segment |
 | label/primary | #000000 | #FFFFFF | = .primary |
 | label/secondary | #6C6C70 | #AEAEB2 | = .secondary |
-| label/onAccent | #FFFFFF | #FFFFFF | Text/Symbole auf farbigen Flächen |
+| label/onAccent | #FFFFFF | #000000 | Text/Symbole auf Modusfarben (Dunkel: schwarz, Kontrast) |
 | fill/tertiary | #E3E3E8 | #3A3A3C | Skelett, Chips aus |
 | separator | #C6C6C8 | #38383A | 0,5-pt-Rand an Karten ohne Glass |
-| accent/blue | #0062CC | #409CFF | Tint, Hauptknopf |
+| accent/blue | #0062CC | #409CFF | Tint, Hauptknopf; HC: #004A9B / #8AC3FF |
 | accent/blueTint | #E0EDFF | #14304F | Info-Banner |
-| status/ok | #248A3D | #30D158 | pünktlich, Puffer ok |
+| status/ok | #1F7A35 | #30D158 | pünktlich, Puffer ok; HC: #175A27 / #40D565 |
 | status/okTint | #E1F4E5 | #16301D | |
-| status/warn | #B25000 | #FFB340 | Verspätung, Gleiswechsel, knapper Puffer |
+| status/warn | #A34A00 | #FFB340 | Verspätung, Gleiswechsel, knapper Puffer; HC: #7F3A00 / #FFB340 |
 | status/warnTint | #FFEBD6 | #3D2A12 | Karten-Hinweis Warnung |
-| status/alert | #D70015 | #FF6961 | Ausfall, Meldung, Puffer reicht nicht |
+| status/alert | #D70015 | #FF6961 | Ausfall, Meldung, Puffer reicht nicht; HC: #A20010 / #FFA29D |
 | status/alertTint | #FFEBEB | #401212 | Karten-Hinweis Kritisch |
-| mode/tram | #D70015 | #FF6961 | |
-| mode/sbahn | #248A3D | #30D158 | |
-| mode/ubahn | #0040DD | #409CFF | |
-| mode/bus | #8944AB | #DA8FFF | Bus und Ersatzverkehr (SEV) |
-| mode/regio | #B25000 | #FFB340 | RE/RB |
-| mode/walk | #6C6C70 | #AEAEB2 | Fußweg (gepunktet) |
+| mode/tram | #B20011 | #FF645B | HC: #91000E / #FF8F89 |
+| mode/sbahn | #1A642C | #27AE48 | HC: #155024 / #2DC953 |
+| mode/ubahn | #0042E5 | #3B9AFF | HC: #0035B9 / #6BB3FF |
+| mode/bus | #793C98 | #CE6CFF | Bus und Ersatzverkehr (SEV); HC: #613079 / #DB91FF |
+| mode/regio | #8F4000 | #DA8300 | RE/RB; HC: #733300 / #FB9700 |
+| mode/walk | #57575A | #97979C | Fußweg (gepunktet); HC: #454548 / #AFAFB2 |
+
+Linien-Badges (Text label/onAccent auf Modusfarbe) erreichen mindestens 7:1, bei Hohem Kontrast (HC, Hell / Dunkel) mindestens 9:1; Hinweisfarben auf ihrer Tint-Fläche und status/ok auf surface/card mindestens 4,5:1, bei HC mindestens 7:1. Geprüft durch `ColorContrastTests` aus den Asset-Werten.
 
 Farbe ist nie die einzige Information: Linienname, Symbol oder Text immer dazu.
 
@@ -60,7 +62,7 @@ Zeiten, Minuten, Meter: immer `.monospacedDigit()` und `.contentTransition(.nume
 
 | Komponente | Aufbau | Maße |
 |---|---|---|
-| Hauptknopf | `.buttonStyle(.glassProminent)`, Titel `.headline` | 50 pt hoch, volle Breite, Zustände Aktiv / Deaktiviert (`.disabled`) |
+| Hauptknopf | in Karten und Inhalt `.buttonStyle(.borderedProminent)` mit Kapsel; `.glassProminent` nur schwebend über der Karte (AGENT 4.1.1: kein Glass im Inhalt), Titel `.headline` | 50 pt hoch, volle Breite, Zustände Aktiv / Deaktiviert (`.disabled`) |
 | Karten-Button | Glass-Knopf mit SF Symbol, Stapel oben rechts in `GlassEffectContainer`: Standort, Statistik, Erinnerungen | 44 x 44, Abstand 8 |
 | Listenzeile | Symbol in Modusfarbe, Titel `.body`, Untertitel `.footnote` `.secondary`, Zusatz rechts `.footnote` | 60 pt hoch, Innenabstand 12/16, Abstand 12 |
 | Einstellungszeile | Titel `.body`, Wert `.secondary`, optional Chevron | 44 pt hoch (11/16) |
@@ -115,7 +117,7 @@ Zeiten, Minuten, Meter: immer `.monospacedDigit()` und `.contentTransition(.nume
 - Standardmodus beim ersten Öffnen ist "Adresse" (nichts geht an das eigene Backend); die letzte Wahl merkt sich `@SceneStorage`.
 - MKLocalSearch (nicht der Completer) mit Region aus dem GPS-Fix und `regionPriority = .required`; `textContentType(.fullStreetAddress)` nur in diesem Modus.
 - Ohne GPS-Fix oder Berechtigung: Inline-Banner "Adresssuche braucht deinen Standort" mit "Einstellungen" und "Haltestelle suchen". Kein automatischer Moduswechsel.
-- Erst der Moduswechsel durch den Nutzer schickt denselben Text an die andere Quelle.
+- Beim Wechsel auf "Haltestelle" wird das Suchfeld geleert; ein Adresstext geht nie an das Backend.
 - Tipp auf einen Ort: Ziel gesetzt, Sheet auf fraction(0.5), Routensuche startet (3a).
 
 **2c Von/Nach und Zeit**

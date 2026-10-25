@@ -87,8 +87,8 @@ import Testing
         #expect(j.legs[3].replacement == true)
         // Fehlendes `replacement` = false
         #expect(r.journeys[1].legs[1].replacement == false)
-        // Kaputte Schrittliste = leer, Verbindung bleibt
-        #expect(r.journeys[1].legs[0].steps.isEmpty)
+        // Kaputte Elemente fallen einzeln weg, lesbare bleiben, die Verbindung bleibt
+        #expect(r.journeys[1].legs[0].steps.map(\.direction) == [.right])
 
         let remarks = try #require(j.legs[1].remarks)
         #expect(remarks[0].cause == "CONSTRUCTION" && remarks[0].effect == "DETOUR" && remarks[0].code == "DETOUR")

@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 import TransitCore
 
@@ -14,23 +15,56 @@ protocol RoutePlanning: Sendable {
 extension SearchService: StopSearching {}
 extension HybridRouteCalculator: RoutePlanning {}
 
+/// Ergebnis des ersten Starts (A1). nil = noch nicht durchlaufen. Sagt nur "schon gefragt",
+/// ob der Standort erlaubt ist, kommt immer aus iOS (`LocationAuthorization`).
+enum OnboardingChoice: String, Sendable {
+    case withLocation, withoutLocation
+}
+
+/// Echter Berechtigungsstatus aus iOS.
+enum LocationAuthorization: Sendable, Hashable {
+    case notDetermined, allowed, denied
+}
+
 /// Alles, was `AppFlow` von aussen braucht. Produktiv nur gepinnte Dienste; Fakes nur in Debug-Builds.
 struct AppDependencies: Sendable {
     var search: any StopSearching
     var planner: any RoutePlanning
     var secrets: any SecretStore
+    /// Nur CoreLocation (VPN-sicher). Der Fix bleibt im Speicher, nie auf der Platte.
+    var location: any LocationProviding
+    /// Aktueller iOS-Status (CLLocationManager.authorizationStatus); bei scenePhase .active neu gelesen.
+    var authorization: @MainActor @Sendable () -> LocationAuthorization
+    /// Gemerkter Einstieg (UserDefaults, Required-Reason CA92.1 in PrivacyInfo).
+    var loadOnboarding: @Sendable () -> OnboardingChoice?
+    var saveOnboarding: @Sendable (OnboardingChoice) -> Void
     /// Sperre nach Retry-After (429/502/503/504), aus `TransitAPIClient.blocked`.
     var blockedUntil: @Sendable () async -> Date?
     var now: @Sendable () -> Date = { Date() }
     /// Entprellung der Suche (API.md: mindestens 300 ms).
     var debounce: Duration = .milliseconds(300)
+    /// Ab hier zeigt 3a "Warte auf Verbindung" (waitsForConnectivity kann bis 45 s dauern).
+    var waitingHint: Duration = .seconds(3)
+
+    static let onboardingKey = "onboarding"
 
     static func live() -> AppDependencies {
         let api = TransitAPIClient()
+        let location = CoreLocationService()
         return AppDependencies(
-            search: SearchService(location: CoreLocationService(), api: api),
+            search: SearchService(location: location, api: api),
             planner: HybridRouteCalculator(api: api),
             secrets: KeychainSecretStore(),
+            location: location,
+            authorization: {
+                switch CLLocationManager().authorizationStatus {
+                case .notDetermined: .notDetermined
+                case .authorizedWhenInUse, .authorizedAlways: .allowed
+                default: .denied
+                }
+            },
+            loadOnboarding: { UserDefaults.standard.string(forKey: onboardingKey).flatMap(OnboardingChoice.init(rawValue:)) },
+            saveOnboarding: { UserDefaults.standard.set($0.rawValue, forKey: onboardingKey) },
             blockedUntil: { await api.blocked?.until }
         )
     }
@@ -49,16 +83,56 @@ import Synchronization
 
 extension AppDependencies {
     static func fakes(search: FakeStopSearch = FakeStopSearch(), planner: FakeRoutePlanner = FakeRoutePlanner(),
-                      secrets: InMemorySecretStore = InMemorySecretStore(), blockedUntil: Date? = nil,
-                      debounce: Duration = .milliseconds(300)) -> AppDependencies {
-        AppDependencies(search: search, planner: planner, secrets: secrets,
-                        blockedUntil: { blockedUntil }, debounce: debounce)
+                      secrets: InMemorySecretStore = InMemorySecretStore(),
+                      location: FakeLocation = FakeLocation(),
+                      onboarding: OnboardingChoice? = nil,
+                      blockedUntil: Date? = nil,
+                      debounce: Duration = .milliseconds(300),
+                      waitingHint: Duration = .seconds(3)) -> AppDependencies {
+        let stored = Mutex(onboarding)
+        return AppDependencies(search: search, planner: planner, secrets: secrets, location: location,
+                               authorization: { location.status },
+                               loadOnboarding: { stored.withLock { $0 } },
+                               saveOnboarding: { value in stored.withLock { $0 = value } },
+                               blockedUntil: { blockedUntil }, debounce: debounce, waitingHint: waitingHint)
     }
 }
 
-/// Fake-Suche ohne Netz und ohne Standort. Protokolliert Aufrufe fuer Tests.
+/// Fester Standort in Duesseldorf, ohne CoreLocation. Die erste Abfrage "erlaubt" (wie der System-Dialog).
+final class FakeLocation: LocationProviding {
+    let failure: TransitError?
+    private let state: Mutex<LocationAuthorization>
+
+    init(failure: TransitError? = nil, status: LocationAuthorization = .allowed) {
+        self.failure = failure
+        state = Mutex(status)
+    }
+
+    static let fix = LocationFix(coordinate: GeoCoordinate(latitude: 51.2201, longitude: 6.7905),
+                                 horizontalAccuracy: 8, timestamp: Date())
+
+    var status: LocationAuthorization { state.withLock { $0 } }
+    func set(_ status: LocationAuthorization) { state.withLock { $0 = status } }
+
+    func currentFix() async throws(TransitError) -> LocationFix {
+        if let failure {
+            if failure == .locationDenied { state.withLock { $0 = .denied } }
+            throw failure
+        }
+        state.withLock { if $0 == .notDetermined { $0 = .allowed } }
+        guard status == .allowed else { throw .locationDenied }
+        return Self.fix
+    }
+}
+
+/// Fake-Suche ohne Netz und ohne Standort. Protokolliert Text und Modus fuer Tests.
 final class FakeStopSearch: StopSearching {
-    let calls = Mutex<[String]>([])
+    struct Call: Sendable, Hashable {
+        let text: String
+        let scope: SearchScope
+    }
+
+    let calls = Mutex<[Call]>([])
     let failure: TransitError?
     let delay: Duration
 
@@ -67,10 +141,11 @@ final class FakeStopSearch: StopSearching {
         self.delay = delay
     }
 
-    var recorded: [String] { calls.withLock { $0 } }
+    var recorded: [Call] { calls.withLock { $0 } }
+    var recordedTexts: [String] { recorded.map(\.text) }
 
     func search(_ text: String, scope: SearchScope) async throws(TransitError) -> SearchResults {
-        calls.withLock { $0.append(text) }
+        calls.withLock { $0.append(Call(text: text, scope: scope)) }
         if delay > .zero {
             do { try await Task.sleep(for: delay) } catch { throw .cancelled }
         }
@@ -90,18 +165,29 @@ final class FakeStopSearch: StopSearching {
 
 /// Fake-Planung: Skelett aus eingebettetem JSON, kalibriert ueber den echten Rechner mit Fake-Gehzeiten.
 final class FakeRoutePlanner: RoutePlanning {
-    let calls = Mutex(0)
-    let failure: TransitError?
+    /// Was ans Backend ginge (Zero-Knowledge-Pruefung in Tests).
+    let requests = Mutex<[RoutesRequest]>([])
+    let failure: Mutex<TransitError?>
+    let delay: Duration
 
-    init(failure: TransitError? = nil) { self.failure = failure }
+    init(failure: TransitError? = nil, delay: Duration = .zero) {
+        self.failure = Mutex(failure)
+        self.delay = delay
+    }
 
-    var callCount: Int { calls.withLock { $0 } }
+    var callCount: Int { requests.withLock { $0.count } }
+    var recordedRequests: [RoutesRequest] { requests.withLock { $0 } }
+    func setFailure(_ error: TransitError?) { failure.withLock { $0 = error } }
 
     func plan(_ trip: some TripRequest, pace: WalkingPaceFactor) -> AsyncThrowingStream<HybridRouteCalculator.Stage, any Error> {
-        calls.withLock { $0 += 1 }
-        let failure = self.failure
+        requests.withLock { $0.append(trip.routesRequest()) }
+        let failure = self.failure.withLock { $0 }
+        let delay = self.delay
         return AsyncThrowingStream { continuation in
             let task = Task {
+                if delay > .zero {
+                    do { try await Task.sleep(for: delay) } catch { continuation.finish(throwing: TransitError.cancelled); return }
+                }
                 if let failure { continuation.finish(throwing: failure); return }
                 guard let response = FakeData.routes else { continuation.finish(throwing: TransitError.decodingFailed); return }
                 continuation.yield(.skeleton(response))
@@ -182,6 +268,28 @@ enum FakeData {
        {"index":4,"mode":"walk","origin":{"kind":"stop","id":"de-DELFI_de:05315:11201","name":"Köln Hbf","latitude":50.943,"longitude":6.9589},
         "destination":{"kind":"coordinate","latitude":50.9413,"longitude":6.9583},
         "departure":"2026-10-24T06:38:00Z","arrival":"2026-10-24T06:42:00Z","durationSeconds":240,"realtime":false,"cancelled":false,
+        "isTransfer":false,"distanceMeters":200,"durationSource":"motis-osm"}],
+      "remarks":[]},
+     {"refreshToken":"ZmFrZTI=","departure":"2026-10-24T06:10:00Z","arrival":"2026-10-24T06:58:00Z",
+      "durationSeconds":2880,"transfers":0,"modes":["regional"],"cancelled":false,"realtime":true,"hasPolylines":false,
+      "legs":[
+       {"index":0,"mode":"walk","origin":{"kind":"coordinate","latitude":51.2201,"longitude":6.7905},
+        "destination":{"kind":"stop","id":"a","name":"Düsseldorf Hbf","latitude":51.21996,"longitude":6.79432},
+        "departure":"2026-10-24T06:10:00Z","arrival":"2026-10-24T06:15:00Z","durationSeconds":300,"realtime":false,"cancelled":false,
+        "isTransfer":false,"distanceMeters":280,"durationSource":"motis-osm"},
+       {"index":1,"mode":"regional","origin":{"kind":"stop","id":"a","name":"Düsseldorf Hbf","latitude":51.21996,"longitude":6.79432},
+        "destination":{"kind":"stop","id":"de-DELFI_de:05315:11201","name":"Köln Hbf","latitude":50.943,"longitude":6.9589},
+        "departure":"2026-10-24T06:20:00Z","plannedDeparture":"2026-10-24T06:20:00Z","departureDelaySeconds":0,
+        "arrival":"2026-10-24T06:54:00Z","durationSeconds":2040,"realtime":true,"cancelled":false,
+        "line":{"name":"RE 1","productName":"RE"},"direction":"Aachen Hbf","departurePlatform":"9","plannedDeparturePlatform":"9",
+        "platformChanged":false,"replacement":false,
+        "stopovers":[{"stop":{"kind":"stop","id":"x1","name":"Düsseldorf-Benrath","latitude":51.163,"longitude":6.873},
+                      "arrival":"2026-10-24T06:30:00Z","departure":"2026-10-24T06:31:00Z","cancelled":false},
+                     {"stop":{"kind":"stop","id":"x2","name":"Leverkusen Mitte","latitude":51.031,"longitude":6.988},
+                      "arrival":"2026-10-24T06:42:00Z","departure":"2026-10-24T06:43:00Z","cancelled":false}]},
+       {"index":2,"mode":"walk","origin":{"kind":"stop","id":"de-DELFI_de:05315:11201","name":"Köln Hbf","latitude":50.943,"longitude":6.9589},
+        "destination":{"kind":"coordinate","latitude":50.9413,"longitude":6.9583},
+        "departure":"2026-10-24T06:54:00Z","arrival":"2026-10-24T06:58:00Z","durationSeconds":240,"realtime":false,"cancelled":false,
         "isTransfer":false,"distanceMeters":200,"durationSource":"motis-osm"}],
       "remarks":[]}],
      "earlierRef":null,"laterRef":"later","walkOnly":false,"removedLongDistance":1,

@@ -103,7 +103,7 @@
           "departure": "2026-10-24T06:10:00Z", "plannedDeparture": "2026-10-24T06:10:00Z", "departureDelaySeconds": null,
           "arrival": "2026-10-24T06:15:00Z", "plannedArrival": "2026-10-24T06:15:00Z", "arrivalDelaySeconds": null,
           "durationSeconds": 300, "realtime": false, "cancelled": false, "polyline": null,
-          "isTransfer": false, "distanceMeters": 280, "durationSource": "motis-osm", "steps": ["kaputt", 5]
+          "isTransfer": false, "distanceMeters": 280, "durationSource": "motis-osm", "steps": ["kaputt", { "direction": "right", "distanceMeters": 9 }, 5]
         },
         {
           "index": 1, "mode": "hyperloop",

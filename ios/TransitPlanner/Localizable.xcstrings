@@ -1,29 +1,295 @@
 {
   "sourceLanguage" : "de",
   "strings" : {
-    "%lld Umstiege" : {
+    "%@" : {
+
+    },
+    "%@ m" : {
+
+    },
+    "%@ Min." : {
+
+    },
+    "%@ Minuten später" : {
+
+    },
+    "%@ Umstiege" : {
+
+    },
+    "%@ Zwischenhalte" : {
+
+    },
+    "%lld Minuten Fußweg" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "variations" : {
             "plural" : {
-              "one" : { "stringUnit" : { "state" : "translated", "value" : "%lld Umstieg" } },
-              "other" : { "stringUnit" : { "state" : "translated", "value" : "%lld Umstiege" } }
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Minute Fußweg"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Minuten Fußweg"
+                }
+              }
             }
           }
         }
       }
     },
-    "In %lld Minuten losgehen" : {
+    "%lld Minuten später" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "variations" : {
             "plural" : {
-              "one" : { "stringUnit" : { "state" : "translated", "value" : "In %lld Minute losgehen" } },
-              "other" : { "stringUnit" : { "state" : "translated", "value" : "In %lld Minuten losgehen" } }
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Minute später"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Minuten später"
+                }
+              }
             }
           }
         }
       }
+    },
+    "%lld Minuten verspätet" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Minute verspätet"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Minuten verspätet"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld Umstiege" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Umstieg"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Umstiege"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld Zwischenhalte" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Zwischenhalt"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Zwischenhalte"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "© OpenStreetMap-Mitwirkende, verfügbar unter der Open Database License (ODbL)." : {
+
+    },
+    "+%@ Min." : {
+
+    },
+    "± %@ m" : {
+
+    },
+    "10:00 – 10:45 · 45 Min." : {
+
+    },
+    "Abfahrt" : {
+
+    },
+    "Adresse" : {
+
+    },
+    "Angabe des Fahrplan-Servers" : {
+
+    },
+    "Ankunft" : {
+
+    },
+    "BESTE VERBINDUNG" : {
+
+    },
+    "ca." : {
+
+    },
+    "Der Schlüssel liegt nur auf diesem iPhone im Schlüsselbund (ohne iCloud) und wird nicht wieder angezeigt." : {
+
+    },
+    "Die App fragt Fahrpläne über deinen eigenen Server ab. Der Schlüssel zeigt dem Server, dass die Anfrage von dir kommt." : {
+
+    },
+    "Die Wegführung kommt in einer späteren Etappe." : {
+
+    },
+    "Ersatzverkehr" : {
+
+    },
+    "Etwa %lld Minuten Fußweg" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Etwa %lld Minute Fußweg"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Etwa %lld Minuten Fußweg"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Fahrplandaten" : {
+
+    },
+    "Fällt aus" : {
+
+    },
+    "Fußweg" : {
+
+    },
+    "Fußwege" : {
+
+    },
+    "Gehzeiten berechnet Apple Karten auf dem Gerät. Die Karte stammt von Apple." : {
+
+    },
+    "Gleis %@" : {
+
+    },
+    "Haltestelle" : {
+
+    },
+    "In %lld Minuten losgehen" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "In %lld Minute losgehen"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "In %lld Minuten losgehen"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Jetzt los" : {
+
+    },
+    "Karten- und Wegdaten" : {
+
+    },
+    "Los in %@ Min." : {
+
+    },
+    "Los in 10 Min." : {
+
+    },
+    "Mit einer Haltestelle als Start erfährt der Server nicht, wo du gerade bist." : {
+
+    },
+    "Nach dem Einfügen den Schlüssel aus der Zwischenablage des anderen Geräts entfernen." : {
+
+    },
+    "Nahverkehr" : {
+
+    },
+    "Offene Fahrplan- und Echtzeitdaten über Transitous (MOTIS 2), u. a. DELFI." : {
+
+    },
+    "Ohne Schlüssel kann die App keine Haltestellen und Verbindungen abrufen." : {
+
+    },
+    "Platzhalter für die Leg-Bar" : {
+
+    },
+    "Pünktlich" : {
+
+    },
+    "Richtung %@" : {
+
+    },
+    "statt %@" : {
+
+    },
+    "Wählen" : {
+
+    },
+    "Wieder möglich in" : {
+
+    },
+    "Willkommen bei TransitPlanner" : {
+
     }
   },
   "version" : "1.0"

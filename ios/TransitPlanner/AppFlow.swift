@@ -1,4 +1,5 @@
 import Foundation
+import MapKit
 import Observation
 import TransitCore
 
@@ -7,26 +8,42 @@ enum EndpointSlot: Sendable, Hashable {
     case origin, destination
 }
 
-/// Phasen der Oberflaeche (RESEARCH-M3 Abschnitt 6). Fahrtdetails sind ein Zustand im Sheet, kein Push.
+/// Von wo die Suche geoeffnet wurde: aus 1 Start (Treffer = Ziel, sofort planen) oder aus 2c (zurueck zu den Optionen).
+enum SearchReturn: Sendable, Hashable {
+    case start, options
+}
+
+/// Phasen im persistenten Sheet (DESIGN.md B). Fahrtdetails sind ein Zustand im Sheet, kein Push.
 enum Phase: Sendable, Hashable {
     case start
-    case search(EndpointSlot)
+    case search(EndpointSlot, SearchReturn)
+    /// 2c Von/Nach und Zeit
+    case options
     case routeSelection
     /// Index der Verbindung in der aktuellen Antwort.
     case tripDetails(Int)
-    /// Platzhalter; Unterzustaende (SPEZIFIKATION 4.2) folgen in einer spaeteren Etappe.
+    /// Platzhalter; Unterzustaende (DESIGN.md C) folgen in einer spaeteren Etappe.
     case navigation(Int)
     case arrival
 
     /// Laufende Arbeit gehoert zu einem Kontext. Verlaesst die Phase ihn, wird die Arbeit abgebrochen.
-    /// Routenauswahl und Fahrtdetails teilen sich die Planung (Kalibrierung laeuft weiter, wenn man eine Fahrt oeffnet).
+    /// Optionen, Routenauswahl und Fahrtdetails teilen sich die Planung (Kalibrierung laeuft weiter).
     enum WorkContext: Hashable { case none, search, route }
 
     var workContext: WorkContext {
         switch self {
         case .search: .search
-        case .routeSelection, .tripDetails: .route
+        case .options, .routeSelection, .tripDetails: .route
         case .start, .navigation, .arrival: .none
+        }
+    }
+
+    /// Verbindung, die die Karte zeigt.
+    var journeyIndex: Int? {
+        switch self {
+        case .routeSelection, .options: 0
+        case .tripDetails(let i), .navigation(let i): i
+        case .start, .search, .arrival: nil
         }
     }
 }
@@ -34,18 +51,28 @@ enum Phase: Sendable, Hashable {
 enum FlowEvent: Sendable, Hashable {
     case editEndpoint(EndpointSlot)
     case endpointChosen
-    /// "Verbindungen suchen" (2c: neu gesucht wird nur auf Knopfdruck), auch als Erneut-Versuch in der Routenauswahl.
+    /// "Jetzt" im Kopf der Routenauswahl oder Tipp auf Von/Nach (2c).
+    case editOptions
+    /// "Verbindungen suchen" (2c: neu gesucht wird nur auf Knopfdruck), auch als Erneut-Versuch.
     case planTapped
     case journeySelected(Int)
-    case startNavigation
+    case startNavigation(Int)
     case arrived
     case back
     case reset
+
+    /// Rueckwaerts-Ereignisse; die View laesst den Inhalt dann von links einblenden.
+    var isBackward: Bool { self == .back || self == .reset }
 }
 
-/// Aktionen, die ein Inline-Banner anbietet (RESEARCH-M3 Abschnitt 7). Keine Alerts.
+/// Schritte des ersten Starts (DESIGN.md A1, A2).
+enum OnboardingStep: Sendable, Hashable {
+    case welcome, serverKey
+}
+
+/// Aktionen, die ein Inline-Banner anbietet (DESIGN.md H1). Keine Alerts.
 enum BannerAction: Sendable, Hashable {
-    case retry, enterKey, openSettings, switchToStops, newSearch
+    case retry, enterKey, openSettings, allowLocation, switchToStops, newSearch
 }
 
 extension TransitError {
@@ -66,9 +93,76 @@ extension TransitError {
     }
 }
 
+/// Ergebnis von "Verbindung prüfen" (A2).
+enum ConnectionCheck: Sendable, Hashable {
+    case checking, connected, failed(TransitError)
+}
+
+/// Polylines einer Verbindung, einmal pro Antwort umgerechnet (nicht in `body`).
+struct RouteOverlay: Sendable {
+    struct Segment: Sendable, Identifiable {
+        let id: Int
+        let mode: TransitMode
+        let isWalk: Bool
+        let coordinates: [CLLocationCoordinate2D]
+    }
+
+    /// Wechselt mit Antwort und gezeigter Verbindung (Ausloeser fuer die Kamerafahrt).
+    let id: String
+    let segments: [Segment]
+    let rect: MKMapRect
+
+    /// Ohne Polyline (z. B. Refresh ohne Geometrie) gerade Linie von Halt zu Halt.
+    /// `nonisolated async`: laeuft abseits des MainActors (AGENT.md Checkliste 2).
+    nonisolated static func make(_ journey: Journey, id: String) async -> RouteOverlay? {
+        let segments = journey.legs.compactMap { leg -> Segment? in
+            let points = leg.polyline?.points ?? [leg.origin.coordinate, leg.destination.coordinate].compactMap { $0 }
+            guard points.count >= 2 else { return nil }
+            return Segment(id: leg.index, mode: leg.mode, isWalk: leg.isWalk,
+                           coordinates: points.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) })
+        }
+        let mapPoints = segments.flatMap(\.coordinates).map(MKMapPoint.init)
+        guard let first = mapPoints.first else { return nil }
+        let rect = mapPoints.dropFirst().reduce(MKMapRect(origin: first, size: MKMapSize(width: 0, height: 0))) {
+            $0.union(MKMapRect(origin: $1, size: MKMapSize(width: 0, height: 0)))
+        }
+        return RouteOverlay(id: id, segments: segments, rect: rect)
+    }
+}
+
+/// Start oder Ziel im Zustand. "Mein Standort" ist ein Platzhalter, der erst beim Planen zu einer Koordinate wird;
+/// GPS-Koordinaten stehen nie im Zustand oder im Verlauf (AGENT.md 3.1.2).
+enum PlanEndpoint: Sendable, Hashable {
+    case currentLocation
+    case place(TripEndpoint)
+
+    var label: String {
+        switch self {
+        case .currentLocation: String(localized: "Mein Standort")
+        case .place(let p): p.label
+        }
+    }
+
+    var place: TripEndpoint? {
+        if case .place(let p) = self { return p }
+        return nil
+    }
+}
+
+/// Was eine Planung ausmacht; nur bei gleicher Anfrage darf die alte Antwort als Offline-Stand stehen bleiben.
+private struct PlanKey: Hashable {
+    let origin: PlanEndpoint
+    let destination: PlanEndpoint
+    let time: Date?
+    let isArrivalTime: Bool
+}
+
 @Observable @MainActor
 final class AppFlow {
     private(set) var phase: Phase = .start
+    /// Richtung des letzten Wechsels (zurueck = Inhalt kommt von links).
+    private(set) var movedBackward = false
+    private(set) var onboarding: OnboardingStep?
 
     // Suche
     /// Pflichtschalter, Standard "Adresse" (nichts geht an das eigene Backend). Aendern nur ueber `setScope`.
@@ -78,8 +172,9 @@ final class AppFlow {
     private(set) var isSearching = false
 
     // Fahrt
-    private(set) var origin: TripEndpoint?
-    private(set) var destination: TripEndpoint?
+    /// Standard "Mein Standort" (aufgeloest erst beim Planen; ohne Erlaubnis muss ein Start gewaehlt werden).
+    private(set) var origin: PlanEndpoint = .currentLocation
+    private(set) var destination: PlanEndpoint?
     /// nil = jetzt (beim Tippen auf "Verbindungen suchen" bestimmt).
     var customTime: Date?
     var isArrivalTime = false
@@ -87,36 +182,118 @@ final class AppFlow {
     /// nil, solange nur das Skelett vorliegt.
     private(set) var calibrated: [CalibratedJourney]?
     private(set) var isPlanning = false
+    /// 3a: nach `waitingHint` ohne Antwort.
+    private(set) var isWaitingForNetwork = false
+    /// H3: letzte Antwort bleibt nach Offline-Fehler sichtbar (abgeblendet).
+    private(set) var isStale = false
+    private(set) var overlay: RouteOverlay?
 
     // Status
     private(set) var banner: TransitError?
     private(set) var blockedUntil: Date?
     private(set) var attribution: Attribution?
     private(set) var hasServerKey: Bool
+    /// Echter iOS-Status; bei jeder Rueckkehr in die App neu gelesen.
+    private(set) var locationAuthorization: LocationAuthorization
+    /// Nur die Genauigkeit des letzten Fixes fuer den Status; die Koordinate wird nie gehalten (AGENT.md 3.1.2).
+    private(set) var lastAccuracy: Double?
+    private(set) var connectionCheck: ConnectionCheck?
     var showsSettings = false
+    /// Einstellungen direkt auf "Dein Server" oeffnen (Banner-Aktion).
+    var settingsOpensServer = false
 
     nonisolated static let maxQueryLength = 80
 
     @ObservationIgnored private let deps: AppDependencies
     @ObservationIgnored private var work: Task<Void, Never>?
+    @ObservationIgnored private var waitingTask: Task<Void, Never>?
     @ObservationIgnored private var unblock: Task<Void, Never>?
+    @ObservationIgnored private var fixTask: Task<Void, Never>?
+    @ObservationIgnored private var overlayTask: Task<Void, Never>?
+    @ObservationIgnored private var lastPlanKey: PlanKey?
     // ponytail: fester Standardwert; SwiftData-PaceProfile anbinden, sobald die Gehzeit-Messung (Navigation) existiert.
-    @ObservationIgnored private let pace = WalkingPaceFactor()
+    @ObservationIgnored let pace = WalkingPaceFactor()
 
     init(_ deps: AppDependencies) {
         self.deps = deps
+        let choice = deps.loadOnboarding()
+        locationAuthorization = deps.authorization()
         do {
             hasServerKey = try deps.secrets.read(.apiToken) != nil
         } catch {
             hasServerKey = false
             banner = error
         }
+        onboarding = choice == nil ? .welcome : nil
     }
 
-    var canPlan: Bool { origin != nil && destination != nil && blockedUntil == nil }
+    var locationAllowed: Bool { locationAuthorization == .allowed }
 
-    func endpoint(_ slot: EndpointSlot) -> TripEndpoint? {
+    /// "Mein Standort" ist nur nutzbar, wenn iOS den Standort erlaubt.
+    private func usable(_ endpoint: PlanEndpoint) -> Bool {
+        endpoint != .currentLocation || locationAllowed
+    }
+
+    var canPlan: Bool {
+        guard let destination else { return false }
+        return usable(origin) && usable(destination) && origin != destination && blockedUntil == nil
+    }
+
+    /// Tauschen nur, wenn beide Seiten bekannt und nutzbar sind (kein Fix noetig: Platzhalter wandert mit).
+    var canSwap: Bool {
+        guard let destination else { return false }
+        return usable(origin) && usable(destination)
+    }
+
+    func endpoint(_ slot: EndpointSlot) -> PlanEndpoint? {
         slot == .origin ? origin : destination
+    }
+
+    // MARK: Erster Start (A1, A2)
+
+    /// "Weiter": loest den System-Dialog aus (CLServiceSession in CoreLocationService).
+    func finishWelcome(allowLocation: Bool) async {
+        deps.saveOnboarding(allowLocation ? .withLocation : .withoutLocation)
+        if allowLocation { await refreshFix() }
+        locationAuthorization = deps.authorization()
+        onboarding = hasServerKey ? nil : .serverKey
+    }
+
+    func finishServerKeyStep() {
+        onboarding = nil
+    }
+
+    /// Standort nachtraeglich erlauben (Banner im Adressmodus nach "Ohne Standort fortfahren").
+    func allowLocation() async {
+        deps.saveOnboarding(.withLocation)
+        await refreshFix()
+        locationAuthorization = deps.authorization()
+    }
+
+    /// scenePhase .active: Status neu aus iOS lesen (Nutzer kann ihn in den Einstellungen geaendert haben),
+    /// Genauigkeit fuer den Status auffrischen (kein Netz, nur CoreLocation).
+    func becameActive() {
+        locationAuthorization = deps.authorization()
+        guard locationAllowed, onboarding == nil else {
+            lastAccuracy = nil
+            return
+        }
+        fixTask?.cancel()
+        fixTask = Task { await refreshFix() }
+    }
+
+    /// Hintergrund: nichts Standortbezogenes behalten.
+    func movedToBackground() {
+        fixTask?.cancel()
+        lastAccuracy = nil
+    }
+
+    private func refreshFix() async {
+        do {
+            lastAccuracy = try await deps.location.currentFix().horizontalAccuracy
+        } catch {
+            lastAccuracy = nil
+        }
     }
 
     // MARK: Uebergaenge
@@ -126,12 +303,17 @@ final class AppFlow {
         switch (phase, event) {
         case (.start, .reset): nil
         case (_, .reset): .start
-        case (.start, .editEndpoint(let slot)), (.routeSelection, .editEndpoint(let slot)): .search(slot)
-        case (.start, .planTapped), (.routeSelection, .planTapped): .routeSelection
-        case (.search, .endpointChosen), (.search, .back): .start
+        case (.start, .editEndpoint(let slot)): .search(slot, .start)
+        case (.options, .editEndpoint(let slot)): .search(slot, .options)
+        case (.search(_, .start), .endpointChosen): .routeSelection
+        case (.search(_, .options), .endpointChosen), (.search(_, .options), .back): .options
+        case (.search(_, .start), .back): .start
+        case (.routeSelection, .editOptions): .options
+        case (.options, .planTapped), (.routeSelection, .planTapped): .routeSelection
+        case (.options, .back): .routeSelection
         case (.routeSelection, .journeySelected(let i)): .tripDetails(i)
         case (.routeSelection, .back): .start
-        case (.tripDetails(let i), .startNavigation): .navigation(i)
+        case (.routeSelection, .startNavigation(let i)), (.tripDetails, .startNavigation(let i)): .navigation(i)
         case (.tripDetails, .back): .routeSelection
         case (.navigation, .arrived): .arrival
         case (.navigation(let i), .back): .tripDetails(i)
@@ -142,27 +324,48 @@ final class AppFlow {
 
     /// Animation setzt die View (sie kennt Reduce Motion); das Modell bleibt SwiftUI-frei.
     func send(_ event: FlowEvent) {
-        guard let new = Self.next(phase, event) else { return }
-        // Bei Sperre (Retry-After) oder fehlendem Start/Ziel nicht still in eine leere Liste wechseln.
-        if event == .planTapped, !canPlan { return }
+        guard var new = Self.next(phase, event) else { return }
+        let plans = event == .planTapped || (event == .endpointChosen && new == .routeSelection)
+        if plans, !canPlan {
+            // Ziel aus 1 Start, aber kein Start bekannt (ohne Standort): erst 2c statt leerer Liste.
+            guard event == .endpointChosen, blockedUntil == nil else { return }
+            new = .options
+        }
         if new.workContext != phase.workContext { cancelWork() }
+        if new == .start { discardRoutes() }
         if case .search = new, phase != new { query = ""; results = SearchResults() }
+        movedBackward = event.isBackward
         phase = new
-        if event == .planTapped { startPlanning() }
+        if plans, new == .routeSelection { startPlanning() }
+        updateOverlay()
+    }
+
+    /// Zurueck zum Start: Verbindungen enthalten (gerundete) Start-Koordinaten und werden nicht laenger gehalten.
+    private func discardRoutes() {
+        overlayTask?.cancel()
+        routes = nil
+        calibrated = nil
+        overlay = nil
+        lastPlanKey = nil
+        isStale = false
     }
 
     private func cancelWork() {
         work?.cancel()
         work = nil
+        stopWaitingHint()
         isSearching = false
         isPlanning = false
-        if banner != .rateLimited { banner = nil }
+        if banner != .rateLimited && banner != .keychainFailure { banner = nil }
     }
 
     // MARK: Suche
 
     /// Bei jeder Eingabe: entprellt.
     func queryChanged() { scheduleSearch(immediately: false) }
+
+    /// Return: sofort.
+    func submitSearch() { scheduleSearch(immediately: true) }
 
     /// Moduswechsel. Zero-Knowledge: Text aus dem Adressmodus (auch AutoFill-Adressen) darf nie als
     /// Haltestellen-Suchtext ans Backend gehen. Beim Wechsel auf "Haltestelle" wird das Feld geleert, der Nutzer tippt neu.
@@ -172,14 +375,12 @@ final class AppFlow {
         work?.cancel()
         results = SearchResults()
         isSearching = false
+        if banner == .locationDenied || banner == .locationUnavailable { banner = nil }
         switch new {
         case .stops: query = ""
         case .address: queryChanged() // bleibt lokal (MKLocalSearch)
         }
     }
-
-    /// Return: sofort.
-    func submitSearch() { scheduleSearch(immediately: true) }
 
     private func scheduleSearch(immediately: Bool) {
         guard case .search = phase else { return }
@@ -189,6 +390,13 @@ final class AppFlow {
         guard text.count >= 2 else {
             results = SearchResults()
             isSearching = false
+            return
+        }
+        // Ohne Standort-Erlaubnis keine Adresssuche (VPN-Schutz: nie ohne GPS-Region); Hinweis statt Dialog.
+        guard scope == .stops || locationAllowed else {
+            results = SearchResults()
+            isSearching = false
+            banner = .locationDenied
             return
         }
         let delay = deps.debounce
@@ -219,7 +427,17 @@ final class AppFlow {
     }
 
     func choose(_ endpoint: TripEndpoint) {
-        guard case .search(let slot) = phase else { return }
+        guard case .search(let slot, _) = phase else { return }
+        set(.place(endpoint), for: slot)
+    }
+
+    /// "Mein Standort" als Start oder Ziel (Platzhalter, aufgeloest erst beim Planen).
+    func useCurrentLocation() {
+        guard case .search(let slot, _) = phase, locationAllowed else { return }
+        set(.currentLocation, for: slot)
+    }
+
+    private func set(_ endpoint: PlanEndpoint, for slot: EndpointSlot) {
         switch slot {
         case .origin: origin = endpoint
         case .destination: destination = endpoint
@@ -227,42 +445,114 @@ final class AppFlow {
         send(.endpointChosen)
     }
 
+    /// Tauschen dreht Von und Nach; "Mein Standort" bleibt Platzhalter, das Ziel geht nie verloren.
     func swapEndpoints() {
-        (origin, destination) = (destination, origin)
+        guard canSwap, let destination else { return }
+        (origin, self.destination) = (destination, origin)
     }
 
     // MARK: Planung
 
     private func startPlanning() {
         work?.cancel()
-        guard let origin, let destination, blockedUntil == nil else { return }
-        let trip = ManualTripRequest(origin: origin, destination: destination,
-                                     targetTime: customTime ?? deps.now(), isArrivalTime: isArrivalTime)
+        guard let destination, blockedUntil == nil else { return }
+        let origin = self.origin
+        let key = PlanKey(origin: origin, destination: destination, time: customTime, isArrivalTime: isArrivalTime)
+        // H3: bei gleicher Anfrage bleibt die letzte Antwort fuer den Offline-Fall in Reserve.
+        let previous = key == lastPlanKey ? (routes, calibrated) : (nil, nil)
         routes = nil
         calibrated = nil
+        isStale = false
         isPlanning = true
         banner = nil
-        let stream = deps.planner.plan(trip, pace: pace)
+        startWaitingHint()
+        let time = customTime ?? deps.now()
+        let arrival = isArrivalTime
         work = Task {
-            do {
-                for try await stage in stream {
-                    guard !Task.isCancelled else { return }
-                    switch stage {
-                    case .skeleton(let r):
-                        routes = r
-                        attribution = r.attribution
-                    case .calibrated(let r, let c):
-                        routes = r
-                        calibrated = c
-                    }
+            do throws(TransitError) {
+                // "Mein Standort": nur die Koordinate geht (gerundet) ans Backend, das Label bleibt lokal.
+                // Die Koordinate lebt nur in diesem Task (Dauer der Berechnung), gespeichert wird nur die Genauigkeit.
+                var here: TripEndpoint?
+                if origin == .currentLocation || destination == .currentLocation {
+                    let fix = try await deps.location.currentFix()
+                    lastAccuracy = fix.horizontalAccuracy
+                    here = .coordinate(fix.coordinate, label: PlanEndpoint.currentLocation.label)
                 }
+                guard let start = origin.place ?? here, let end = destination.place ?? here else { throw .locationUnavailable }
+                let trip = ManualTripRequest(origin: start, destination: end, targetTime: time, isArrivalTime: arrival)
+                try await consume(deps.planner.plan(trip, pace: pace))
                 guard !Task.isCancelled else { return }
+                lastPlanKey = key
                 isPlanning = false
+                stopWaitingHint()
             } catch {
                 guard !Task.isCancelled else { return }
                 isPlanning = false
-                await show((error as? TransitError) ?? (error is CancellationError ? .cancelled : .internal))
+                stopWaitingHint()
+                if error.isTransient, let old = previous.0 {
+                    routes = old
+                    calibrated = previous.1
+                    isStale = true
+                    updateOverlay()
+                }
+                await show(error)
             }
+        }
+    }
+
+    private func consume(_ stream: AsyncThrowingStream<HybridRouteCalculator.Stage, any Error>) async throws(TransitError) {
+        do {
+            for try await stage in stream {
+                guard !Task.isCancelled else { return }
+                switch stage {
+                case .skeleton(let r):
+                    routes = r
+                    attribution = r.attribution
+                    stopWaitingHint()
+                case .calibrated(let r, let c):
+                    routes = r
+                    calibrated = c
+                }
+                updateOverlay()
+            }
+        } catch let error as TransitError {
+            throw error
+        } catch is CancellationError {
+            throw .cancelled
+        } catch {
+            throw .internal
+        }
+    }
+
+    private func startWaitingHint() {
+        waitingTask?.cancel()
+        isWaitingForNetwork = false
+        let delay = deps.waitingHint
+        waitingTask = Task {
+            do { try await Task.sleep(for: delay) } catch { return }
+            if isPlanning, routes == nil { isWaitingForNetwork = true }
+        }
+    }
+
+    private func stopWaitingHint() {
+        waitingTask?.cancel()
+        waitingTask = nil
+        isWaitingForNetwork = false
+    }
+
+    private func updateOverlay() {
+        guard let index = phase.journeyIndex, let journey = journey(at: index) else {
+            overlayTask?.cancel()
+            if overlay != nil { overlay = nil }
+            return
+        }
+        let id = "\(routes?.fetchedAt.timeIntervalSince1970 ?? 0)-\(index)"
+        guard overlay?.id != id else { return }
+        overlayTask?.cancel()
+        overlayTask = Task {
+            let made = await RouteOverlay.make(journey, id: id)
+            guard !Task.isCancelled else { return }
+            overlay = made
         }
     }
 
@@ -298,7 +588,12 @@ final class AppFlow {
 
     /// Aktionen fuer das Banner; "Erneut versuchen" erst nach Ablauf von Retry-After.
     func actions(for error: TransitError) -> [BannerAction] {
-        error.bannerActions.filter { $0 != .retry || blockedUntil == nil }
+        var actions = error.bannerActions.filter { $0 != .retry || blockedUntil == nil }
+        // Noch nie gefragt: die App fragt selbst, statt in die iOS-Einstellungen zu schicken.
+        if error == .locationDenied, locationAuthorization == .notDetermined {
+            actions = actions.map { $0 == .openSettings ? .allowLocation : $0 }
+        }
+        return actions
     }
 
     func perform(_ action: BannerAction) {
@@ -310,8 +605,13 @@ final class AppFlow {
             case .routeSelection: send(.planTapped)
             default: break
             }
-        case .enterKey: showsSettings = true
+        case .enterKey:
+            settingsOpensServer = true
+            showsSettings = true
         case .switchToStops: setScope(.stops)
+        case .allowLocation:
+            banner = nil
+            Task { await allowLocation() }
         case .newSearch: send(.reset)
         case .openSettings: break // oeffnet die View per openURL
         }
@@ -332,12 +632,25 @@ final class AppFlow {
     func saveServerKey(_ key: String) throws(TransitError) {
         try deps.secrets.write(Data(key.utf8), for: .apiToken)
         hasServerKey = true
+        connectionCheck = nil
         if banner == .missingToken || banner == .unauthorized { banner = nil }
     }
 
     func deleteServerKey() throws(TransitError) {
         try deps.secrets.delete(.apiToken)
         hasServerKey = false
+        connectionCheck = nil
+    }
+
+    /// "Verbindung prüfen" nur auf Knopfdruck (verbraucht Rate-Limit). Fester Suchtext, keine Nutzerdaten.
+    func checkConnection() async {
+        connectionCheck = .checking
+        do {
+            _ = try await deps.search.search("Hauptbahnhof", scope: .stops)
+            connectionCheck = .connected
+        } catch {
+            connectionCheck = error == .cancelled ? nil : .failed(error)
+        }
     }
 
     #if DEBUG
@@ -346,6 +659,7 @@ final class AppFlow {
     /// Wartet auf die laufende Suche/Planung (nur fuer Tests).
     func waitForWork() async {
         await work?.value
+        await overlayTask?.value
     }
     #endif
 }

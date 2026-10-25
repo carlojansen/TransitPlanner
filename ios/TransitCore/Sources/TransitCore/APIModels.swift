@@ -188,6 +188,25 @@ public struct Leg: Codable, Sendable, Hashable {
         case platformChanged, replacement, loadFactor, stopovers, remarks
     }
 
+    /// Dekodiert jeden Schritt einzeln und verwirft unlesbare; keine Liste = leer.
+    private static func lossySteps(_ c: KeyedDecodingContainer<CodingKeys>) -> [Step] {
+        guard var list = try? c.nestedUnkeyedContainer(forKey: .steps) else { return [] }
+        var out: [Step] = []
+        while !list.isAtEnd {
+            if let step = try? list.decode(Step.self) {
+                out.append(step)
+            } else if (try? list.decode(Skip.self)) == nil {
+                break // Container kommt nicht weiter: abbrechen statt Endlosschleife
+            }
+        }
+        return out
+    }
+
+    /// Ueberspringt ein beliebiges Element einer Liste.
+    private struct Skip: Decodable {
+        init(from decoder: any Decoder) throws {}
+    }
+
     /// Eigener Decoder nur wegen der v0.3-Felder mit Standardwert (`steps` = [], `replacement` = false).
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -208,8 +227,8 @@ public struct Leg: Codable, Sendable, Hashable {
         isTransfer = try c.decodeIfPresent(Bool.self, forKey: .isTransfer)
         distanceMeters = try c.decodeIfPresent(Int.self, forKey: .distanceMeters)
         durationSource = try c.decodeIfPresent(String.self, forKey: .durationSource)
-        // Wegbeschreibung ist Zusatz: kaputte Schritte kosten nur die Schritte, nicht die Verbindung.
-        steps = ((try? c.decodeIfPresent([Step].self, forKey: .steps)) ?? nil) ?? []
+        // Wegbeschreibung ist Zusatz: ein kaputter Schritt kostet nur diesen Schritt, nie die Verbindung.
+        steps = Self.lossySteps(c)
         line = try c.decodeIfPresent(Line.self, forKey: .line)
         direction = try c.decodeIfPresent(String.self, forKey: .direction)
         tripId = try c.decodeIfPresent(String.self, forKey: .tripId)
