@@ -19,7 +19,15 @@
           "arrival": "2026-10-24T06:05:00Z", "plannedArrival": "2026-10-24T06:05:00Z", "arrivalDelaySeconds": null,
           "durationSeconds": 300, "realtime": false, "cancelled": false,
           "polyline": { "type": "LineString", "coordinates": [[6.7905, 51.2201], [6.79432, 51.21996]] },
-          "isTransfer": false, "distanceMeters": 280, "durationSource": "motis-osm"
+          "isTransfer": false, "distanceMeters": 280, "durationSource": "motis-osm",
+          "steps": [
+            { "direction": "depart", "distanceMeters": 40, "fromLevel": null, "toLevel": null, "streetName": "Breslauer Platz" },
+            { "direction": "teleport", "distanceMeters": 12, "fromLevel": 0, "toLevel": 0.5, "streetName": null },
+            { "direction": "elevator", "distanceMeters": null, "fromLevel": 0.5, "toLevel": -1, "streetName": null },
+            { "direction": 7, "distanceMeters": 5 },
+            { "distanceMeters": 3 },
+            { "direction": "left", "distanceMeters": "zwoelf", "fromLevel": "EG", "streetName": 42 }
+          ]
         },
         {
           "index": 1, "mode": "tram",
@@ -32,14 +40,16 @@
           "line": { "name": "STR 704", "productName": "STR", "fahrtNr": "123", "operator": "Rheinbahn", "color": "#E2001A", "textColor": "#FFFFFF" },
           "direction": "Derendorf", "tripId": "trip-1",
           "departurePlatform": "2", "plannedDeparturePlatform": "1", "arrivalPlatform": null, "plannedArrivalPlatform": null,
-          "platformChanged": true, "loadFactor": null,
+          "platformChanged": true, "replacement": false, "loadFactor": null,
           "stopovers": [
             { "stop": { "kind": "stop", "id": "de:x:1", "name": "Graf-Adolf-Platz", "latitude": 51.215, "longitude": 6.78 },
               "arrival": "2026-10-24T06:12:00Z", "plannedArrival": "2026-10-24T06:10:00Z", "arrivalDelaySeconds": 120,
               "departure": "2026-10-24T06:12:30.000Z", "plannedDeparture": "2026-10-24T06:10:30Z", "departureDelaySeconds": 120,
               "platform": null, "plannedPlatform": null, "cancelled": false }
           ],
-          "remarks": [ { "type": "warning", "code": "DETOUR", "summary": "Umleitung", "text": "Umleitung wegen Bauarbeiten" } ]
+          "remarks": [ { "type": "warning", "code": "DETOUR", "summary": "Umleitung", "text": "Umleitung wegen Bauarbeiten",
+                         "cause": "CONSTRUCTION", "effect": "DETOUR" },
+                       { "type": "notice", "code": null, "summary": null, "text": "Neue Wirkung", "cause": null, "effect": "FUTURE_EFFECT" } ]
         },
         {
           "index": 2, "mode": "walk",
@@ -48,7 +58,8 @@
           "departure": "2026-10-24T06:18:00Z", "plannedDeparture": "2026-10-24T06:18:00Z", "departureDelaySeconds": null,
           "arrival": "2026-10-24T06:21:00Z", "plannedArrival": "2026-10-24T06:21:00Z", "arrivalDelaySeconds": null,
           "durationSeconds": 180, "realtime": false, "cancelled": false, "polyline": null,
-          "isTransfer": true, "distanceMeters": 90, "durationSource": "motis-osm"
+          "isTransfer": true, "distanceMeters": 90, "durationSource": "motis-osm",
+          "steps": [ { "direction": "stairs", "distanceMeters": 20, "fromLevel": 1, "toLevel": 0, "streetName": null } ]
         },
         {
           "index": 3, "mode": "regional",
@@ -60,7 +71,7 @@
           "line": { "name": "RE 5", "productName": "RE", "fahrtNr": "28517", "operator": "National Express", "color": null, "textColor": null },
           "direction": "Koblenz Hbf", "tripId": "trip-2",
           "departurePlatform": "3", "plannedDeparturePlatform": "3", "arrivalPlatform": "5", "plannedArrivalPlatform": "5",
-          "platformChanged": false, "loadFactor": null, "stopovers": [], "remarks": []
+          "platformChanged": false, "replacement": true, "loadFactor": null, "stopovers": [], "remarks": []
         },
         {
           "index": 4, "mode": "walk",
@@ -92,7 +103,7 @@
           "departure": "2026-10-24T06:10:00Z", "plannedDeparture": "2026-10-24T06:10:00Z", "departureDelaySeconds": null,
           "arrival": "2026-10-24T06:15:00Z", "plannedArrival": "2026-10-24T06:15:00Z", "arrivalDelaySeconds": null,
           "durationSeconds": 300, "realtime": false, "cancelled": false, "polyline": null,
-          "isTransfer": false, "distanceMeters": 280, "durationSource": "motis-osm"
+          "isTransfer": false, "distanceMeters": 280, "durationSource": "motis-osm", "steps": ["kaputt", 5]
         },
         {
           "index": 1, "mode": "hyperloop",

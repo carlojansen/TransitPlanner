@@ -97,6 +97,8 @@ import Testing
         let result = try await calculator(FakeDirections()).calibrate(journeys, pace: WalkingPaceFactor())
         let egress = try #require(result[0].walks[4]?.seconds)
         #expect(result[0].arrivalAtDestination == Date.iso("2026-10-24T06:38:00Z").addingTimeInterval(TimeInterval(egress)))
+        let access = try #require(result[0].walks[0]?.seconds)
+        #expect(result[0].departureFromOrigin == Date.iso("2026-10-24T06:08:00Z").addingTimeInterval(-TimeInterval(access)))
     }
 
     @Test func planYieldsSkeletonThenCalibrated() async throws {

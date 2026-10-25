@@ -68,6 +68,8 @@ public struct SearchResults: Sendable {
     /// Gesetzt, wenn ein Teil ausfiel; der andere Teil wird trotzdem angezeigt.
     public var addressError: TransitError?
     public var stopError: TransitError?
+
+    public init() {}
 }
 
 /// Pflichtschalter in der Oberflaeche: Ein Suchtext geht nur im Modus `.stops` ans Backend.

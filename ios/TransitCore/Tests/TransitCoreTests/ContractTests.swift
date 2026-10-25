@@ -65,6 +65,46 @@ import Testing
         #expect(j.legs[1].line == nil)
     }
 
+    /// API v0.3: Wegschritte, Ersatzverkehr, Ursache/Wirkung; tolerant bei unbekannten und fehlenden Werten.
+    @Test func decodesV03FieldsTolerantly() throws {
+        let r = try Fixture.routes()
+        let j = r.journeys[0]
+
+        let steps = j.legs[0].steps
+        #expect(steps.map(\.direction) == [.depart, .unknown, .elevator, .unknown, .unknown, .left])
+        #expect(steps[0].streetName == "Breslauer Platz" && steps[0].distanceMeters == 40 && steps[0].fromLevel == nil)
+        #expect(steps[1].toLevel == 0.5)
+        #expect(steps[2].distanceMeters == nil && steps[2].toLevel == -1)
+        #expect(steps[4].distanceMeters == 3 && steps[4].streetName == nil)
+        // Falsche Typen werden nil, die Antwort bleibt lesbar
+        #expect(steps[5].distanceMeters == nil && steps[5].fromLevel == nil && steps[5].streetName == nil)
+        #expect(j.legs[2].steps.first?.direction == .stairs)
+        // Fehlendes `steps` = leer, bei Fussweg wie bei Fahrzeug
+        #expect(j.legs[4].steps.isEmpty)
+        #expect(j.legs[1].steps.isEmpty)
+
+        #expect(j.legs[1].replacement == false)
+        #expect(j.legs[3].replacement == true)
+        // Fehlendes `replacement` = false
+        #expect(r.journeys[1].legs[1].replacement == false)
+        // Kaputte Schrittliste = leer, Verbindung bleibt
+        #expect(r.journeys[1].legs[0].steps.isEmpty)
+
+        let remarks = try #require(j.legs[1].remarks)
+        #expect(remarks[0].cause == "CONSTRUCTION" && remarks[0].effect == "DETOUR" && remarks[0].code == "DETOUR")
+        // Unbekannte Wirkung bleibt String, fehlender Code nil
+        #expect(remarks[1].effect == "FUTURE_EFFECT" && remarks[1].cause == nil && remarks[1].code == nil)
+        #expect(remarks[1].type == .unknown) // unbekannte Meldungsart
+        // Fehlende `cause`/`effect` = nil
+        #expect(j.remarks[0].cause == nil && j.remarks[0].effect == nil)
+    }
+
+    @Test func attributionShowsOnlyHTTPSLinks() throws {
+        let json = #"{"text":"t","links":[{"label":"a","url":"https://transitous.org/sources/"},{"label":"b","url":"http://example.org"},{"label":"c","url":"javascript:alert(1)"},{"label":"d","url":"HTTPS://www.openstreetmap.org/copyright"}]}"#
+        let a = try TransitJSON.decoder().decode(Attribution.self, from: Data(json.utf8))
+        #expect(a.httpsLinks.map(\.label) == ["a", "d"])
+    }
+
     @Test func routesRequestRoundsCoordinatesAndOmitsNulls() throws {
         let req = RoutesRequest(origin: .coordinate(GeoCoordinate(latitude: 51.220_149_9, longitude: 6.790_550_1)),
                                 destination: .stop(id: "de-DELFI_de:05315:11201"), results: 9)

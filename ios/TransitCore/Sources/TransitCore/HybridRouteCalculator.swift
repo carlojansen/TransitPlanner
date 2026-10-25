@@ -70,6 +70,14 @@ public struct CalibratedJourney: Sendable, Hashable {
         journey.legs.prefix(while: \.isWalk).reduce(0) { $0 + (walks[$1.index]?.seconds ?? $1.durationSeconds ?? 0) }
     }
 
+    /// Aufbruch am Start: erste Fahrzeug-Abfahrt minus kalibrierter Zugangsweg (ohne Stationspuffer).
+    public var departureFromOrigin: Date? {
+        guard let firstTransit = journey.legs.first(where: { !$0.isWalk }), let departure = firstTransit.departure else {
+            return journey.departure
+        }
+        return departure.addingTimeInterval(-TimeInterval(accessWalkSeconds))
+    }
+
     /// Ankunft am Ziel mit kalibriertem letzten Fussweg.
     public var arrivalAtDestination: Date? {
         guard let lastTransit = journey.legs.last(where: { !$0.isWalk }), let arrival = lastTransit.arrival else {
