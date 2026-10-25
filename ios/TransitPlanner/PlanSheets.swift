@@ -366,11 +366,12 @@ struct RouteSheet: View {
             } footer: {
                 // Quellenangabe direkt unter der Hero Card, damit sie im mittleren Detent sichtbar bleibt (DESIGN.md 3).
                 VStack(alignment: .leading, spacing: 4) {
+                    AttributionFooter(attribution: routes.attribution)
+                    // Nach der Quellenangabe, damit der Transitous-Link im mittleren Detent sichtbar bleibt.
                     if routes.removedLongDistance > 0 {
                         Label("Einige Verbindungen wurden ausgeblendet (Fernverkehr).", systemImage: "line.3.horizontal.decrease.circle")
                             .font(.footnote)
                     }
-                    AttributionFooter(attribution: routes.attribution)
                 }
             }
             .listRowBackground(Color.clear)
@@ -414,16 +415,17 @@ struct HeroCard: View {
                                 Spacer()
                                 if let delay = firstTransit?.departureDelayMinutes, !flow.isStale { DelayBadge(minutes: delay) }
                             }
-                            HStack(spacing: 4) {
-                                TimeText(date: leave)
-                                Text(verbatim: "–")
-                                TimeText(date: arrive)
-                                if let leave, let arrive {
+                            // AX: Uhrzeiten und Dauer untereinander statt gequetscht in einer Zeile.
+                            ViewThatFits(in: .horizontal) {
+                                HStack(spacing: 4) {
+                                    HStack(spacing: 4) { TimeText(date: leave); Text(verbatim: "–"); TimeText(date: arrive) }
                                     Text(verbatim: "·")
-                                    MinutesText(seconds: Int(arrive.timeIntervalSince(leave)))
+                                    summary(leave: leave, arrive: arrive)
                                 }
-                                Text(verbatim: "·")
-                                Text("\(journey.transfers) Umstiege").monospacedDigit()
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 4) { TimeText(date: leave); Text(verbatim: "–"); TimeText(date: arrive) }
+                                    summary(leave: leave, arrive: arrive)
+                                }
                             }
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -449,6 +451,16 @@ struct HeroCard: View {
             }
         }
         .sensoryFeedback(.warning, trigger: journey.legs.contains { $0.platformChanged == true }) { _, changed in changed }
+    }
+
+    private func summary(leave: Date?, arrive: Date?) -> some View {
+        HStack(spacing: 4) {
+            if let leave, let arrive {
+                MinutesText(seconds: Int(arrive.timeIntervalSince(leave)))
+                Text(verbatim: "·")
+            }
+            TransfersText(count: journey.transfers)
+        }
     }
 
     @ViewBuilder private func countdown(leave: Date?, now: Date) -> some View {
@@ -535,6 +547,19 @@ struct AlternativeRow: View {
             DelayBadge(minutes: delay)
         } else if journey.realtime {
             Text("Pünktlich").font(.caption).foregroundStyle(Color(.statusOk))
+        }
+    }
+}
+
+/// "1 Umstieg" / "2 Umstiege", ohne Umstieg "direkt" (Figma).
+struct TransfersText: View {
+    let count: Int
+
+    var body: some View {
+        if count == 0 {
+            Text("direkt")
+        } else {
+            Text("\(count) Umstiege").monospacedDigit().contentTransition(.numericText())
         }
     }
 }

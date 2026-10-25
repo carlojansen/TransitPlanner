@@ -10,10 +10,15 @@ struct TripDetailsSheet: View {
         if let journey = flow.journey(at: index) {
             let calibrated = flow.calibratedJourney(at: index)
             List {
-                if let sev = Spoken.sev(journey) {
-                    CardHint(text: sev, symbol: "bus.fill", tone: .alert)
-                        .listRowBackground(Color.clear)
+                Section {
+                    DetailsHeader(journey: journey, calibrated: calibrated)
+                    if let sev = Spoken.sev(journey) {
+                        CardHint(text: sev, symbol: "bus.fill", tone: .alert)
+                    }
                 }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                .listRowSeparator(.hidden)
                 Section {
                     ForEach(journey.legs, id: \.index) { leg in
                         if leg.isWalk {
@@ -46,6 +51,9 @@ struct TripDetailsSheet: View {
                 }
             }
             .scrollContentBackground(.hidden)
+            // Kompakt: keine grossen Leerflaechen ueber und zwischen Kopf, Hinweis und Zeitleiste.
+            .listSectionSpacing(.compact)
+            .contentMargins(.top, 0, for: .scrollContent)
             .safeAreaInset(edge: .top, spacing: 0) {
                 HStack {
                     Button("Verbindungen", systemImage: "chevron.backward") { flow.send(.back) }
@@ -59,13 +67,46 @@ struct TripDetailsSheet: View {
             }
             .safeAreaInset(edge: .bottom) {
                 // Daumenzone: "Starten". "Erinnern" (D1) kommt mit Meilenstein 4.
+                // Fussleiste mit Hintergrund: die Zeitleiste endet darueber und scrollt, nichts wird ueberdeckt.
                 PrimaryButton(title: "Starten", systemImage: "location.fill") { flow.send(.startNavigation(index)) }
                     .disabled(flow.blockedUntil != nil || journey.cancelled)
-                    .padding(16)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity)
+                    .background(.bar)
             }
         } else {
             ContentUnavailableView("Verbindung nicht mehr vorhanden", systemImage: "tram")
         }
+    }
+}
+
+/// Kopf laut Figma: "08:04 – 08:40" gross, darunter "36 Min. · 1 Umstieg".
+private struct DetailsHeader: View {
+    let journey: Journey
+    let calibrated: CalibratedJourney?
+
+    var body: some View {
+        let leave = calibrated?.departureFromOrigin ?? journey.departure
+        let arrive = calibrated?.arrivalAtDestination ?? journey.arrival
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                TimeText(date: leave)
+                Text(verbatim: "–")
+                TimeText(date: arrive)
+            }
+            .font(.title2.weight(.semibold))
+            .fontDesign(.rounded)
+            HStack(spacing: 4) {
+                if let leave, let arrive { MinutesText(seconds: Int(arrive.timeIntervalSince(leave))) }
+                Text(verbatim: "·")
+                TransfersText(count: journey.transfers)
+            }
+            .font(.subheadline)
+            .foregroundStyle(Color(.labelSecondary))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -99,18 +140,25 @@ private struct StationRow: View {
     let delayMinutes: Int?
     let rail: Leg?
     let leg: Leg?
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// Geplante Zeit, Echtzeit darunter (status/warn). Bei AX-Groessen nebeneinander ueber dem Namen.
+    @ViewBuilder private var times: some View {
+        if let delayMinutes, delayMinutes > 0 {
+            TimeText(date: planned ?? time).font(.subheadline.weight(.semibold))
+            TimeText(date: time).font(.footnote).foregroundStyle(Color(.statusWarn))
+        } else {
+            TimeText(date: time).font(.subheadline.weight(.semibold))
+        }
+    }
 
     var body: some View {
+        let ax = typeSize.isAccessibilitySize
         HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .trailing, spacing: 2) {
-                if let delayMinutes, delayMinutes > 0 {
-                    TimeText(date: planned ?? time).font(.subheadline.weight(.semibold))
-                    TimeText(date: time).font(.footnote).foregroundStyle(Color(.statusWarn))
-                } else {
-                    TimeText(date: time).font(.subheadline.weight(.semibold))
-                }
+            if !ax {
+                VStack(alignment: .trailing, spacing: 2) { times }
+                    .frame(width: 56, alignment: .trailing)
             }
-            .frame(width: 56, alignment: .trailing)
             Image(systemName: "circle.fill")
                 .font(.system(size: 8))
                 .foregroundStyle(rail?.displayMode.color ?? Color(.modeWalk))
@@ -118,6 +166,8 @@ private struct StationRow: View {
                 .padding(.top, 6)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
+                // AX: Zeit ueber dem Stationsnamen statt schmaler Spalte (kein "08:" / "20").
+                if ax { HStack(spacing: 8) { times } }
                 Text(name ?? String(localized: "Ziel")).font(.subheadline.weight(.semibold))
                 if let platform {
                     let changed = plannedPlatform != nil && plannedPlatform != platform
@@ -143,15 +193,18 @@ private struct StationRow: View {
 private struct VehicleTimeline: View {
     let leg: Leg
     @State private var expanded = false
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        let ax = typeSize.isAccessibilitySize
         StationRow(time: leg.departure, planned: leg.plannedDeparture, name: leg.origin.name, platform: leg.departurePlatform,
                    plannedPlatform: leg.plannedDeparturePlatform, delayMinutes: leg.departureDelayMinutes, rail: leg, leg: leg)
         HStack(alignment: .top, spacing: 8) {
-            Color.clear.frame(width: 56)
+            if !ax { Color.clear.frame(width: 56) }
             Rail(color: leg.displayMode.color, dotted: false)
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
+                let line = ax ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 6))
+                line {
                     LineBadge(leg: leg)
                     if let direction = leg.direction { Text("Richtung \(direction)").font(.footnote) }
                 }
@@ -192,13 +245,17 @@ private struct VehicleTimeline: View {
 private struct WalkTimelineRow: View {
     let leg: Leg
     let estimate: WalkEstimate?
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        let ax = typeSize.isAccessibilitySize
         HStack(alignment: .top, spacing: 8) {
-            Color.clear.frame(width: 56)
+            // AX: keine schmale Spalte, Zeile untereinander statt in Silben gebrochen.
+            if !ax { Color.clear.frame(width: 56) }
             Rail(color: Color(.modeWalk), dotted: true)
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
+                let row = ax ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(spacing: 8))
+                row {
                     WalkChip(seconds: estimate?.seconds ?? leg.durationSeconds ?? 0, estimated: estimate == nil)
                     if let meters = estimate?.distanceMeters ?? leg.distanceMeters {
                         Text("\(meters) m").font(.footnote).monospacedDigit()

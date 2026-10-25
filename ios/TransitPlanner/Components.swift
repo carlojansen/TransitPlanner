@@ -16,11 +16,14 @@ struct PrimaryButton: View {
                 if let systemImage { Label(title, systemImage: systemImage) } else { Text(title) }
             }
             .font(.headline)
+            .foregroundStyle(Color(.buttonLabel))
             .frame(maxWidth: .infinity, minHeight: 50)
             .contentShape(.capsule)
         }
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.capsule)
+        // Eigene Knopfflaeche: weisse Schrift mind. 4,5:1 (Dunkel), 7:1 bei Hohem Kontrast (AGENT.md 4.1.2).
+        .tint(Color(.buttonFill))
     }
 }
 
@@ -85,7 +88,7 @@ struct LineBadge: View {
     var body: some View {
         HStack(spacing: 2) {
             Image(systemName: leg.displayMode.symbolName)
-            Text(leg.replacement ? String(localized: "SEV \(leg.badgeName)") : leg.badgeName)
+            Text(leg.badgeText)
         }
         .font(.caption2.weight(.semibold))
         .foregroundStyle(Color(.labelOnAccent))
@@ -116,6 +119,7 @@ struct WalkChip: View {
         }
         .font(.caption.weight(.semibold))
         .foregroundStyle(Color(.modeWalk))
+        .fixedSize() // nie in Silben umbrechen (AX-Groessen)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(estimated ? "Etwa \(minutes) Minuten Fußweg" : "\(minutes) Minuten Fußweg"))
     }
@@ -149,7 +153,14 @@ struct CardHint: View {
     let tone: Tone
 
     var body: some View {
-        Label(text, systemImage: symbol)
+        // Eigenes HStack statt Label: in List-Zeilen vergroessert der Label-Stil sonst das Symbol.
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: symbol)
+                .imageScale(.small)
+                .accessibilityHidden(true)
+            Text(text)
+                .fixedSize(horizontal: false, vertical: true)
+        }
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(tone.foreground)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -351,14 +362,17 @@ struct AttributionFooter: View {
                 VStack(alignment: .leading, spacing: 0) { links }
             }
             Text(attribution.text)
+                .fixedSize(horizontal: false, vertical: true) // nie kuerzen (Transitous-Regel)
                 .accessibilityIdentifier("attributionText")
             Button("Quellen und Lizenzen") { showsSources = true }
+                .foregroundStyle(Color(.accentBlue))
                 .frame(minHeight: 44)
                 .contentShape(.rect)
                 .accessibilityIdentifier("sourcesButton")
         }
         .font(.footnote)
-        .foregroundStyle(.secondary)
+        // Feste Farbe statt .secondary: ueber Glass wird .secondary zu blass (Transitous-Regel: klar lesbar).
+        .foregroundStyle(Color(.labelSecondary))
         .sheet(isPresented: $showsSources) {
             NavigationStack {
                 SourcesView(attribution: attribution)
@@ -376,6 +390,7 @@ struct AttributionFooter: View {
             Link(destination: link.url) {
                 Label(link.label, systemImage: "arrow.up.right")
                     .labelStyle(.titleAndIcon)
+                    .foregroundStyle(Color(.accentBlue))
             }
             .frame(minHeight: 44) // Touch-Flaeche (AGENT.md 4.3.1)
             .contentShape(.rect)

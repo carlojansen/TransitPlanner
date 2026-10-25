@@ -532,7 +532,11 @@ import TransitCore
     func hintsAndStatusTextContrast(dark: Bool, high: Bool) {
         let t = Self.traits(dark: dark, high: high)
         let pairs = [("statusWarn", "statusWarnTint"), ("statusAlert", "statusAlertTint"),
-                     ("accentBlue", "accentBlueTint"), ("statusOk", "surfaceCard")]
+                     ("accentBlue", "accentBlueTint"), ("statusOk", "surfaceCard"),
+                     // Hauptknopf: Knopftext auf Knopfflaeche
+                     ("buttonLabel", "buttonFill"),
+                     // Quellen-Fusszeile (Transitous-Regel: klar lesbar), Annahme surface/sheet
+                     ("labelSecondary", "surfaceSheet"), ("accentBlue", "surfaceSheet")]
         for (fg, bg) in pairs {
             let r = Self.ratio(fg, bg, t)
             #expect(r >= (high ? 7 : 4.5), "\(fg) auf \(bg) dark=\(dark) high=\(high): \(r)")
@@ -557,6 +561,27 @@ import TransitCore
         #expect(text.contains("Gleis 2."))
         #expect(text.contains("1 Umstieg."))
         #expect(text.contains("Achtung, Ersatzverkehr: Bus SEV RE 5 bis Köln Hbf, Abfahrt Bilk S Bus."))
+    }
+
+    @Test func directJourneySaysDirect() throws {
+        let journey = try #require(FakeData.routes?.journeys.last)
+        #expect(journey.transfers == 0)
+        let text = Spoken.journey(journey, calibrated: nil, now: Date.distantPast)
+        #expect(text.contains("Direkt."))
+        #expect(!text.contains("0 Umstiege"))
+    }
+
+    /// "SEV" nie doppelt: Linienname "SEV RE 5" bleibt so, "RE 5" als Ersatz wird "SEV RE 5".
+    @Test func sevPrefixIsNotDoubled() throws {
+        let sev = try #require(FakeData.routes?.journeys.first?.legs[3])
+        #expect(sev.replacement && sev.badgeText == "SEV RE 5")
+        func leg(_ name: String, replacement: Bool) throws -> Leg {
+            let json = #"{"index":0,"mode":"bus","origin":{"kind":"stop"},"destination":{"kind":"stop"},"realtime":false,"cancelled":false,"line":{"name":"\#(name)"},"replacement":\#(replacement)}"#
+            return try TransitJSON.decoder().decode(Leg.self, from: Data(json.utf8))
+        }
+        #expect(try leg("RE 5", replacement: true).badgeText == "SEV RE 5")
+        #expect(try leg("sev 12", replacement: true).badgeText == "sev 12")
+        #expect(try leg("RE 5", replacement: false).badgeText == "RE 5")
     }
 
     @Test func stationAndStepSentences() throws {

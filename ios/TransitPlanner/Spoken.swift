@@ -43,7 +43,7 @@ enum Spoken {
         if let arrive = calibrated?.arrivalAtDestination ?? journey.arrival {
             parts.append(String(localized: "Ankunft \(arrive.formatted(date: .omitted, time: .shortened))."))
         }
-        parts.append(String(localized: "\(journey.transfers) Umstiege") + ".")
+        parts.append(journey.transfers == 0 ? String(localized: "Direkt.") : String(localized: "\(journey.transfers) Umstiege") + ".")
         if let sev = sev(journey) { parts.append(sev) }
         if calibrated?.transfers.contains(where: \.isAtRisk) == true { parts.append(String(localized: "Umstieg knapp.")) }
         if journey.cancelled { parts.append(String(localized: "Fällt aus.")) }

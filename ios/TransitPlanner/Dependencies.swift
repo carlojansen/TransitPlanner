@@ -72,7 +72,7 @@ struct AppDependencies: Sendable {
     /// Launch-Argument `-uiTestFakes` schaltet in Debug-Builds auf Fakes um; Release spricht nie ohne Pinning.
     static func forLaunch(arguments: [String] = ProcessInfo.processInfo.arguments) -> AppDependencies {
         #if DEBUG
-        if arguments.contains("-uiTestFakes") { return .fakes() }
+        if arguments.contains("-uiTestFakes") { return .uiTest(arguments: arguments) }
         #endif
         return .live()
     }
@@ -82,6 +82,25 @@ struct AppDependencies: Sendable {
 import Synchronization
 
 extension AppDependencies {
+    /// UI-Tests und Screenshot-Tour: `-fakeOnboarded` ueberspringt A1/A2, `-fakeScenario <name>` waehlt den Zustand.
+    static func uiTest(arguments: [String]) -> AppDependencies {
+        let onboarded = arguments.contains("-fakeOnboarded")
+        let scenario = arguments.firstIndex(of: "-fakeScenario").flatMap { i in
+            arguments.indices.contains(i + 1) ? arguments[i + 1] : nil
+        }
+        let planner: FakeRoutePlanner = switch scenario {
+        case "slow": FakeRoutePlanner(delay: .seconds(60))
+        case "noConnections": FakeRoutePlanner(failure: .noConnections)
+        case "serverDown": FakeRoutePlanner(failure: .upstreamUnavailable)
+        case "offlineAfterFirst": FakeRoutePlanner(failAfterFirst: .offline)
+        case "plainFirst": FakeRoutePlanner(reversed: true)
+        default: FakeRoutePlanner()
+        }
+        return .fakes(planner: planner,
+                      secrets: InMemorySecretStore(token: onboarded ? String(repeating: "k", count: 40) : nil),
+                      onboarding: onboarded ? .withLocation : nil)
+    }
+
     static func fakes(search: FakeStopSearch = FakeStopSearch(), planner: FakeRoutePlanner = FakeRoutePlanner(),
                       secrets: InMemorySecretStore = InMemorySecretStore(),
                       location: FakeLocation = FakeLocation(),
@@ -169,10 +188,16 @@ final class FakeRoutePlanner: RoutePlanning {
     let requests = Mutex<[RoutesRequest]>([])
     let failure: Mutex<TransitError?>
     let delay: Duration
+    /// Erste Anfrage gelingt, danach dieser Fehler (H3 Offline mit abgeblendeter letzter Antwort).
+    let failAfterFirst: TransitError?
+    /// Verbindungen in umgekehrter Reihenfolge (Routenauswahl ohne Ersatzverkehr oben).
+    let reversed: Bool
 
-    init(failure: TransitError? = nil, delay: Duration = .zero) {
+    init(failure: TransitError? = nil, delay: Duration = .zero, failAfterFirst: TransitError? = nil, reversed: Bool = false) {
         self.failure = Mutex(failure)
         self.delay = delay
+        self.failAfterFirst = failAfterFirst
+        self.reversed = reversed
     }
 
     var callCount: Int { requests.withLock { $0.count } }
@@ -180,16 +205,18 @@ final class FakeRoutePlanner: RoutePlanning {
     func setFailure(_ error: TransitError?) { failure.withLock { $0 = error } }
 
     func plan(_ trip: some TripRequest, pace: WalkingPaceFactor) -> AsyncThrowingStream<HybridRouteCalculator.Stage, any Error> {
-        requests.withLock { $0.append(trip.routesRequest()) }
-        let failure = self.failure.withLock { $0 }
+        let count = requests.withLock { $0.append(trip.routesRequest()); return $0.count }
+        let failure = self.failure.withLock { $0 } ?? (count > 1 ? failAfterFirst : nil)
         let delay = self.delay
+        let reversed = self.reversed
         return AsyncThrowingStream { continuation in
             let task = Task {
                 if delay > .zero {
                     do { try await Task.sleep(for: delay) } catch { continuation.finish(throwing: TransitError.cancelled); return }
                 }
                 if let failure { continuation.finish(throwing: failure); return }
-                guard let response = FakeData.routes else { continuation.finish(throwing: TransitError.decodingFailed); return }
+                guard let base = FakeData.routes else { continuation.finish(throwing: TransitError.decodingFailed); return }
+                let response = reversed ? FakeData.reversed(base) : base
                 continuation.yield(.skeleton(response))
                 do {
                     // Der Rechner spricht hier nie mit dem Backend: `calibrate` nutzt nur die Fake-Gehzeiten.
@@ -295,6 +322,19 @@ enum FakeData {
      "earlierRef":null,"laterRef":"later","walkOnly":false,"removedLongDistance":1,
      "fetchedAt":"2026-10-24T06:01:02Z","attribution":\#(attributionJSON)}
     """#)
+
+    /// Gleiche Antwort mit umgekehrter Reihenfolge der Verbindungen (ueber JSON, Modelle haben keinen oeffentlichen Init).
+    static func reversed(_ response: RoutesResponse) -> RoutesResponse {
+        guard let data = try? JSONEncoder().encode(response),
+              var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let journeys = object["journeys"] as? [Any]
+        else { return response }
+        object["journeys"] = Array(journeys.reversed())
+        guard let reencoded = try? JSONSerialization.data(withJSONObject: object),
+              let result = try? JSONDecoder().decode(RoutesResponse.self, from: reencoded)
+        else { return response }
+        return result
+    }
 
     private static func decode<T: Decodable>(_ json: String) -> T? {
         try? TransitJSON.decoder().decode(T.self, from: Data(json.utf8))

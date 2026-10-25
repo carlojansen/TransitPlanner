@@ -12,11 +12,12 @@ vor DESIGN.md (Aussehen) vor Figma (Bild). Referenzgerät: iPhone 17, 402 x 874 
 | surface/sheet | #F2F2F7 | #1C1C1E | Sheet-Inhalt bei .large (sonst System-Glass) |
 | surface/card | #FFFFFF | #2C2C2E | Karten, Listen, ausgewähltes Segment |
 | label/primary | #000000 | #FFFFFF | = .primary |
-| label/secondary | #6C6C70 | #AEAEB2 | = .secondary |
+| label/secondary | #6C6C70 | #AEAEB2 | = .secondary; HC: #505053 / #C7C7CC; Quellen-Fußzeile in dieser festen Farbe |
 | label/onAccent | #FFFFFF | #000000 | Text/Symbole auf Modusfarben (Dunkel: schwarz, Kontrast) |
 | fill/tertiary | #E3E3E8 | #3A3A3C | Skelett, Chips aus |
 | separator | #C6C6C8 | #38383A | 0,5-pt-Rand an Karten ohne Glass |
 | accent/blue | #0062CC | #409CFF | Tint, Hauptknopf; HC: #004A9B / #8AC3FF |
+| button/fill | #0062CC | #006FE7 | Fläche Hauptknopf (Text button/label #FFFFFF, mind. 4,5:1); HC: #0054B0 / #0054AF |
 | accent/blueTint | #E0EDFF | #14304F | Info-Banner |
 | status/ok | #1F7A35 | #30D158 | pünktlich, Puffer ok; HC: #175A27 / #40D565 |
 | status/okTint | #E1F4E5 | #16301D | |

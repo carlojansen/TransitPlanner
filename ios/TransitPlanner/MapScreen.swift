@@ -45,11 +45,14 @@ struct MapScreen: View {
             .mapControls { MapCompass(scope: mapScope) }
             // Optisches Zentrum folgt dem Sheet, gedeckelt bei der Haelfte (sonst springt die Karte bei .large).
             .safeAreaPadding(.bottom, min(sheetHeight, proxy.size.height * 0.5))
-            .overlay(alignment: .topTrailing) { MapButtons(scope: mapScope).padding(16) }
-            .overlay(alignment: .topLeading) { StatusIndicator().padding(16) }
-            .mapScope(mapScope)
+            // Kopf-Steuerung oben (44 pt + 16 pt Rand) + 16 pt Luft: die Route endet nie unter dem Status-Indikator.
+            .safeAreaPadding(.top, 44 + 16 + 16)
             .ignoresSafeArea(edges: .bottom)
         }
+        // Kopf-Steuerung ausserhalb des Karten-Polsters, damit sie oben bleibt.
+        .overlay(alignment: .topTrailing) { MapButtons(scope: mapScope).padding(16) }
+        .overlay(alignment: .topLeading) { StatusIndicator().padding(16) }
+        .mapScope(mapScope)
         .onChange(of: flow.overlay?.id) { moveCamera() }
         .onChange(of: scenePhase, initial: true) {
             switch scenePhase {

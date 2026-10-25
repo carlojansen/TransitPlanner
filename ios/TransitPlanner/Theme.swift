@@ -56,6 +56,12 @@ extension Leg {
     /// Kurzname fuer Badges: Linienname, sonst Verkehrsmittel.
     var badgeName: String { line?.name ?? displayMode.displayName }
 
+    /// Badge-Text; Ersatzverkehr mit "SEV", aber nie doppelt ("SEV RE 5" bleibt "SEV RE 5").
+    var badgeText: String {
+        guard replacement, !badgeName.uppercased().hasPrefix("SEV") else { return badgeName }
+        return String(localized: "SEV \(badgeName)")
+    }
+
     /// Verspaetung in Minuten, nur mit Echtzeitdaten.
     var departureDelayMinutes: Int? {
         guard realtime, let d = departureDelaySeconds, d >= 60 else { return nil }
