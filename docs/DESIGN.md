@@ -57,7 +57,7 @@ Zeiten, Minuten, Meter: immer `.monospacedDigit()` und `.contentTransition(.nume
 - Sheet-Detents: `.height(140)` (Start), `.fraction(0.5)` (Routenauswahl, 2c), `.large` (Suche, Details, Einstellungen).
   Die Quellenangabe muss im mittleren Detent sichtbar bleiben; in Figma braucht das 474 pt Sheet-Höhe. Ist die Liste länger,
   steht die Fußzeile direkt unter der Hero Card statt am Listenende.
-- Unterwegs: Danach-Sheet in allen Zuständen fest 237 pt (`.height(237)`), damit die Karte nicht springt.
+- Unterwegs: Danach-Sheet startet kompakt (`.height(210)`, AX `.fraction(0.3)`: Kopf, engste Stelle, aktuelle und nächste Etappe), hochziehbar auf `.medium` (ganze Restfahrt); die App wechselt den Detent unterwegs nie selbst, damit die Karte nicht springt (Carlo, 26.10.). Karte bleibt bedienbar (`presentationBackgroundInteraction(.enabled)`).
 
 ## 4. Komponenten
 
@@ -159,6 +159,10 @@ Zeiten, Minuten, Meter: immer `.monospacedDigit()` und `.contentTransition(.nume
 - Zeitleiste: Zeitspalte monospacedDigit, Echtzeit darunter in status/warn; Schiene in Linienfarbe für Fahrten, gepunktet (mode/walk) für Fußwege.
 - Gleiswechsel: neues Gleis hervorgehoben + "statt 10"; `.sensoryFeedback(.warning)` beim Eintreffen, Puls einmalig.
 - "4 Zwischenhalte" klappt per Motion.micro auf (DisclosureGroup); Fußweg-Zeilen zeigen die kalibrierte Gehzeit.
+- Wegbeschreibung: OSM-Teilstücke derselben Straße (geradeaus, namenlos, leichte Biegung derselben Straße, unter 10 m)
+  werden eine Zeile ("Hüttenstraße folgen", 640 m). Pro Zeile Richtungssymbol, Anweisung, Distanz; Abbiegen, Treppe und
+  Aufzug semibold mit Symbol in accent/blue, Geradeaus ruhig in label/secondary. Bis 3 Zeilen alles, sonst nur die
+  Kernschritte und "Alle Schritte (n)" zum Aufklappen.
 - Unten in der Daumenzone: "Erinnern" (öffnet D1) und "Starten" (Navigation). Quellenangabe unter der Zeitleiste.
 - VoiceOver: jede Station ein Element ("13 Uhr 10, Köln Hauptbahnhof, Gleis 7 statt 10, 3 Minuten später, RE 5 Richtung Koblenz").
 
@@ -167,8 +171,26 @@ Zeiten, Minuten, Meter: immer `.monospacedDigit()` und `.contentTransition(.nume
 Aufbau in allen Zuständen gleich: oben die **Jetzt-Karte** (Glass, Radius 22, 16 pt Rand, Innenabstand 16, Abstand 6):
 Eyebrow (`.caption2`, Versalien) → Überschrift (App/Anweisung, einheitlich 28 pt, nicht größer) → eine Zeile Kontext
 (`.subheadline` `.secondary`) → genau drei Zahlen (Beschriftung `.caption`, Wert App/Kennzahl) → optional Karten-Hinweis.
-Mitte die Karte nur als Kontext. Unten das Danach-Sheet (fest 237 pt) mit den nächsten Schritten, "Beenden" als Text.
-Keine Leg-Bar, keine Kartenknöpfe, kein Aktualisieren-Knopf.
+Mitte die Karte: frei verschieb-, zoom- und drehbar; die Kamera folgt Position und Ziel-Halt, bis der Nutzer die Karte
+selbst bewegt. Unter der Jetzt-Karte rechts (Glass, 44 x 44, `GlassEffectContainer`): "Ganze Route" (immer, zeigt
+Position und Restroute) und "Zentrieren" (location.fill, sobald die Karte nicht mehr folgt: nach eigener Geste, "Ganze
+Route" oder Tipp auf eine Zeile der Restfahrt). Ist unter der Jetzt-Karte kein Platz über dem Sheet (AX3, .medium), rückt
+der Stapel nach oben, nie unter das Sheet. Enge Umstiege (Puffer unter 2 Min. oder zu kurz) tragen auf der Karte ein
+Symbol in Statusfarbe mit Titel "Halt: Knapp: 20 s" bzw. "Reicht nicht" (Carlo, 26.10.). Keine Leg-Bar, kein
+Aktualisieren-Knopf.
+
+**Danach-Sheet = Restfahrt** (26.10.): Kopf "Ankunft 09:03" + "8 Etappen", "Beenden" als Text; darunter nur wenn knapp
+(höchstens 2 Min.) die engste Stelle "Engster Umstieg: Köln Messe/Deutz, 20 s" mit Symbol in Statusfarbe (Tipp zeigt sie auf
+der Karte; bei bequemem Puffer entfällt die Zeile). Liste aller noch kommenden Etappen ab jetzt, erledigte fallen weg, die aktuelle zuerst (accent/blueTint, halbfett):
+- Fahrt: Abfahrt, Linien-Badge (+ Verspätung), "bis Ziel", "ab Gleis 9 · an 08:32 Gleis 93"; im Fahrzeug "noch 3 Halte".
+- Umstieg (Fußweg zwischen zwei Fahrzeugen oder Umstieg am selben Steig): Ankunft, "Umstieg Halt", "Gleis 93 → Gleis 92 · 2 Min.
+  zu Fuß", Puffer mit Symbol und Text: "Puffer 5 Min." (status/ok, checkmark), "Knapp: 20 s" (status/warn, unter 2 Min.,
+  Dreieck), "Reicht nicht" (status/alert, Achteck). Aktueller Umstieg live aus Position und Uhr, spätere aus Ankunft vorher,
+  Abfahrt und Gehzeit; ändert sich mit jeder Verspätung (Refresh), ohne Alert.
+- Fußweg (zum ersten Halt, zum Ziel): Losgehen, "Zu Fuß zu X", "8 Min. zu Fuß · ca. 550 m".
+- Tipp auf eine Zeile zentriert die Karte auf diese Stelle. VoiceOver: Kopf ("Restfahrt, Ankunft 9:03, 8 Etappen.") und
+  jede Zeile als ein Satz ("Jetzt, 8:02, Fernzug ICE 47, ab Düsseldorf Hbf, Gleis 9, bis Köln Messe/Deutz, ...";
+  "8:32, Umstieg in Köln Messe/Deutz, Gleis 93 nach Gleis 92, 2 Minuten Fußweg, knapp, Puffer 20 Sekunden.").
 
 | Zustand | Eyebrow | Überschrift | Drei Zahlen |
 |---|---|---|---|
@@ -180,10 +202,11 @@ Keine Leg-Bar, keine Kartenknöpfe, kein Aktualisieren-Knopf.
 | 4f Ankunft | ANGEKOMMEN | Zielname | Unterwegs, Zu Fuß, Verspätung |
 
 **4 Fußweg zum Gleis**
-- Puffer = Zeit, die übrig bleibt, wenn du im gelernten Tempo gehst. Grün ab 2 Min., orange unter 90 s (mit `.warning`), rot, wenn es nicht mehr reicht; dann bietet die Karte direkt die nächste Verbindung an.
+- Puffer = Zeit, die übrig bleibt, wenn du im gelernten Tempo gehst. Grün ab 2 Min., orange unter 2 Min., `.warning` zusätzlich unter 90 s, rot, wenn es nicht mehr reicht; dann bietet die Karte direkt die nächste Verbindung an. Vor der Ankunft des vorigen Fahrzeugs rechnet der Puffer ab dessen Ankunft (ohne Position), damit Jetzt-Karte und Restfahrt gleich zeigen. Umstiegswege im Bahnhof nie kürzer als die MOTIS-Gehzeit (MKDirections nur außerhalb).
+- Überschrift nennt die nächste Abbiegung bzw. Treppe/Aufzug aus den zusammengefassten Schritten (`WalkDirections`), nie Mikroschritte.
 - Wegbeschreibung im Bahnhof aus `steps` (API v0.3): direction inkl. stairs/elevator und fromLevel/toLevel, daraus Texte wie "Treppe hoch zu Gleis 7 (1 Ebene)". MKDirections nur außerhalb von Bahnhöfen.
 - Karte: eigene Position, gepunkteter Weg, Pin "Gleis 7" an der Koordinate des Bahnsteig-Halts.
-- Danach-Sheet: die nächsten drei Schritte mit Zeit. Aktualisieren automatisch (60 s, 20 s vor Umstieg).
+- Danach-Sheet: Restfahrt mit Puffer je Umstieg (siehe oben). Aktualisieren automatisch (60 s, 20 s vor Umstieg).
 
 **4b Am Gleis**
 - Am Gleis zählt nur: welches Gleis, welcher Zug, wann.
@@ -192,9 +215,9 @@ Keine Leg-Bar, keine Kartenknöpfe, kein Aktualisieren-Knopf.
 - Wagenreihung, Abschnitt und Auslastung zeigt die App nicht (liefert Transitous nicht).
 
 **4c Im Zug**
-- Wann aussteigen: die Karte zählt die Halte bis zum Ausstieg herunter; das Danach-Sheet zeigt die restlichen Halte mit Zeiten (stopovers).
+- Wann aussteigen: die Karte zählt die Halte bis zum Ausstieg herunter; in der Restfahrt steht an der aktuellen Fahrt "noch n Halte".
 - Einen Halt vorher: Haptik und Mitteilung "Nächster Halt aussteigen", auch bei gesperrtem Gerät über die Live Activity (M4).
-- Verspätung ändert die Ankunft per numericText; Anschluss in Gefahr → Hinweis Kritisch mit Alternative.
+- Verspätung ändert die Ankunft per numericText; reicht ein späterer Anschluss nicht mehr → Hinweis Kritisch "Anschluss RB 25 in Köln Messe/Deutz reicht nicht mehr." mit "Nächste Verbindung", einmal `.warning` je Anschluss.
 - Ausstiegsseite ist nicht bekannt und wird nicht angezeigt.
 
 **4d Umstieg**
