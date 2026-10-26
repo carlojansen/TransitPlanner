@@ -1,6 +1,6 @@
 # Deployment-Runbook (Hetzner Cloud, Stand 24.10.2026)
 
-Server: CAX11 (arm64, 2 vCPU, 4 GB), Ubuntu 26.04, Falkenstein. Firewall `transitplanner`: 22 nur eigene IP, 80 und 443 offen. Wechselt die eigene öffentliche IP (`curl https://api.ipify.org`), läuft SSH in einen Timeout; dann die Regel in der Hetzner Console anpassen (IPv6 als /64-Präfix, sonst greift sie nach dem Adresswechsel durch die macOS Privacy Extensions nicht mehr). SSH über die IP `178.104.209.18`, `known_hosts` kennt den Hostnamen nicht.
+Server: CAX11 (arm64, 2 vCPU, 4 GB), Ubuntu 26.04, Falkenstein. Firewall `transitplanner`: 22, 80 und 443 offen für alle; SSH nur per Key (`PasswordAuthentication no`, `PermitRootLogin prohibit-password`) plus fail2ban (Standard-Jail sshd), keine IP-Regel mehr (26.10.). SSH über die IP `178.104.209.18`, `known_hosts` kennt den Hostnamen nicht.
 Host: `static.18.209.104.178.clients.your-server.de` (Hetzner-rDNS, an die IP gebunden). Bei Umzug oder eigener Domain
 muss der Name im Caddyfile und der Pin/Host in der App geändert werden.
 

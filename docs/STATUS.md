@@ -142,7 +142,7 @@ Vollständiges Audit des Backends durch `security-hig-reviewer`: kein Blocker im
 - [ ] Transitous per Matrix kontaktieren (privat, nicht kommerziell, Last: max. 60 Anfragen/min, typisch wenige).
 - [x] Backup-SPKI-Schlüssel erzeugt, beide Pins in der App (24.10.). Offen bei Carlo: Schlüssel offline außerhalb der iCloud verwahren.
 - [ ] Lizenz in `backend/package.json` (derzeit `UNLICENSED`, `private: true`) zusammen mit LICENSE anpassen.
-- [ ] Eigene Domain statt Hetzner-Hostname (Caddyfile, App-Host, neue Pins).
+- [x] Eigene Domain: entfällt (Familien-App, Hetzner-Hostname reicht; Entscheidung 26.10.).
 - [ ] Projekt-Kontaktadresse für User-Agent prüfen (aktuell Repo-URL), Repo öffentlich machen.
 - [ ] OSM-Namensnennung und Transitous-Quellenlink in der App.
 - [ ] Bearer-Token durch App Attest ersetzen, bevor die App über den Eigengebrauch hinausgeht.
