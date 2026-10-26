@@ -56,7 +56,8 @@ public struct TransferCheck: Sendable, Hashable {
     /// Zeit, die nach dem kalibrierten Fussweg bis zur Abfahrt bleibt (negativ = nicht zu schaffen).
     public let slackSeconds: Int
     public var isAtRisk: Bool { slackSeconds < TransferCheck.minimumSlackSeconds }
-    public static let minimumSlackSeconds = 60
+    /// Wie `WalkBuffer.Status.tight`: unter 2 Min. ist ein Umstieg knapp.
+    public static let minimumSlackSeconds = 120
 }
 
 public struct CalibratedJourney: Sendable, Hashable {
@@ -138,7 +139,7 @@ public struct HybridRouteCalculator: Sendable {
         // 1. Eindeutige Segmente sammeln
         var segments = Set<Segment>()
         for journey in journeys {
-            for leg in journey.legs where leg.isWalk {
+            for leg in journey.legs where leg.isWalk && !Self.isTransferWalk(leg, in: journey) {
                 if let s = segment(for: leg, in: journey, origin: origin, destination: destination),
                    s.from.distance(to: s.to) >= Self.minimumAppleMapsDistance {
                     segments.insert(s)
@@ -171,6 +172,13 @@ public struct HybridRouteCalculator: Sendable {
         return journeys.map { journey in
             var walks: [Int: WalkEstimate] = [:]
             for leg in journey.legs where leg.isWalk {
+                let motis = Double(leg.durationSeconds ?? 0)
+                // Umstiegsweg: nur MOTIS kennt den Weg im Bahnhof (Treppen, Ebenen); nie schneller als der Fahrplan.
+                if Self.isTransferWalk(leg, in: journey) {
+                    walks[leg.index] = WalkEstimate(legIndex: leg.index, seconds: max(Int(motis.rounded(.up)), pace.apply(to: motis)),
+                                                    distanceMeters: leg.distanceMeters, source: .timetable)
+                    continue
+                }
                 let eta = segment(for: leg, in: journey, origin: origin, destination: destination).flatMap { etas[$0] }
                 if let eta {
                     walks[leg.index] = WalkEstimate(legIndex: leg.index, seconds: pace.apply(to: eta.seconds),
@@ -182,6 +190,15 @@ public struct HybridRouteCalculator: Sendable {
             }
             return CalibratedJourney(journey: journey, walks: walks, transfers: Self.transferChecks(journey, walks: walks))
         }
+    }
+
+    /// Umstiegsweg: Umstieg laut MOTIS (`isTransfer`) oder Fussweg zwischen zwei Fahrzeugen. MKDirections kennt keine
+    /// Bahnhofs-Innenwege (Treppen, Ebenen) und schaetzt dort nur Luftlinie; daher nie MKDirections und mindestens die
+    /// MOTIS-Zeit. Zugangs- und Zielwege bleiben kalibriert, auch mit Aufzug am Ende (Weg von zu Hause).
+    static func isTransferWalk(_ leg: Leg, in journey: Journey) -> Bool {
+        if leg.isTransfer == true { return true }
+        guard let i = journey.legs.firstIndex(where: { $0.index == leg.index }), i > 0, i < journey.legs.count - 1 else { return false }
+        return !journey.legs[i - 1].isWalk && !journey.legs[i + 1].isWalk
     }
 
     private struct Segment: Hashable, Sendable {

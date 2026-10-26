@@ -52,8 +52,8 @@ import Testing
         let pace = WalkingPaceFactor(learned: 0.8)
         let result = try await calculator(directions).calibrate(journeys, pace: pace, origin: exactOrigin)
 
-        // 3 eindeutige Fusswege (Zugang ist in beiden Verbindungen gleich)
-        #expect(directions.recorded.count == 3)
+        // 2 eindeutige Fusswege an MKDirections (Zugang ist in beiden Verbindungen gleich, Umstieg im Bahnhof nie)
+        #expect(directions.recorded.count == 2)
         // Exakte lokale Startkoordinate statt der gerundeten aus der Antwort
         let keyOrigin = exactOrigin.rounded(decimals: 5) // Segment-Schluessel ~1 m
         #expect(directions.recorded.contains { $0.0 == keyOrigin })
@@ -76,7 +76,21 @@ import Testing
         let access = try #require(result[0].walks[0])
         #expect(access.source == .timetable)
         #expect(access.seconds == pace.apply(to: 300))
-        #expect(result[0].walks[2]?.source == .appleMaps)
+        #expect(result[0].walks[4]?.source == .appleMaps)
+    }
+
+    /// Umstieg im Bahnhof: nie MKDirections, nie schneller als MOTIS (Luftlinie unterschaetzt Treppen und Ebenen).
+    @Test func transferWalkNeverBelowTimetable() async throws {
+        let journeys = try Fixture.routes().journeys
+        let directions = FakeDirections()
+        let result = try await calculator(directions).calibrate(journeys, pace: WalkingPaceFactor(learned: 0.6))
+        let transfer = try #require(result[0].walks[2])
+        let motis = try #require(journeys[0].legs[2].durationSeconds)
+        #expect(transfer.source == .timetable && transfer.seconds == motis)
+        let slow = try await calculator(directions).calibrate(journeys, pace: WalkingPaceFactor(learned: 1.5))
+        #expect(slow[0].walks[2]?.seconds == WalkingPaceFactor(learned: 1.5).apply(to: Double(motis)))
+        let legs2 = journeys[0].legs[2]
+        #expect(!directions.recorded.contains { $0.0 == legs2.origin.coordinate?.rounded(decimals: 5) })
     }
 
     @Test func transferCheckUsesCalibratedWalk() async throws {

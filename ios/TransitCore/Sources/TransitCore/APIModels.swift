@@ -113,6 +113,15 @@ public struct Step: Codable, Sendable, Hashable {
 
     private enum CodingKeys: String, CodingKey { case direction, distanceMeters, fromLevel, toLevel, streetName }
 
+    public init(direction: Direction, distanceMeters: Int?, fromLevel: Double? = nil, toLevel: Double? = nil,
+                streetName: String? = nil) {
+        self.direction = direction
+        self.distanceMeters = distanceMeters
+        self.fromLevel = fromLevel
+        self.toLevel = toLevel
+        self.streetName = streetName
+    }
+
     public init(from decoder: any Decoder) throws {
         // Tolerant: ein Feld mit falschem Typ wird nil, statt die ganze Antwort zu brechen.
         let c = try decoder.container(keyedBy: CodingKeys.self)
