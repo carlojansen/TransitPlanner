@@ -4,6 +4,9 @@
     "%@" : {
 
     },
+    "%@ Etappen" : {
+
+    },
     "%@ m" : {
 
     },
@@ -13,11 +16,60 @@
     "%@ Minuten später" : {
 
     },
+    "%@ s" : {
+
+    },
     "%@ Umstiege" : {
 
     },
     "%@ Zwischenhalte" : {
 
+    },
+    "%lld Etappen" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Etappe"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Etappen"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld Minuten" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Minute"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Minuten"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "%lld Minuten Fußweg" : {
       "extractionState" : "stale",
@@ -81,6 +133,29 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld Minuten verspätet"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld Sekunden" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Sekunde"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Sekunden"
                 }
               }
             }
@@ -158,6 +233,9 @@
     "Ankunft" : {
 
     },
+    "Ankunft %@" : {
+
+    },
     "BESTE VERBINDUNG" : {
 
     },
@@ -168,9 +246,6 @@
 
     },
     "Die App fragt Fahrpläne über deinen eigenen Server ab. Der Schlüssel zeigt dem Server, dass die Anfrage von dir kommt." : {
-
-    },
-    "Die Wegführung kommt in einer späteren Etappe." : {
 
     },
     "direkt" : {
@@ -277,6 +352,12 @@
 
     },
     "Pünktlich" : {
+
+    },
+    "reicht nicht" : {
+
+    },
+    "Restfahrt" : {
 
     },
     "Richtung %@" : {

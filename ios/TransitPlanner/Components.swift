@@ -108,7 +108,8 @@ struct WalkChip: View {
 
     var body: some View {
         let minutes = Int((Double(seconds) / 60).rounded(.up))
-        HStack(spacing: 2) {
+        // AX: ausgeschrieben und mit Abstand ("Fußweg 4", nicht "Fußweg4")
+        HStack(spacing: typeSize.isAccessibilitySize ? 6 : 2) {
             Image(systemName: "figure.walk")
             if typeSize.isAccessibilitySize { Text("Fußweg") }
             if estimated { Text("ca.") }

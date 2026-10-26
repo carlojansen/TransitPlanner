@@ -18,6 +18,16 @@ final class ScreenshotTour: XCTestCase {
 
     @MainActor
     func testTour() throws {
+        // TOUR_ONLY=<Teil des Namens> (TEST_RUNNER_TOUR_ONLY): nur passende Navigationszustaende, z. B. "4b".
+        if let only = ProcessInfo.processInfo.environment["TOUR_ONLY"], !only.isEmpty {
+            for mode in ["light", "dark"] {
+                for state in Self.navigationStates where state.name.contains(only) {
+                    try navigation(mode, state, ax3: false)
+                    if state.ax3 { try navigation(mode, state, ax3: true) }
+                }
+            }
+            return
+        }
         for mode in ["light", "dark"] {
             try onboardingAndPlanning(mode)
             try routesAndDetails(mode, ax3: false)
@@ -26,7 +36,58 @@ final class ScreenshotTour: XCTestCase {
             try singleState(mode, scenario: "serverDown", name: "14-h1-banner", waitFor: "banner")
             try singleState(mode, scenario: "noConnections", name: "15-h2-no-connections", waitFor: nil)
             try offline(mode)
+            for state in Self.navigationStates {
+                try navigation(mode, state, ax3: false)
+                if state.ax3 { try navigation(mode, state, ax3: true) }
+            }
         }
+    }
+
+    /// Unterwegs (DESIGN.md C) mit Fake-Uhr und Fake-Standort entlang der Fake-Verbindung 0
+    /// (Fussweg > STR 704 06:08 > Umstieg > SEV RE 5 06:23-06:38 > Fussweg).
+    struct NavState {
+        let name: String
+        let now: String
+        let position: String
+        var ax3 = false
+        /// Restfahrt-Fixture `-fakeScenario deutz` (26.10.) statt Fake-Verbindung 0 (24.10.)
+        var deutz = false
+        /// Danach-Sheet auf den mittleren Detent ziehen
+        var expand = false
+    }
+
+    static let navigationStates = [
+        NavState(name: "18-nav-4-walk", now: "06:01:00", position: "51.2201,6.7915", ax3: true),
+        NavState(name: "19-nav-4b-platform", now: "06:05:00", position: "51.21996,6.79432"),
+        NavState(name: "20-nav-4c-onboard", now: "06:12:00", position: "51.2120,6.7850"),
+        NavState(name: "21-nav-4d-transfer", now: "06:17:00", position: "51.2045,6.7755"),
+        NavState(name: "22-nav-4e-replacement", now: "06:21:00", position: "51.2049,6.7761", ax3: true),
+        NavState(name: "23-nav-final-walk", now: "06:39:00", position: "50.9425,6.9587"),
+        NavState(name: "24-nav-4f-arrival", now: "06:43:00", position: "50.9413,6.9583"),
+        // Restfahrt: im ICE (Deutz knapp), mittlerer Detent, Umstieg an Gleis 93 (aktuell, live).
+        NavState(name: "25-nav-overview", now: "07:10:00", position: "51.0500,6.9000", ax3: true, deutz: true),
+        NavState(name: "26-nav-overview-medium", now: "07:10:00", position: "51.0500,6.9000", ax3: true, deutz: true,
+                 expand: true),
+        NavState(name: "27-nav-overview-transfer", now: "07:33:00", position: "50.9409,6.9750", deutz: true, expand: true),
+    ]
+
+    @MainActor
+    private func navigation(_ mode: String, _ state: NavState, ax3: Bool) throws {
+        let app = launch(mode, scenario: state.deutz ? "deutz" : nil, ax3: ax3,
+                         extra: ["-fakeNow", "\(state.deutz ? "2026-10-26" : "2026-10-24")T\(state.now)Z",
+                                 "-fakePosition", state.position])
+        searchStop(app)
+        tap(app.buttons["startButton"].firstMatch)
+        XCTAssertTrue(app.descendants(matching: .any)["nowCard"].waitForExistence(timeout: 10))
+        if state.expand {
+            let header = app.descendants(matching: .any)["overviewHeader"]
+            XCTAssertTrue(header.waitForExistence(timeout: 5))
+            // Am Griff ziehen (knapp ueber dem Kopf): Inhalt scrollt sonst bei AX-Groessen statt das Sheet zu heben.
+            header.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 150, dy: -20))
+                .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)))
+        }
+        shot(app, state.name, mode, ax3 ? "-ax3" : "")
+        app.terminate()
     }
 
     // MARK: Durchlaeufe
@@ -138,14 +199,15 @@ final class ScreenshotTour: XCTestCase {
     // MARK: Hilfen
 
     @MainActor
-    private func launch(_ mode: String, onboarded: Bool = true, scenario: String? = nil, ax3: Bool = false) -> XCUIApplication {
+    private func launch(_ mode: String, onboarded: Bool = true, scenario: String? = nil, ax3: Bool = false,
+                        extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         var args = ["-uiTestFakes", mode == "dark" ? "-uiTestDark" : "-uiTestLight"]
         if onboarded { args.append("-fakeOnboarded") }
         if let scenario { args += ["-fakeScenario", scenario] }
         // accessibility3 = UIKit "AccessibilityXL"
         if ax3 { args += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"] }
-        app.launchArguments = args
+        app.launchArguments = args + extra
         app.launch()
         return app
     }

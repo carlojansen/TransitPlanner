@@ -246,6 +246,7 @@ private struct WalkTimelineRow: View {
     let leg: Leg
     let estimate: WalkEstimate?
     @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var showsAll = false
 
     var body: some View {
         let ax = typeSize.isAccessibilitySize
@@ -264,23 +265,60 @@ private struct WalkTimelineRow: View {
                     }
                     Text(leg.isTransfer == true ? "Umstieg" : "Fußweg").font(.footnote).foregroundStyle(.secondary)
                 }
-                ForEach(Array(leg.steps.enumerated()), id: \.offset) { _, step in
-                    HStack(spacing: 6) {
-                        Image(systemName: step.direction.symbolName).foregroundStyle(.secondary)
-                        if let street = step.streetName { Text(street) }
-                        if let from = step.fromLevel, let to = step.toLevel, from != to {
-                            Text(to > from ? "Ebene hoch" : "Ebene runter")
-                        }
-                        Spacer(minLength: 0)
-                        if let meters = step.distanceMeters { Text("\(meters) m").monospacedDigit() }
+                // OSM-Teilstuecke zusammengefasst; standardmaessig nur Abbiegungen, Treppen, Aufzuege.
+                let all = WalkDirections.condensed(leg.steps)
+                let key = WalkDirections.keySteps(all)
+                // Stabile Identitaet: Index in der vollen Liste, damit Auf-/Zuklappen Zeilen nicht neu erzeugt.
+                let keyIndices = key.count == all.count ? Array(all.indices) : all.indices.filter { all[$0].isManeuver }
+                ForEach(showsAll ? Array(all.indices) : keyIndices, id: \.self) { i in
+                    WalkStepRow(step: all[i])
+                }
+                if key.count < all.count {
+                    Button {
+                        withAnimation(Motion.micro) { showsAll.toggle() }
+                    } label: {
+                        Label(showsAll ? String(localized: "Weniger Schritte") : String(localized: "Alle Schritte (\(all.count))"),
+                              systemImage: showsAll ? "chevron.up" : "chevron.down")
+                            .font(.footnote)
+                            .frame(minHeight: 44, alignment: .leading)
+                            .contentShape(.rect)
                     }
-                    .font(.footnote)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(Spoken.step(step))
+                    .buttonStyle(.borderless)
                 }
             }
             .padding(.vertical, 4)
         }
         .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Ein Wegschritt: Richtungssymbol, Anweisung, Distanz. Abbiegungen und Ebenenwechsel hervorgehoben,
+/// Geradeaus-Strecken ruhig ("Hüttenstraße folgen").
+private struct WalkStepRow: View {
+    let step: Step
+
+    var body: some View {
+        let maneuver = step.isManeuver
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: step.symbolName)
+                .foregroundStyle(maneuver ? Color(.accentBlue) : Color(.labelSecondary))
+                .frame(minWidth: 20)
+                .accessibilityHidden(true)
+            Text(NavigationPresenter.stepTitle(step))
+                .fontWeight(maneuver ? .semibold : .regular)
+                .foregroundStyle(maneuver ? Color.primary : Color(.labelSecondary))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            if let meters = step.distanceMeters {
+                Text("\(meters) m")
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .foregroundStyle(Color(.labelSecondary))
+            }
+        }
+        .font(.footnote)
+        .frame(minHeight: 28)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Spoken.step(step))
     }
 }

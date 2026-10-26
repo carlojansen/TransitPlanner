@@ -38,6 +38,10 @@ struct AppDependencies: Sendable {
     /// Gemerkter Einstieg (UserDefaults, Required-Reason CA92.1 in PrivacyInfo).
     var loadOnboarding: @Sendable () -> OnboardingChoice?
     var saveOnboarding: @Sendable (OnboardingChoice) -> Void
+    /// Live-Standort fuer die Navigation (nur Vordergrund, when-in-use); Fixes bleiben im RAM.
+    var positions: @Sendable () -> AsyncStream<LocationFix>
+    /// POST /api/refresh ohne Polylines (Polling braucht keine Geometrie, API.md).
+    var refresh: @Sendable (String) async throws(TransitError) -> Journey
     /// Sperre nach Retry-After (429/502/503/504), aus `TransitAPIClient.blocked`.
     var blockedUntil: @Sendable () async -> Date?
     var now: @Sendable () -> Date = { Date() }
@@ -45,8 +49,35 @@ struct AppDependencies: Sendable {
     var debounce: Duration = .milliseconds(300)
     /// Ab hier zeigt 3a "Warte auf Verbindung" (waitsForConnectivity kann bis 45 s dauern).
     var waitingHint: Duration = .seconds(3)
+    /// Zeitgesteuerte Neubewertung der Navigation (Zustaende haengen auch an Abfahrtszeiten).
+    var navigationTick: Duration = .seconds(5)
 
     static let onboardingKey = "onboarding"
+
+    /// CLLocationUpdate.liveUpdates mit CLServiceSession (when-in-use). Kein Hintergrund-Modus: endet mit der App im Hintergrund.
+    static func livePositions() -> AsyncStream<LocationFix> {
+        AsyncStream { continuation in
+            let task = Task {
+                let session = CLServiceSession(authorization: .whenInUse)
+                defer { session.invalidate() }
+                do {
+                    for try await update in CLLocationUpdate.liveUpdates(.otherNavigation) {
+                        guard !Task.isCancelled else { break }
+                        // Ungueltig, zu ungenau oder zwischengespeichert alt (> 30 s): verwerfen.
+                    guard let l = update.location, l.horizontalAccuracy >= 0, l.horizontalAccuracy <= 100,
+                          l.timestamp.timeIntervalSinceNow > -NavigationEngine.freshFix else { continue }
+                        continuation.yield(LocationFix(coordinate: GeoCoordinate(latitude: l.coordinate.latitude,
+                                                                                 longitude: l.coordinate.longitude),
+                                                       horizontalAccuracy: l.horizontalAccuracy, timestamp: l.timestamp))
+                    }
+                } catch {
+                    // Abbruch oder Fehler: Stream endet, die Navigation laeuft nach Zeit weiter.
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
 
     static func live() -> AppDependencies {
         let api = TransitAPIClient()
@@ -65,6 +96,8 @@ struct AppDependencies: Sendable {
             },
             loadOnboarding: { UserDefaults.standard.string(forKey: onboardingKey).flatMap(OnboardingChoice.init(rawValue:)) },
             saveOnboarding: { UserDefaults.standard.set($0.rawValue, forKey: onboardingKey) },
+            positions: { livePositions() },
+            refresh: { token throws(TransitError) in try await api.refresh(refreshToken: token, polylines: false).journey },
             blockedUntil: { await api.blocked?.until }
         )
     }
@@ -94,11 +127,30 @@ extension AppDependencies {
         case "serverDown": FakeRoutePlanner(failure: .upstreamUnavailable)
         case "offlineAfterFirst": FakeRoutePlanner(failAfterFirst: .offline)
         case "plainFirst": FakeRoutePlanner(reversed: true)
+        case "deutz": FakeRoutePlanner(response: FakeData.deutz())
         default: FakeRoutePlanner()
         }
-        return .fakes(planner: planner,
-                      secrets: InMemorySecretStore(token: onboarded ? String(repeating: "k", count: 40) : nil),
-                      onboarding: onboarded ? .withLocation : nil)
+        var deps = AppDependencies.fakes(planner: planner,
+                                         secrets: InMemorySecretStore(token: onboarded ? String(repeating: "k", count: 40) : nil),
+                                         onboarding: onboarded ? .withLocation : nil)
+        // Navigation (Screenshot-Tour): feste Uhrzeit und fester Standort, z. B. `-fakeNow 2026-10-24T06:05:00Z -fakePosition 51.21996,6.79432`.
+        if let raw = value(after: "-fakeNow", in: arguments), let base = try? Date.ISO8601FormatStyle().parse(raw) {
+            let offset = base.timeIntervalSince(Date())
+            deps.now = { Date().addingTimeInterval(offset) }
+        }
+        if let raw = value(after: "-fakePosition", in: arguments) {
+            let parts = raw.split(separator: ",").compactMap { Double($0) }
+            if parts.count == 2 {
+                let fix = LocationFix(coordinate: GeoCoordinate(latitude: parts[0], longitude: parts[1]),
+                                      horizontalAccuracy: 5, timestamp: Date())
+                deps.positions = { AsyncStream { $0.yield(fix) } }
+            }
+        }
+        return deps
+    }
+
+    private static func value(after flag: String, in arguments: [String]) -> String? {
+        arguments.firstIndex(of: flag).flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
     }
 
     static func fakes(search: FakeStopSearch = FakeStopSearch(), planner: FakeRoutePlanner = FakeRoutePlanner(),
@@ -107,13 +159,33 @@ extension AppDependencies {
                       onboarding: OnboardingChoice? = nil,
                       blockedUntil: Date? = nil,
                       debounce: Duration = .milliseconds(300),
-                      waitingHint: Duration = .seconds(3)) -> AppDependencies {
+                      waitingHint: Duration = .seconds(3),
+                      refresher: FakeRefresher = FakeRefresher()) -> AppDependencies {
         let stored = Mutex(onboarding)
         return AppDependencies(search: search, planner: planner, secrets: secrets, location: location,
                                authorization: { location.status },
                                loadOnboarding: { stored.withLock { $0 } },
                                saveOnboarding: { value in stored.withLock { $0 = value } },
+                               positions: { AsyncStream { _ in } },
+                               refresh: { token throws(TransitError) in try await refresher.refresh(token) },
                                blockedUntil: { blockedUntil }, debounce: debounce, waitingHint: waitingHint)
+    }
+}
+
+/// Fake-Refresh: liefert die Verbindung mit gleichem Token aus den Fake-Daten oder einen vorgegebenen Stand/Fehler.
+final class FakeRefresher: Sendable {
+    let next = Mutex<Result<Journey, TransitError>?>(nil)
+    let calls = Mutex(0)
+
+    func set(_ result: Result<Journey, TransitError>?) { next.withLock { $0 = result } }
+    var callCount: Int { calls.withLock { $0 } }
+
+    func refresh(_ token: String) async throws(TransitError) -> Journey {
+        calls.withLock { $0 += 1 }
+        if let result = next.withLock({ $0 }) { return try result.get() }
+        let all = (FakeData.routes?.journeys ?? []) + (FakeData.deutz()?.journeys ?? [])
+        guard let journey = all.first(where: { $0.refreshToken == token }) else { throw .refreshExpired }
+        return journey
     }
 }
 
@@ -192,8 +264,12 @@ final class FakeRoutePlanner: RoutePlanning {
     let failAfterFirst: TransitError?
     /// Verbindungen in umgekehrter Reihenfolge (Routenauswahl ohne Ersatzverkehr oben).
     let reversed: Bool
+    /// Andere Antwort statt `FakeData.routes` (z. B. `FakeData.deutz()`).
+    let response: RoutesResponse?
 
-    init(failure: TransitError? = nil, delay: Duration = .zero, failAfterFirst: TransitError? = nil, reversed: Bool = false) {
+    init(failure: TransitError? = nil, delay: Duration = .zero, failAfterFirst: TransitError? = nil, reversed: Bool = false,
+         response: RoutesResponse? = nil) {
+        self.response = response
         self.failure = Mutex(failure)
         self.delay = delay
         self.failAfterFirst = failAfterFirst
@@ -209,13 +285,14 @@ final class FakeRoutePlanner: RoutePlanning {
         let failure = self.failure.withLock { $0 } ?? (count > 1 ? failAfterFirst : nil)
         let delay = self.delay
         let reversed = self.reversed
+        let override = self.response
         return AsyncThrowingStream { continuation in
             let task = Task {
                 if delay > .zero {
                     do { try await Task.sleep(for: delay) } catch { continuation.finish(throwing: TransitError.cancelled); return }
                 }
                 if let failure { continuation.finish(throwing: failure); return }
-                guard let base = FakeData.routes else { continuation.finish(throwing: TransitError.decodingFailed); return }
+                guard let base = override ?? FakeData.routes else { continuation.finish(throwing: TransitError.decodingFailed); return }
                 let response = reversed ? FakeData.reversed(base) : base
                 continuation.yield(.skeleton(response))
                 do {
@@ -322,6 +399,64 @@ enum FakeData {
      "earlierRef":null,"laterRef":"later","walkOnly":false,"removedLongDistance":1,
      "fetchedAt":"2026-10-24T06:01:02Z","attribution":\#(attributionJSON)}
     """#)
+
+    /// Echte Fahrt (Mo 26.10.2026, Zeiten in UTC = MEZ - 1 h): Düsseldorf Hbf 08:02 ICE 47 Gleis 9 > Köln Messe/Deutz
+    /// 08:32 Gleis 93, 2 Min. zu Fuß zu Gleis 92 > RB 25 08:34 > Köln Hansaring 08:38, 3 Min. zu Fuß > STR 12 08:41 >
+    /// Zülpicher Platz 08:47, 3 Min. zu Fuß > STR 9 08:50 > Köln Sülz Weyertal 08:55, 8 Min. zu Fuß zu Weyertal 119a.
+    /// Puffer: Deutz 20 s (engster), Hansaring 30 s, Zülpicher Platz 40 s. `iceDelay` (s) verspätet die Ankunft in Deutz.
+    static func deutz(iceDelay: Int = 0) -> RoutesResponse? {
+        let arrival = Date.ISO8601FormatStyle().format(
+            (try? Date.ISO8601FormatStyle().parse("2026-10-26T07:32:00Z"))?.addingTimeInterval(TimeInterval(iceDelay)) ?? .distantPast)
+        let json = #"""
+        {"journeys":[{"refreshToken":"ZGV1dHo=","departure":"2026-10-26T07:02:00Z","arrival":"2026-10-26T08:03:00Z",
+          "durationSeconds":3660,"transfers":3,"modes":["nationalExpress","regional","tram"],"cancelled":false,"realtime":true,
+          "hasPolylines":false,"legs":[
+          {"index":0,"mode":"nationalExpress","origin":{"kind":"stop","id":"dus","name":"Düsseldorf Hbf","latitude":51.2198,"longitude":6.7944},
+           "destination":{"kind":"stop","id":"deutz93","name":"Köln Messe/Deutz","latitude":50.9409,"longitude":6.9750},
+           "departure":"2026-10-26T07:02:00Z","plannedDeparture":"2026-10-26T07:02:00Z","departureDelaySeconds":0,
+           "arrival":"ICE_ARRIVAL","plannedArrival":"2026-10-26T07:32:00Z","arrivalDelaySeconds":ICE_DELAY,
+           "realtime":true,"cancelled":false,"line":{"name":"ICE 47"},"direction":"Köln Hbf",
+           "departurePlatform":"9","plannedDeparturePlatform":"9","arrivalPlatform":"93","plannedArrivalPlatform":"93",
+           "platformChanged":false,"replacement":false},
+          {"index":1,"mode":"walk","origin":{"kind":"stop","id":"deutz93","name":"Köln Messe/Deutz","latitude":50.9409,"longitude":6.9750},
+           "destination":{"kind":"stop","id":"deutz92","name":"Köln Messe/Deutz","latitude":50.9406,"longitude":6.9745},
+           "departure":"2026-10-26T07:32:00Z","arrival":"2026-10-26T07:34:00Z","durationSeconds":100,"realtime":false,
+           "cancelled":false,"isTransfer":true,"distanceMeters":120,"durationSource":"motis-osm"},
+          {"index":2,"mode":"regional","origin":{"kind":"stop","id":"deutz92","name":"Köln Messe/Deutz","latitude":50.9406,"longitude":6.9745},
+           "destination":{"kind":"stop","id":"hansaring","name":"Köln Hansaring","latitude":50.9483,"longitude":6.9431},
+           "departure":"2026-10-26T07:34:00Z","plannedDeparture":"2026-10-26T07:34:00Z","departureDelaySeconds":0,
+           "arrival":"2026-10-26T07:38:00Z","realtime":true,"cancelled":false,"line":{"name":"RB 25"},"direction":"Köln Hansaring",
+           "departurePlatform":"92","plannedDeparturePlatform":"92","arrivalPlatform":"2","plannedArrivalPlatform":"2",
+           "platformChanged":false,"replacement":false},
+          {"index":3,"mode":"walk","origin":{"kind":"stop","id":"hansaring","name":"Köln Hansaring","latitude":50.9483,"longitude":6.9431},
+           "destination":{"kind":"stop","id":"hansaringTram","name":"Hansaring","latitude":50.9479,"longitude":6.9438},
+           "departure":"2026-10-26T07:38:00Z","arrival":"2026-10-26T07:41:00Z","durationSeconds":150,"realtime":false,
+           "cancelled":false,"isTransfer":true,"distanceMeters":180,"durationSource":"motis-osm"},
+          {"index":4,"mode":"tram","origin":{"kind":"stop","id":"hansaringTram","name":"Hansaring","latitude":50.9479,"longitude":6.9438},
+           "destination":{"kind":"stop","id":"zuelpicher12","name":"Zülpicher Platz","latitude":50.9310,"longitude":6.9394},
+           "departure":"2026-10-26T07:41:00Z","plannedDeparture":"2026-10-26T07:41:00Z","departureDelaySeconds":0,
+           "arrival":"2026-10-26T07:47:00Z","realtime":true,"cancelled":false,"line":{"name":"12"},"direction":"Zollstock",
+           "replacement":false},
+          {"index":5,"mode":"walk","origin":{"kind":"stop","id":"zuelpicher12","name":"Zülpicher Platz","latitude":50.9310,"longitude":6.9394},
+           "destination":{"kind":"stop","id":"zuelpicher9","name":"Zülpicher Platz","latitude":50.9306,"longitude":6.9387},
+           "departure":"2026-10-26T07:47:00Z","arrival":"2026-10-26T07:50:00Z","durationSeconds":140,"realtime":false,
+           "cancelled":false,"isTransfer":true,"distanceMeters":150,"durationSource":"motis-osm"},
+          {"index":6,"mode":"tram","origin":{"kind":"stop","id":"zuelpicher9","name":"Zülpicher Platz","latitude":50.9306,"longitude":6.9387},
+           "destination":{"kind":"stop","id":"weyertal","name":"Köln Sülz Weyertal","latitude":50.9258,"longitude":6.9218},
+           "departure":"2026-10-26T07:50:00Z","plannedDeparture":"2026-10-26T07:50:00Z","departureDelaySeconds":0,
+           "arrival":"2026-10-26T07:55:00Z","realtime":true,"cancelled":false,"line":{"name":"9"},"direction":"Sülz",
+           "replacement":false},
+          {"index":7,"mode":"walk","origin":{"kind":"stop","id":"weyertal","name":"Köln Sülz Weyertal","latitude":50.9258,"longitude":6.9218},
+           "destination":{"kind":"coordinate","latitude":50.9233,"longitude":6.9200},
+           "departure":"2026-10-26T07:55:00Z","arrival":"2026-10-26T08:03:00Z","durationSeconds":480,"realtime":false,
+           "cancelled":false,"isTransfer":false,"distanceMeters":550,"durationSource":"motis-osm"}],
+          "remarks":[]}],
+         "earlierRef":null,"laterRef":null,"walkOnly":false,"removedLongDistance":0,
+         "fetchedAt":"2026-10-26T06:50:00Z","attribution":\#(attributionJSON)}
+        """#
+        return decode(json.replacingOccurrences(of: "ICE_ARRIVAL", with: arrival)
+            .replacingOccurrences(of: "ICE_DELAY", with: String(iceDelay)))
+    }
 
     /// Gleiche Antwort mit umgekehrter Reihenfolge der Verbindungen (ueber JSON, Modelle haben keinen oeffentlichen Init).
     static func reversed(_ response: RoutesResponse) -> RoutesResponse {

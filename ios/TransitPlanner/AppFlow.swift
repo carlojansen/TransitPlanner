@@ -22,7 +22,7 @@ enum Phase: Sendable, Hashable {
     case routeSelection
     /// Index der Verbindung in der aktuellen Antwort.
     case tripDetails(Int)
-    /// Platzhalter; Unterzustaende (DESIGN.md C) folgen in einer spaeteren Etappe.
+    /// Unterwegs; der Unterzustand (DESIGN.md C) steht in `AppFlow.navStep`.
     case navigation(Int)
     case arrival
 
@@ -35,6 +35,14 @@ enum Phase: Sendable, Hashable {
         case .search: .search
         case .options, .routeSelection, .tripDetails: .route
         case .start, .navigation, .arrival: .none
+        }
+    }
+
+    /// Navigation oder Ankunft (Layout C).
+    var isGuiding: Bool {
+        switch self {
+        case .navigation, .arrival: true
+        default: false
         }
     }
 
@@ -58,6 +66,8 @@ enum FlowEvent: Sendable, Hashable {
     case journeySelected(Int)
     case startNavigation(Int)
     case arrived
+    /// "Nächste Verbindung" aus der Navigation (Ausfall, Anschluss verpasst): neu ab "Mein Standort", jetzt.
+    case replan
     case back
     case reset
 
@@ -198,11 +208,38 @@ final class AppFlow {
     /// Nur die Genauigkeit des letzten Fixes fuer den Status; die Koordinate wird nie gehalten (AGENT.md 3.1.2).
     private(set) var lastAccuracy: Double?
     private(set) var connectionCheck: ConnectionCheck?
+
+    // Navigation (DESIGN.md C). Live-Standort nur im RAM und nur waehrend der Navigation.
+    private(set) var navStep: NavigationStep?
+    /// Verbindung mit aktuellen Zeiten (nach jedem Refresh ersetzt).
+    private(set) var navJourney: Journey?
+    /// Original mit Polylines und Wegschritten (Refresh liefert ohne Geometrie).
+    private(set) var navGeometry: Journey?
+    private(set) var navWalks: [Int: WalkEstimate] = [:]
+    private(set) var navPosition: GeoCoordinate?
+    /// Zeitpunkt der letzten Auswertung; Ansichten zaehlen daran (gleiche Uhr wie die Logik).
+    private(set) var navNow = Date()
+    private(set) var navStartedAt: Date?
+    /// Letzter Stand bleibt sichtbar, Echtzeit pausiert (H3), z. B. offline oder Rate-Limit.
+    private(set) var navIsStale = false
+    /// Verbindung laesst sich nicht mehr aktualisieren (410): naechste Verbindung anbieten.
+    private(set) var navExpired = false
+    /// Zaehler fuer `.sensoryFeedback(.warning)`: Gleiswechsel, Puffer unter 90 s.
+    private(set) var navWarnings = 0
+    /// Letzter Roh-Fix mit Empfangszeit (Uhr `deps.now`) und Genauigkeit fuer "verpasst"; nur im RAM, nie beobachtet.
+    @ObservationIgnored private var navFix: LocationFix?
+    @ObservationIgnored private var navTasks: [Task<Void, Never>] = []
+    /// Fahrzeuge, fuer die die Puffer-/Anschluss-Haptik schon kam (einmal je Fahrzeug).
+    @ObservationIgnored private var warnedVehicles: Set<Int> = []
+    /// Zeile der Restfahrt angetippt: Karte zeigt diesen Punkt (MapScreen), Folgen pausiert bis "Zentrieren".
+    var navFocus: NavMapFocus?
     var showsSettings = false
     /// Einstellungen direkt auf "Dein Server" oeffnen (Banner-Aktion).
     var settingsOpensServer = false
 
     nonisolated static let maxQueryLength = 80
+    /// Kleinere Standortsprünge gelten als GPS-Rauschen (Meter).
+    nonisolated static let positionThreshold: Double = 3
 
     @ObservationIgnored private let deps: AppDependencies
     @ObservationIgnored private var work: Task<Void, Never>?
@@ -316,6 +353,7 @@ final class AppFlow {
         case (.routeSelection, .startNavigation(let i)), (.tripDetails, .startNavigation(let i)): .navigation(i)
         case (.tripDetails, .back): .routeSelection
         case (.navigation, .arrived): .arrival
+        case (.navigation, .replan): .routeSelection
         case (.navigation(let i), .back): .tripDetails(i)
         case (.arrival, .back): .start
         default: nil
@@ -325,7 +363,7 @@ final class AppFlow {
     /// Animation setzt die View (sie kennt Reduce Motion); das Modell bleibt SwiftUI-frei.
     func send(_ event: FlowEvent) {
         guard var new = Self.next(phase, event) else { return }
-        let plans = event == .planTapped || (event == .endpointChosen && new == .routeSelection)
+        let plans = event == .planTapped || event == .replan || (event == .endpointChosen && new == .routeSelection)
         if plans, !canPlan {
             // Ziel aus 1 Start, aber kein Start bekannt (ohne Standort): erst 2c statt leerer Liste.
             guard event == .endpointChosen, blockedUntil == nil else { return }
@@ -335,8 +373,17 @@ final class AppFlow {
         if new == .start { discardRoutes() }
         if case .search = new, phase != new { query = ""; results = SearchResults() }
         movedBackward = event.isBackward
+        let old = phase
         phase = new
         if plans, new == .routeSelection { startPlanning() }
+        if case .navigation(let i) = new, event == .startNavigation(i) { beginNavigation(i) }
+        if new == .arrival {
+            // Angekommen: Live-Standort sofort verwerfen (AGENT.md 3.1.2), die Zusammenfassung braucht ihn nicht.
+            stopNavigationTasks()
+            navPosition = nil
+            navFix = nil
+        }
+        if old.isGuiding, !new.isGuiding { endNavigation() }
         updateOverlay()
     }
 
@@ -558,6 +605,170 @@ final class AppFlow {
 
     func calibratedJourney(at index: Int) -> CalibratedJourney? {
         calibrated.flatMap { index < $0.count ? $0[index] : nil }
+    }
+
+    // MARK: Navigation
+
+    private func beginNavigation(_ index: Int) {
+        guard let journey = journey(at: index) else { return }
+        stopNavigationTasks()
+        navJourney = journey
+        navGeometry = journey
+        navWalks = calibratedJourney(at: index)?.walks ?? [:]
+        navPosition = nil
+        navFix = nil
+        navStep = nil
+        navIsStale = false
+        navExpired = false
+        warnedVehicles = []
+        navStartedAt = deps.now()
+        // Gleiswechsel schon beim Start: Hinweis und Haptik
+        if journey.legs.contains(where: { $0.platformChanged == true }) { navWarnings += 1 }
+        navigationUpdate(position: nil, now: deps.now())
+
+        let tick = deps.navigationTick
+        navTasks = [
+            Task {
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: tick) } catch { return }
+                    navigationUpdate(position: nil, now: deps.now())
+                }
+            },
+            Task {
+                while !Task.isCancelled {
+                    do { try await Task.sleep(for: refreshInterval) } catch { return }
+                    await refreshNavigation()
+                }
+            },
+        ]
+        // Ohne Erlaubnis kein Stream: liveUpdates wuerde bei .notDetermined den System-Dialog ausloesen. Dann nur nach Zeit.
+        guard locationAllowed else { return }
+        let positions = deps.positions
+        navTasks.append(Task {
+            for await fix in positions() {
+                guard !Task.isCancelled else { return }
+                navigationUpdate(position: fix.coordinate, accuracy: fix.horizontalAccuracy, now: deps.now())
+            }
+        })
+    }
+
+    /// 60 s im Normalbetrieb, 20 s vor einem Umstieg (SPEZIFIKATION 2.1).
+    var refreshInterval: Duration {
+        guard let journey = navJourney, let step = navStep else { return .seconds(60) }
+        switch step {
+        case .transferRouting: return .seconds(20)
+        case .onBoardTransit(let v):
+            let vehicles = journey.legs.filter { !$0.isWalk }
+            guard let leg = vehicles.first(where: { $0.index == v }), leg.index != vehicles.last?.index,
+                  let arrival = leg.arrival else { return .seconds(60) }
+            return arrival.timeIntervalSince(navNow) < 300 ? .seconds(20) : .seconds(60)
+        default: return .seconds(60)
+        }
+    }
+
+    /// Neubewertung aus Position (falls neu) und Zeit. Reine Logik in `NavigationEngine.resolve`.
+    /// `accuracy` in Metern; Empfangszeit = `now`.
+    func navigationUpdate(position: GeoCoordinate?, accuracy: Double = 0, now: Date) {
+        guard case .navigation = phase, let journey = navJourney else { return }
+        if let position { navFix = LocationFix(coordinate: position, horizontalAccuracy: accuracy, timestamp: now) }
+        // Akku und Ruhe: nur beobachtete Werte aendern, wenn sich sichtbar etwas tut. GPS-Rauschen unter 3 m
+        // und Ticks innerhalb derselben Minute zeichnen nichts neu (Ausnahme: knapper Puffer zaehlt Sekunden).
+        var moved = false
+        if let position, navPosition.map({ $0.distance(to: position) >= Self.positionThreshold }) ?? true {
+            navPosition = position
+            moved = true
+        }
+        let step = NavigationEngine.resolve(journey: journey, fix: navFix, now: now, previous: navStep)
+        let tight = NavigationEngine.targetVehicle(step).flatMap {
+            NavigationEngine.buffer(journey: journey, geometry: navGeometry, vehicle: $0, walks: navWalks, position: navPosition, now: now, pace: pace)
+        }.map { $0.seconds < 120 } ?? false
+        let minute = { (d: Date) in Int(d.timeIntervalSince1970 / 60) }
+        if step != navStep || tight || minute(now) != minute(navNow) || moved { navNow = now }
+        if step != navStep { navStep = step }
+        if let buffer = currentBuffer, buffer.needsWarning, let target = NavigationEngine.targetVehicle(step),
+           warnedVehicles.insert(target).inserted {
+            navWarnings += 1
+        }
+        // Im Fahrzeug: spaeterer Anschluss reicht nach Verspaetung nicht mehr -> einmal Haptik je Anschluss.
+        if case .onBoardTransit(let v) = step,
+           let broken = NavigationEngine.brokenConnection(after: v, journey: journey, walks: navWalks, now: now, pace: pace),
+           warnedVehicles.insert(broken).inserted {
+            navWarnings += 1
+        }
+        if step == .arrived { send(.arrived) }
+    }
+
+    /// Puffer fuer Fussweg zum Gleis und Umstieg; sonst nil.
+    var currentBuffer: WalkBuffer? {
+        guard let journey = navJourney, let step = navStep else { return nil }
+        switch step {
+        case .approachingFirstStop(let v), .transferRouting(_, let v), .missedDeparture(let v):
+            return NavigationEngine.buffer(journey: journey, geometry: navGeometry, vehicle: v, walks: navWalks, position: navPosition, now: navNow, pace: pace)
+        default:
+            return nil
+        }
+    }
+
+    /// POST /api/refresh (nur refreshToken). Fehler: letzter Stand bleibt, Echtzeit pausiert, Banner wie H1/H3.
+    func refreshNavigation() async {
+        // Retry-After (H1): kein Polling, bis die Sperre ablaeuft; der letzte Stand bleibt sichtbar.
+        guard case .navigation = phase, blockedUntil == nil,
+              let token = navJourney?.refreshToken, let old = navJourney else { return }
+        do {
+            let fresh = try await deps.refresh(token)
+            guard case .navigation = phase, !Task.isCancelled else { return }
+            if Self.platformChanged(from: old, to: fresh) { navWarnings += 1 }
+            navJourney = fresh
+            navIsStale = false
+            if banner?.isTransient == true { banner = nil }
+        } catch {
+            guard case .navigation = phase, !Task.isCancelled else { return }
+            if error == .refreshExpired { navExpired = true } else { navIsStale = true }
+            await show(error)
+        }
+        navigationUpdate(position: nil, now: deps.now())
+    }
+
+    nonisolated static func platformChanged(from old: Journey, to fresh: Journey) -> Bool {
+        fresh.legs.contains { leg in
+            guard !leg.isWalk, let before = old.legs.first(where: { $0.index == leg.index }) else { return false }
+            let moved = leg.departurePlatform != nil && before.departurePlatform != nil && leg.departurePlatform != before.departurePlatform
+            return moved || (leg.platformChanged == true && before.platformChanged != true)
+        }
+    }
+
+    /// "Nächste Verbindung": ab "Mein Standort" (sofern erlaubt), jetzt, gleiches Ziel.
+    func nextConnection() {
+        if locationAllowed {
+            origin = .currentLocation
+        } else if let v = navStep.flatMap(NavigationEngine.targetVehicle),
+                  let stop = navJourney?.legs.first(where: { $0.index == v })?.origin, let id = stop.id {
+            // Ohne Standort: ab dem Halt, an dem man den Anschluss erwischen wollte, nicht ab dem urspruenglichen Start.
+            origin = .place(.stop(id: id, label: stop.name ?? id))
+        }
+        customTime = nil
+        isArrivalTime = false
+        send(.replan)
+    }
+
+    private func stopNavigationTasks() {
+        navTasks.forEach { $0.cancel() }
+        navTasks = []
+    }
+
+    /// Ende der Navigation: Standort und Stand verwerfen (AGENT.md 3.1.2).
+    private func endNavigation() {
+        stopNavigationTasks()
+        navStep = nil
+        navPosition = nil
+        navFix = nil
+        navJourney = nil
+        navGeometry = nil
+        navWalks = [:]
+        navStartedAt = nil
+        navIsStale = false
+        navExpired = false
+        navFocus = nil
     }
 
     func journey(at index: Int) -> Journey? {

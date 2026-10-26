@@ -82,12 +82,10 @@ enum Spoken {
         return parts.joined(separator: ", ") + "."
     }
 
-    /// "Treppe, nach unten, Ebene 1 zu 0, 20 Meter."
+    /// Wie die sichtbare Zeile: "Hüttenstraße folgen, 637 Meter." bzw. "Treppe runter, Ebene 1 zu 0, 20 Meter."
     static func step(_ step: Step) -> String {
-        var parts = [step.direction.spokenName]
-        if let street = step.streetName { parts.append(street) }
+        var parts = [NavigationPresenter.stepTitle(step)]
         if let from = step.fromLevel, let to = step.toLevel, from != to {
-            parts.append(to > from ? String(localized: "nach oben") : String(localized: "nach unten"))
             parts.append(String(localized: "Ebene \(from.formatted(.number)) zu \(to.formatted(.number))"))
         }
         if let meters = step.distanceMeters { parts.append(String(localized: "\(meters) Meter")) }

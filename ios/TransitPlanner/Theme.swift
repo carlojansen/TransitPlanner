@@ -69,6 +69,13 @@ extension Leg {
     }
 }
 
+extension Step {
+    /// Ebenenwechsel ohne ausdrueckliche Treppe/Aufzug (Rampe, unbekannt) bekommt das Treppensymbol.
+    var symbolName: String {
+        isVertical && isStraight ? "figure.stairs" : direction.symbolName
+    }
+}
+
 extension Step.Direction {
     var symbolName: String {
         switch self {

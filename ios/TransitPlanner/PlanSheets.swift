@@ -278,6 +278,7 @@ struct RouteSheet: View {
             // H4: bei AX-Groessen bleibt "Starten" als Knopf unten in der Daumenzone.
             if typeSize.isAccessibilitySize, flow.routes?.journeys.isEmpty == false {
                 PrimaryButton(title: "Starten", systemImage: "location.fill") { flow.send(.startNavigation(0)) }
+                    .accessibilityIdentifier("startButton")
                     .padding(16)
             }
         }

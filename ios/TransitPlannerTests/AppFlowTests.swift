@@ -586,7 +586,8 @@ import TransitCore
 
     @Test func stationAndStepSentences() throws {
         let steps = try #require(FakeData.routes?.journeys.first?.legs[2].steps)
-        #expect(Spoken.step(steps[0]) == "Treppe, nach unten, Ebene 1 zu 0, 20 Meter.")
+        #expect(Spoken.step(steps[0]) == "Treppe runter, Ebene 1 zu 0, 20 Meter.")
+        #expect(Spoken.step(Step(direction: .depart, distanceMeters: 637, streetName: "Hüttenstraße")) == "Hüttenstraße folgen, 637 Meter.")
         let station = Spoken.station(time: nil, name: "Köln Hbf", platform: "7", plannedPlatform: "10",
                                      delayMinutes: 3, leg: nil)
         #expect(station == "Köln Hbf, Gleis 7 statt 10, 3 Minuten später.")
