@@ -77,6 +77,10 @@ schemes:
     build:
       targets:
         TransitPlanner: all
+    # Metal-API-Validierung aus: MapKit-Polylines unter Liquid Glass loesen im Debugger eine
+    # Framework-Assertion aus (MTLStoreActionMultisampleResolve ohne Resolve-Textur), kein App-Code betroffen.
+    run:
+      enableGPUValidationMode: disabled
     test:
       targets:
         - package: TransitCore/TransitCoreTests
