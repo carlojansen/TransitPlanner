@@ -106,27 +106,18 @@ Zeiten, Minuten, Meter: immer `.monospacedDigit()` und `.contentTransition(.nume
 - Rechts neben dem Suchfeld: Einstellungsknopf (G1), kein dritter schwebender Knopf.
 - Daumenzone: alle primären Aktionen unten im Sheet. Pre-Fetching: Haltestellen im Umkreis 500 m beim Öffnen.
 - Favoriten (Zuhause, Uni, Arbeit) lokal in SwiftData, Koordinaten verschlüsselt.
+- **Start-Inhalt (Überarbeitung 27.10., Stufe 1, von Carlo freigegeben):** Der Start beantwortet die häufigste Frage vor der Eingabe. Detent beim Öffnen: Mitte (474 pt), nicht 140 pt; 140 pt bleibt als Einrast-Stufe zum Verkleinern. Von oben: (1) Suchfeld "Wohin?" + Einstellungen wie bisher; (2) Favoriten-Kacheln (Zuhause, Uni, Arbeit, "+"), Tipp startet sofort die Suche von "Mein Standort" nach dem Favoriten mit Zeit "Jetzt" (Routing wie nach Wahl eines Ortes in 2); leere Kachel öffnet das Festlegen des Orts; (3) "Zuletzt gesucht" mit höchstens 4 Zeilen, Tipp = Ziel, Wischen = Favorit/entfernen; (4) "Haltestellen in der Nähe" mit Gehzeit (nur mit Standorterlaubnis, gerundete Koordinate, höchstens alle 2 Min., bestehendes `nearbyStops`). Ohne Favoriten und Verlauf: Leerzustand "Zuhause festlegen" statt leerer Fläche. Kein Standort: Nähe-Abschnitt entfällt ohne Banner. Alle Zeilen mindestens 44 pt, VoiceOver-Labels, bei AX-Größen untereinander statt als Kachelreihe. Stufe 2 (später, braucht API-Änderung): nächste Abfahrten je Haltestelle in der Nähe.
+- **Favoriten entfernen (Carlo, 27.10.):** Kacheln liegen in einem waagerechten Scroll und können nicht gewischt werden. Über den Kacheln steht "Favoriten" mit "Bearbeiten"/"Fertig": belegte Kacheln zeigen ein rotes Minus, Tipp entfernt genau diesen Favoriten, leere Kacheln sind abgeblendet; Zuhause/Uni/Arbeit werden wieder leer. Langes Drücken und die VoiceOver-Aktion "Entfernen" bleiben. Weitere Favoriten stehen als Zeilen unter "Weitere Favoriten" und lassen sich wie der Verlauf per Wischen entfernen.
+- **Karte bei Routen (Carlo, 27.10.):** Gedämpfter Kartenstil (`emphasis: .muted`), damit nur die Route Farbe trägt. Fahrzeug-Linien mit hellem Rand (11 pt unter 6 pt), Fußwege gepunktet. Marker: Start (Ring, accent), Umstiege (kleiner Kreis), Ziel (roter Pin mit Name). Unterwegs nur das Ziel. Das Polster unten folgt der Höhe des mittleren Detents (`MiddleDetent.cap`), damit die Route nie dahinter endet.
 
-**2 Suche (Modus Haltestelle)**
-- Suchmodus ist Pflicht: Segmented Control "Adresse / Haltestelle" direkt unter der Suchleiste, nie beide Quellen parallel. Haltestelle: /api/locations ohne Standort. Debounce mindestens 300 ms oder Suche bei Return.
-- 0-ms-Vorschläge aus dem SwiftData-Cache (letzte Suchen, Favoriten), bevor das Netz antwortet.
-- Ergebnis-Zeilen (Listenzeile): Liniensymbol in Modusfarbe; Liste scrollt unter der Suchleiste (Scroll-Edge-Effekt).
-- Laufende Suche: `.symbolEffect(.variableColor.iterative)` am Lupen-Symbol. Fehler als Inline-Banner.
-- Erreicht über das Sheet (Detent large), kein neuer Screen.
-
-**2b Suche, Modus Adresse**
-- Standardmodus beim ersten Öffnen ist "Adresse" (nichts geht an das eigene Backend); die letzte Wahl merkt sich `@SceneStorage`.
-- MKLocalSearch (nicht der Completer) mit Region aus dem GPS-Fix und `regionPriority = .required`; `textContentType(.fullStreetAddress)` nur in diesem Modus.
-- Ohne GPS-Fix oder Berechtigung: Inline-Banner "Adresssuche braucht deinen Standort" mit "Einstellungen" und "Haltestelle suchen". Kein automatischer Moduswechsel.
-- Beim Wechsel auf "Haltestelle" wird das Suchfeld geleert; ein Adresstext geht nie an das Backend.
-- Tipp auf einen Ort: Ziel gesetzt, Sheet auf fraction(0.5), Routensuche startet (3a).
-
-**2c Von/Nach und Zeit**
-- Über "Jetzt" im Kopf der Routenauswahl oder Tipp auf Von/Nach. Gleiches Sheet, fraction(0.5).
-- "Von" ist standardmäßig der GPS-Standort (mit Genauigkeit); Tipp öffnet die Suche für einen anderen Start. Tauschen dreht Von und Nach (Motion.micro, `.sensoryFeedback(.selection)`).
-- Abfahrt/Ankunft (Segmented) + kompakter DatePicker (ISO-8601 an das Backend). Verkehrsmittel-Chips = Produktfilter; Auswahl wird als Standard in den Einstellungen gemerkt.
-- Chip aus = Kontur + blasser Punkt, an = gefüllt; Name immer sichtbar. Mindestens 44 pt Höhe über `contentShape`.
-- Ändern einer Option sucht nicht sofort neu; erst "Verbindungen suchen" (Hauptknopf).
+**2 Planen (ein Bildschirm, Detent large; ersetzt Suche, 2b und 2c, 26.10.)**
+- Von oben: Von/Nach als zwei Zeilen (Von vorbelegt "Mein Standort", Nach hat den Fokus) mit Tausch-Knopf; Chip "Jetzt" (klappt Abfahrt/Ankunft + Zeit inline auf; weicht er vom Standard ab, ist er Akzent); Liste; unten "Verbindungen suchen" nur, wenn beide Felder gefüllt sind (kein toter Knopf). Ohne Standort ist Von leer und tippbar.
+- Ein Suchfeld ohne Modus. Leeres Feld: Mein Standort, Favoriten, Zuletzt gesucht, Haltestellen in der Nähe (nur gerundete Koordinate, nur mit Erlaubnis, höchstens alle 2 Min.). Getippt: passende Favoriten/Verlauf/Nähe, dann Apple Karten (MKLocalSearch, Region aus dem GPS-Fix), am Ende die Zeile "Haltestelle '<Text>' beim Fahrplan-Server suchen". Erst dieser Tipp sendet den Text; jede weitere Eingabe nimmt den Server-Stand zurück. Ohne Standort entfällt die Adresssuche ohne Banner.
+- Wahl eines Orts: sind danach beide Felder nutzbar, startet die Suche sofort (3a); sonst springt der Fokus zum fehlenden Feld. Favorit per Wischen auf einer Verlaufszeile, entfernen per Wischen. Verlauf und Favoriten verschlüsselt in SwiftData; "Mein Standort" nie im Verlauf.
+- Verkehrsmittel-Chip folgt mit dem Produktfilter (API kennt bisher nur `onlyNahverkehr`).
+- Erinnerung gehört nicht hierher, sondern als Knopf neben "Starten" in die Fahrtdetails (M4).
+- Zurück: Details > Ergebnisse > Planen > Karte; Eingaben und Zeit bleiben. "Beenden" in der Navigation führt zu den Ergebnissen. Leere Liste: "Später suchen" (+30 Min.).
+- Wege: Fußweg-Kopf "12 Min. · 875 m"; aufeinanderfolgende Treppen eine Zeile ("4 Treppen, 39 m").
 
 **3a Routenauswahl, Laden**
 - Sofort nach "Verbindungen suchen" bzw. Tipp auf ein Ziel: Sheet auf fraction(0.5), Skelett in fester Höhe (Zeilen wie die echte Liste).
