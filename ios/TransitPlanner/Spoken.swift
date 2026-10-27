@@ -41,11 +41,13 @@ enum Spoken {
             parts.append(String(localized: "Gleis \(platform)."))
         }
         if let arrive = calibrated?.arrivalAtDestination ?? journey.arrival {
-            parts.append(String(localized: "Ankunft \(arrive.formatted(date: .omitted, time: .shortened))."))
+            parts.append(String(localized: "Ankunft \(arrive.clockText)."))
         }
         parts.append(journey.transfers == 0 ? String(localized: "Direkt.") : String(localized: "\(journey.transfers) Umstiege") + ".")
         if let sev = sev(journey) { parts.append(sev) }
-        if calibrated?.transfers.contains(where: \.isAtRisk) == true { parts.append(String(localized: "Umstieg knapp.")) }
+        if calibrated?.transfers.contains(where: { $0.status == .missed }) == true {
+            parts.append(String(localized: "Umstieg reicht nicht."))
+        } else if calibrated?.transfers.contains(where: \.isAtRisk) == true { parts.append(String(localized: "Umstieg knapp.")) }
         if journey.cancelled { parts.append(String(localized: "Fällt aus.")) }
         return parts.joined(separator: " ")
     }
@@ -64,7 +66,7 @@ enum Spoken {
     static func station(time: Date?, name: String?, platform: String?, plannedPlatform: String?,
                         delayMinutes: Int?, leg: Leg?) -> String {
         var parts: [String] = []
-        if let time { parts.append(time.formatted(date: .omitted, time: .shortened)) }
+        if let time { parts.append(time.clockText) }
         if let name { parts.append(name) }
         if let platform {
             if let plannedPlatform, plannedPlatform != platform {
@@ -80,6 +82,12 @@ enum Spoken {
             parts.append(line)
         }
         return parts.joined(separator: ", ") + "."
+    }
+
+    static func line(_ line: WalkDirections.Line) -> String {
+        guard line.stairs > 1 else { return step(line.step) }
+        let meters = line.step.distanceMeters.map { ", " + String(localized: "\($0) Meter") } ?? ""
+        return String(localized: "\(line.stairs) Treppen") + meters + "."
     }
 
     /// Wie die sichtbare Zeile: "Hüttenstraße folgen, 637 Meter." bzw. "Treppe runter, Ebene 1 zu 0, 20 Meter."

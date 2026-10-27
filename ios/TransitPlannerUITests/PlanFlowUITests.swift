@@ -1,7 +1,7 @@
 import XCTest
 
 /// Ein Pfad durch das Karten-UI mit Fakes (`-uiTestFakes`, nur Debug): kein Netz, keine Keychain, kein CoreLocation.
-/// Abdeckung: erster Start mit Schluessel, beide Suchmodi, Verbindungsliste, Quellen-Link, Fahrtdetails, Einstellungen.
+/// Abdeckung: erster Start mit Schluessel, Planen mit einem Suchfeld (Geraet, Server-Zeile), Verbindungsliste, Quellen-Link, Fahrtdetails, Einstellungen.
 final class PlanFlowUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
@@ -23,13 +23,13 @@ final class PlanFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Schlüssel gespeichert"].waitForExistence(timeout: 5))
         tap(app.buttons["onboardingDone"])
 
-        // 1 Start -> 2 Suche (Modus Haltestelle) -> Ziel waehlen plant sofort ab "Mein Standort"
+        // 1 Start -> 2 Planen: ein Feld, Text geht erst nach Tipp auf die Server-Zeile ans Backend;
+        // ein Ziel waehlen plant sofort ab "Mein Standort"
         tap(app.buttons["searchEntry"])
-        tap(app.buttons["Haltestelle"])
-        XCTAssertTrue(app.staticTexts["Der Suchtext geht ohne Standort an den Fahrplan-Server."].waitForExistence(timeout: 5))
         let search = app.textFields["searchField"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.typeText("Köln\n")
+        tap(app.buttons["serverSearchRow"])
         tap(app.buttons["searchResult"].firstMatch)
 
         // 3 Routenauswahl: Hero Card, Alternativen, Quellenangabe
@@ -39,25 +39,28 @@ final class PlanFlowUITests: XCTestCase {
         XCTAssertEqual(sourceLink.label, "Transitous-Datenquellen")
         XCTAssertTrue(sourceLink.isHittable, "Quellenangabe muss im mittleren Detent sichtbar sein")
 
-        // 2c: anderer Start per Adresssuche, dann neu suchen
+        // Planen: beide Felder gefuellt (Hauptknopf da), Zeit-Chip, anderer Start per Adresse plant sofort
         tap(app.buttons["optionsButton"])
+        XCTAssertTrue(app.buttons["timeChip"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["planButton"].exists)
         tap(app.buttons["originRow"])
-        tap(app.buttons["Adresse"])
         let addressField = app.textFields["searchField"]
         XCTAssertTrue(addressField.waitForExistence(timeout: 5))
-        addressField.tap()
         addressField.typeText("Musterstr")
         tap(app.buttons["searchResult"].firstMatch)
-        XCTAssertTrue(app.staticTexts["Musterstraße 1"].waitForExistence(timeout: 5))
-        tap(app.buttons["planButton"])
+        XCTAssertTrue(app.buttons["heroCard"].waitForExistence(timeout: 10))
 
-        // 3d Fahrtdetails als Zustand im Sheet, zurueck zur Liste
+        // 3d Fahrtdetails als Zustand im Sheet; eine Richtung zurueck: Details > Ergebnisse > Planen
         tap(app.buttons["heroCard"])
         XCTAssertTrue(app.buttons["backToRoutes"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Ersatzverkehr")).firstMatch
             .waitForExistence(timeout: 5))
         tap(app.buttons["backToRoutes"])
         XCTAssertTrue(app.buttons["heroCard"].waitForExistence(timeout: 5))
+        tap(app.buttons["backToPlan"])
+        XCTAssertTrue(app.buttons["planButton"].waitForExistence(timeout: 5), "Eingaben bleiben, Suchen ist ein Tipp entfernt")
+        tap(app.buttons["planButton"])
+        XCTAssertTrue(app.buttons["heroCard"].waitForExistence(timeout: 10))
 
         // G1 Einstellungen -> Dein Server
         tap(app.buttons["settingsButton"].firstMatch)
@@ -73,14 +76,10 @@ final class PlanFlowUITests: XCTestCase {
                                "-fakePosition", "51.2201,6.7915"]
         app.launch()
         tap(app.buttons["searchEntry"])
-        let scope = app.buttons["Haltestelle"]
-        for _ in 0..<3 where !scope.isSelected {
-            tap(scope)
-            Thread.sleep(forTimeInterval: 0.4)
-        }
         let search = app.textFields["searchField"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.typeText("Köln\n")
+        tap(app.buttons["serverSearchRow"])
         tap(app.buttons["searchResult"].firstMatch)
         tap(app.buttons["startButton"].firstMatch)
         XCTAssertTrue(app.descendants(matching: .any)["nowCard"].waitForExistence(timeout: 10))
@@ -103,14 +102,10 @@ final class PlanFlowUITests: XCTestCase {
                                "-fakePosition", "51.0500,6.9000"]
         app.launch()
         tap(app.buttons["searchEntry"])
-        let scope = app.buttons["Haltestelle"]
-        for _ in 0..<3 where !scope.isSelected {
-            tap(scope)
-            Thread.sleep(forTimeInterval: 0.4)
-        }
         let search = app.textFields["searchField"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.typeText("Köln\n")
+        tap(app.buttons["serverSearchRow"])
         tap(app.buttons["searchResult"].firstMatch)
         tap(app.buttons["startButton"].firstMatch)
         XCTAssertTrue(app.descendants(matching: .any)["nowCard"].waitForExistence(timeout: 10))
@@ -136,6 +131,28 @@ final class PlanFlowUITests: XCTestCase {
         XCTAssertTrue(recenter.waitForNonExistence(timeout: 5))
         rows.element(boundBy: 1).tap()
         XCTAssertTrue(recenter.waitForExistence(timeout: 5), "Zeile zeigt den Punkt, Folgen pausiert")
+    }
+
+    /// Start (B1, 27.10.): Leerzustand "Zuhause festlegen", Wahl wird Favorit ohne Suche; Tipp auf die Kachel sucht sofort.
+    @MainActor
+    func testStartFavoriteTileSearchesImmediately() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestFakes", "-fakeOnboarded"]
+        app.launch()
+        XCTAssertTrue(app.buttons["nearbyStop"].firstMatch.waitForExistence(timeout: 10), "Haltestellen in der Nähe im Start")
+        tap(app.buttons["setHome"])
+        let search = app.textFields["searchField"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.typeText("Köln\n")
+        tap(app.buttons["serverSearchRow"])
+        tap(app.buttons["searchResult"].firstMatch)
+
+        let home = app.buttons["favoriteTile.home"]
+        XCTAssertTrue(home.waitForExistence(timeout: 5), "Zurück im Start mit Kachel Zuhause")
+        XCTAssertTrue(home.label.hasPrefix("Zuhause, "), home.label)
+        XCTAssertTrue(app.buttons["favoriteTile.uni"].exists && app.buttons["favoriteTile.add"].exists)
+        home.tap()
+        XCTAssertTrue(app.buttons["heroCard"].waitForExistence(timeout: 10))
     }
 
     @MainActor

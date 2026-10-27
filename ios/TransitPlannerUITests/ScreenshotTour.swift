@@ -110,16 +110,23 @@ final class ScreenshotTour: XCTestCase {
         tap(app.buttons["onboardingDone"])
         XCTAssertTrue(app.buttons["searchEntry"].waitForExistence(timeout: 10))
         shot(app, "04-start", mode)
+        // Start mit Favorit: Zuhause ueber den Leerzustand festlegen
+        tap(app.buttons["setHome"])
+        type(app, "Köln\n")
+        tap(app.buttons["serverSearchRow"])
+        tap(app.buttons["searchResult"].firstMatch)
+        XCTAssertTrue(app.buttons["favoriteTile.home"].waitForExistence(timeout: 5))
+        shot(app, "04c-start-favorites", mode)
 
         tap(app.buttons["searchEntry"])
-        selectScope(app, "Haltestelle")
-        type(app, "Köln\n")
-        XCTAssertTrue(app.buttons["searchResult"].firstMatch.waitForExistence(timeout: 5))
-        shot(app, "05-search-stops", mode)
-        selectScope(app, "Adresse")
+        XCTAssertTrue(app.textFields["searchField"].waitForExistence(timeout: 5))
+        shot(app, "04b-plan-empty", mode)
         type(app, "Musterstr\n")
         XCTAssertTrue(app.buttons["searchResult"].firstMatch.waitForExistence(timeout: 5))
         shot(app, "06-search-address", mode)
+        tap(app.buttons["serverSearchRow"])
+        XCTAssertTrue(app.buttons["searchResult"].firstMatch.waitForExistence(timeout: 5))
+        shot(app, "05-search-stops", mode)
         tap(app.buttons["cancelSearch"])
 
         // Beste Verbindung mit Ersatzverkehr (3e)
@@ -129,7 +136,7 @@ final class ScreenshotTour: XCTestCase {
         tap(app.buttons["optionsButton"])
         XCTAssertTrue(app.buttons["planButton"].waitForExistence(timeout: 5))
         shot(app, "07-options", mode)
-        tap(app.buttons["Verbindungen"].firstMatch)
+        tap(app.buttons["planButton"])
         tap(app.buttons["heroCard"])
         XCTAssertTrue(app.buttons["backToRoutes"].waitForExistence(timeout: 5))
         shot(app, "11-details-sev", mode)
@@ -215,20 +222,9 @@ final class ScreenshotTour: XCTestCase {
     @MainActor
     private func searchStop(_ app: XCUIApplication) {
         tap(app.buttons["searchEntry"])
-        selectScope(app, "Haltestelle")
         type(app, "Köln\n")
+        tap(app.buttons["serverSearchRow"])
         tap(app.buttons["searchResult"].firstMatch)
-    }
-
-    /// Suchmodus sicher setzen (der erste Tipp waehrend der Sheet-Animation geht sonst verloren).
-    @MainActor
-    private func selectScope(_ app: XCUIApplication, _ label: String) {
-        let segment = app.buttons[label]
-        for _ in 0..<3 where !segment.isSelected {
-            tap(segment)
-            Thread.sleep(forTimeInterval: 0.4)
-        }
-        XCTAssertTrue(segment.isSelected, "Suchmodus \(label) nicht gesetzt")
     }
 
     @MainActor

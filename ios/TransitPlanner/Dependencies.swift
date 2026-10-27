@@ -44,6 +44,10 @@ struct AppDependencies: Sendable {
     var refresh: @Sendable (String) async throws(TransitError) -> Journey
     /// Sperre nach Retry-After (429/502/503/504), aus `TransitAPIClient.blocked`.
     var blockedUntil: @Sendable () async -> Date?
+    /// Haltestellen im Umkreis (Planen-Ansicht, leeres Feld); das Backend bekommt nur die gerundete Koordinate.
+    var nearby: @Sendable (GeoCoordinate) async throws(TransitError) -> LocationsResponse
+    /// Favoriten und Verlauf (lokal, verschluesselt).
+    var places: any PlaceStoring
     var now: @Sendable () -> Date = { Date() }
     /// Entprellung der Suche (API.md: mindestens 300 ms).
     var debounce: Duration = .milliseconds(300)
@@ -79,13 +83,14 @@ struct AppDependencies: Sendable {
         }
     }
 
-    static func live() -> AppDependencies {
+    @MainActor static func live() -> AppDependencies {
         let api = TransitAPIClient()
         let location = CoreLocationService()
+        let secrets = KeychainSecretStore()
         return AppDependencies(
             search: SearchService(location: location, api: api),
             planner: HybridRouteCalculator(api: api),
-            secrets: KeychainSecretStore(),
+            secrets: secrets,
             location: location,
             authorization: {
                 switch CLLocationManager().authorizationStatus {
@@ -98,12 +103,14 @@ struct AppDependencies: Sendable {
             saveOnboarding: { UserDefaults.standard.set($0.rawValue, forKey: onboardingKey) },
             positions: { livePositions() },
             refresh: { token throws(TransitError) in try await api.refresh(refreshToken: token, polylines: false).journey },
-            blockedUntil: { await api.blocked?.until }
+            blockedUntil: { await api.blocked?.until },
+            nearby: { coordinate throws(TransitError) in try await api.nearbyStops(around: coordinate) },
+            places: SwiftDataPlaces.live(secrets: secrets)
         )
     }
 
     /// Launch-Argument `-uiTestFakes` schaltet in Debug-Builds auf Fakes um; Release spricht nie ohne Pinning.
-    static func forLaunch(arguments: [String] = ProcessInfo.processInfo.arguments) -> AppDependencies {
+    @MainActor static func forLaunch(arguments: [String] = ProcessInfo.processInfo.arguments) -> AppDependencies {
         #if DEBUG
         if arguments.contains("-uiTestFakes") { return .uiTest(arguments: arguments) }
         #endif
@@ -158,6 +165,7 @@ extension AppDependencies {
                       location: FakeLocation = FakeLocation(),
                       onboarding: OnboardingChoice? = nil,
                       blockedUntil: Date? = nil,
+                      places: MemoryPlaces = MemoryPlaces(),
                       debounce: Duration = .milliseconds(300),
                       waitingHint: Duration = .seconds(3),
                       refresher: FakeRefresher = FakeRefresher()) -> AppDependencies {
@@ -168,7 +176,12 @@ extension AppDependencies {
                                saveOnboarding: { value in stored.withLock { $0 = value } },
                                positions: { AsyncStream { _ in } },
                                refresh: { token throws(TransitError) in try await refresher.refresh(token) },
-                               blockedUntil: { blockedUntil }, debounce: debounce, waitingHint: waitingHint)
+                               blockedUntil: { blockedUntil },
+                               nearby: { _ throws(TransitError) in
+                                   guard let nearby = FakeData.nearby else { throw .decodingFailed }
+                                   return nearby
+                               },
+                               places: places, debounce: debounce, waitingHint: waitingHint)
     }
 }
 
@@ -338,10 +351,15 @@ enum FakeData {
               {"label":"OpenStreetMap","url":"https://www.openstreetmap.org/copyright"}]}
     """#
 
-    static let stops: [Place] = decode(#"""
-    [{"kind":"stop","id":"de-DELFI_de:05315:11201","name":"Köln Hbf","latitude":50.943,"longitude":6.9589,"modes":["regional","suburban"],"area":"Köln"},
-     {"kind":"stop","id":"de-DELFI_de:05111:18235","name":"Düsseldorf Hbf","latitude":51.21996,"longitude":6.79432,"modes":["tram"],"area":"Düsseldorf"}]
-    """#) ?? []
+    private static let stopsJSON = #"""
+    [{"kind":"stop","id":"de-DELFI_de:05315:11201","name":"Köln Hbf","latitude":50.943,"longitude":6.9589,"modes":["regional","suburban"],"area":"Köln","distanceMeters":180},
+     {"kind":"stop","id":"de-DELFI_de:05111:18235","name":"Düsseldorf Hbf","latitude":51.21996,"longitude":6.79432,"modes":["tram"],"area":"Düsseldorf","distanceMeters":640}]
+    """#
+
+    static let stops: [Place] = decode(stopsJSON) ?? []
+
+    /// Antwort der Umkreissuche (Planen-Ansicht, leeres Feld).
+    static let nearby: LocationsResponse? = decode(#"{"places":\#(stopsJSON),"attribution":\#(attributionJSON)}"#)
 
     /// Eine Verbindung: Fussweg, Strassenbahn, Umstieg mit Treppe, Ersatzbus, Fussweg.
     static let routes: RoutesResponse? = decode(#"""

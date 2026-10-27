@@ -248,6 +248,25 @@ private struct WalkTimelineRow: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var showsAll = false
 
+    /// "12 Min. · 875 m" mit klarem Trennzeichen; "ca." solange nur die Fahrplanzeit vorliegt.
+    private var walkHeader: some View {
+        let minutes = Int((Double(estimate?.seconds ?? leg.durationSeconds ?? 0) / 60).rounded(.up))
+        let meters = estimate?.distanceMeters ?? leg.distanceMeters
+        let text = meters.map { String(localized: "\(minutes) Min. · \($0) m") } ?? String(localized: "\(minutes) Min.")
+        return HStack(spacing: 4) {
+            Image(systemName: "figure.walk").accessibilityHidden(true)
+            Text(estimate == nil ? String(localized: "ca. \(text)") : text)
+                .monospacedDigit()
+                .contentTransition(.numericText(countsDown: true))
+                .animation(Motion.micro, value: minutes)
+        }
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(Color(.modeWalk))
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("\(estimate == nil ? String(localized: "Etwa ") : "")\(minutes) Minuten Fußweg"))
+    }
+
     var body: some View {
         let ax = typeSize.isAccessibilitySize
         HStack(alignment: .top, spacing: 8) {
@@ -257,21 +276,16 @@ private struct WalkTimelineRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 let row = ax ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(spacing: 8))
                 row {
-                    WalkChip(seconds: estimate?.seconds ?? leg.durationSeconds ?? 0, estimated: estimate == nil)
-                    if let meters = estimate?.distanceMeters ?? leg.distanceMeters {
-                        Text("\(meters) m").font(.footnote).monospacedDigit()
-                            .contentTransition(.numericText(countsDown: true))
-                            .animation(Motion.micro, value: meters)
-                    }
+                    walkHeader
                     Text(leg.isTransfer == true ? "Umstieg" : "Fußweg").font(.footnote).foregroundStyle(.secondary)
                 }
-                // OSM-Teilstuecke zusammengefasst; standardmaessig nur Abbiegungen, Treppen, Aufzuege.
-                let all = WalkDirections.condensed(leg.steps)
-                let key = WalkDirections.keySteps(all)
+                // OSM-Teilstuecke und Treppen zusammengefasst; standardmaessig nur Abbiegungen, Treppen, Aufzuege.
+                let all = WalkDirections.grouped(WalkDirections.condensed(leg.steps))
+                let key = WalkDirections.keySteps(all.map(\.step))
                 // Stabile Identitaet: Index in der vollen Liste, damit Auf-/Zuklappen Zeilen nicht neu erzeugt.
-                let keyIndices = key.count == all.count ? Array(all.indices) : all.indices.filter { all[$0].isManeuver }
+                let keyIndices = key.count == all.count ? Array(all.indices) : all.indices.filter { all[$0].step.isManeuver }
                 ForEach(showsAll ? Array(all.indices) : keyIndices, id: \.self) { i in
-                    WalkStepRow(step: all[i])
+                    WalkStepRow(line: all[i])
                 }
                 if key.count < all.count {
                     Button {
@@ -295,7 +309,8 @@ private struct WalkTimelineRow: View {
 /// Ein Wegschritt: Richtungssymbol, Anweisung, Distanz. Abbiegungen und Ebenenwechsel hervorgehoben,
 /// Geradeaus-Strecken ruhig ("Hüttenstraße folgen").
 private struct WalkStepRow: View {
-    let step: Step
+    let line: WalkDirections.Line
+    private var step: Step { line.step }
 
     var body: some View {
         let maneuver = step.isManeuver
@@ -304,7 +319,7 @@ private struct WalkStepRow: View {
                 .foregroundStyle(maneuver ? Color(.accentBlue) : Color(.labelSecondary))
                 .frame(minWidth: 20)
                 .accessibilityHidden(true)
-            Text(NavigationPresenter.stepTitle(step))
+            Text(NavigationPresenter.lineTitle(line))
                 .fontWeight(maneuver ? .semibold : .regular)
                 .foregroundStyle(maneuver ? Color.primary : Color(.labelSecondary))
                 .fixedSize(horizontal: false, vertical: true)
@@ -319,6 +334,6 @@ private struct WalkStepRow: View {
         .font(.footnote)
         .frame(minHeight: 28)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Spoken.step(step))
+        .accessibilityLabel(Spoken.line(line))
     }
 }

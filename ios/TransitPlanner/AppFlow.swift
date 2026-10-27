@@ -8,17 +8,12 @@ enum EndpointSlot: Sendable, Hashable {
     case origin, destination
 }
 
-/// Von wo die Suche geoeffnet wurde: aus 1 Start (Treffer = Ziel, sofort planen) oder aus 2c (zurueck zu den Optionen).
-enum SearchReturn: Sendable, Hashable {
-    case start, options
-}
-
 /// Phasen im persistenten Sheet (DESIGN.md B). Fahrtdetails sind ein Zustand im Sheet, kein Push.
 enum Phase: Sendable, Hashable {
     case start
-    case search(EndpointSlot, SearchReturn)
-    /// 2c Von/Nach und Zeit
-    case options
+    /// Planen: Von/Nach, Zeit und Vorschlaege auf einem Bildschirm. Der Slot ist das Feld mit Fokus,
+    /// nil = keins (Rueckkehr aus den Ergebnissen, die Tastatur bleibt zu).
+    case plan(EndpointSlot?)
     case routeSelection
     /// Index der Verbindung in der aktuellen Antwort.
     case tripDetails(Int)
@@ -27,16 +22,24 @@ enum Phase: Sendable, Hashable {
     case arrival
 
     /// Laufende Arbeit gehoert zu einem Kontext. Verlaesst die Phase ihn, wird die Arbeit abgebrochen.
-    /// Optionen, Routenauswahl und Fahrtdetails teilen sich die Planung (Kalibrierung laeuft weiter).
+    /// Routenauswahl und Fahrtdetails teilen sich die Planung (Kalibrierung laeuft weiter).
     enum WorkContext: Hashable { case none, search, route }
 
     var workContext: WorkContext {
         switch self {
-        case .search: .search
-        case .options, .routeSelection, .tripDetails: .route
+        case .plan: .search
+        case .routeSelection, .tripDetails: .route
         case .start, .navigation, .arrival: .none
         }
     }
+
+    var isPlan: Bool {
+        if case .plan = self { return true }
+        return false
+    }
+
+    /// Identitaet der Ansicht: Fokuswechsel zwischen Von und Nach ersetzt den Bildschirm nicht.
+    var viewID: Phase { isPlan ? .plan(nil) : self }
 
     /// Navigation oder Ankunft (Layout C).
     var isGuiding: Bool {
@@ -49,9 +52,9 @@ enum Phase: Sendable, Hashable {
     /// Verbindung, die die Karte zeigt.
     var journeyIndex: Int? {
         switch self {
-        case .routeSelection, .options: 0
+        case .routeSelection, .plan: 0
         case .tripDetails(let i), .navigation(let i): i
-        case .start, .search, .arrival: nil
+        case .start, .arrival: nil
         }
     }
 }
@@ -59,9 +62,9 @@ enum Phase: Sendable, Hashable {
 enum FlowEvent: Sendable, Hashable {
     case editEndpoint(EndpointSlot)
     case endpointChosen
-    /// "Jetzt" im Kopf der Routenauswahl oder Tipp auf Von/Nach (2c).
+    /// Kopf der Routenauswahl: zurueck zur Planung (Eingaben bleiben).
     case editOptions
-    /// "Verbindungen suchen" (2c: neu gesucht wird nur auf Knopfdruck), auch als Erneut-Versuch.
+    /// "Verbindungen suchen", auch als Erneut-Versuch.
     case planTapped
     case journeySelected(Int)
     case startNavigation(Int)
@@ -82,7 +85,7 @@ enum OnboardingStep: Sendable, Hashable {
 
 /// Aktionen, die ein Inline-Banner anbietet (DESIGN.md H1). Keine Alerts.
 enum BannerAction: Sendable, Hashable {
-    case retry, enterKey, openSettings, allowLocation, switchToStops, newSearch
+    case retry, enterKey, openSettings, allowLocation, chooseOrigin, newSearch
 }
 
 extension TransitError {
@@ -93,8 +96,8 @@ extension TransitError {
         switch self {
         case .offline, .upstreamUnavailable, .upstreamTimeout: [.retry]
         case .missingToken, .unauthorized: [.enterKey]
-        case .locationDenied: [.openSettings, .switchToStops]
-        case .locationUnavailable: [.retry, .switchToStops]
+        case .locationDenied: [.openSettings, .chooseOrigin]
+        case .locationUnavailable: [.retry, .chooseOrigin]
         case .refreshExpired, .notFound: [.newSearch]
         // rateLimited: Restzeit statt Knopf (kein Neuversuch-Haemmern); pinningFailed: keine Umgehung anbieten.
         case .rateLimited, .pinningFailed, .noConnections, .cancelled,
@@ -117,9 +120,30 @@ struct RouteOverlay: Sendable {
         let coordinates: [CLLocationCoordinate2D]
     }
 
+    /// Start, Umstiegshalte und Ziel als Punkte auf der Linie.
+    struct Marker: Sendable, Identifiable {
+        enum Kind: Sendable {
+            case start, transfer, destination
+
+            /// VoiceOver-Name, wenn der Halt keinen Namen hat.
+            var fallbackTitle: String {
+                switch self {
+                case .start: String(localized: "Start")
+                case .transfer: String(localized: "Umstieg")
+                case .destination: String(localized: "Ziel")
+                }
+            }
+        }
+        let id: Int
+        let kind: Kind
+        let title: String
+        let coordinate: CLLocationCoordinate2D
+    }
+
     /// Wechselt mit Antwort und gezeigter Verbindung (Ausloeser fuer die Kamerafahrt).
     let id: String
     let segments: [Segment]
+    let markers: [Marker]
     let rect: MKMapRect
 
     /// Ohne Polyline (z. B. Refresh ohne Geometrie) gerade Linie von Halt zu Halt.
@@ -136,7 +160,15 @@ struct RouteOverlay: Sendable {
         let rect = mapPoints.dropFirst().reduce(MKMapRect(origin: first, size: MKMapSize(width: 0, height: 0))) {
             $0.union(MKMapRect(origin: $1, size: MKMapSize(width: 0, height: 0)))
         }
-        return RouteOverlay(id: id, segments: segments, rect: rect)
+        func marker(_ id: Int, _ kind: Marker.Kind, _ place: Place?) -> Marker? {
+            guard let place, let c = place.coordinate else { return nil }
+            return Marker(id: id, kind: kind, title: place.name ?? kind.fallbackTitle, coordinate: CLLocationCoordinate2D(latitude: c.latitude, longitude: c.longitude))
+        }
+        // Umstieg = Einstieg in ein weiteres Fahrzeug; der erste Einstieg liegt am Ende des Zugangswegs.
+        let transfers = journey.legs.filter { !$0.isWalk }.dropFirst().compactMap { marker($0.index, .transfer, $0.origin) }
+        let markers = [marker(-1, .start, journey.legs.first?.origin)].compactMap { $0 } + transfers
+            + [marker(-2, .destination, journey.legs.last?.destination)].compactMap { $0 }
+        return RouteOverlay(id: id, segments: segments, markers: markers, rect: rect)
     }
 }
 
@@ -175,11 +207,19 @@ final class AppFlow {
     private(set) var onboarding: OnboardingStep?
 
     // Suche
-    /// Pflichtschalter, Standard "Adresse" (nichts geht an das eigene Backend). Aendern nur ueber `setScope`.
+    /// Ein Feld, kein Schalter: `.address` sucht nur auf dem Geraet. `.stops` gilt erst nach dem Tipp auf
+    /// "beim Fahrplan-Server suchen" (`searchOnServer`) und endet mit der naechsten Eingabe.
     private(set) var scope: SearchScope = .address
     var query = ""
     private(set) var results = SearchResults()
     private(set) var isSearching = false
+    // Vorschlaege bei leerem Feld
+    private(set) var favorites: [SavedPlace] = []
+    private(set) var recents: [SavedPlace] = []
+    /// Oeffentliche Haltestellendaten ohne Koordinate des Nutzers; beim Wechsel in den Hintergrund verworfen.
+    private(set) var nearby: [Place] = []
+    /// Leere Favoriten-Kachel angetippt: die naechste Wahl in Planen wird dieser Favorit (keine Suche).
+    private(set) var assigningRole: FavoritePlace.Role?
 
     // Fahrt
     /// Standard "Mein Standort" (aufgeloest erst beim Planen; ohne Erlaubnis muss ein Start gewaehlt werden).
@@ -229,10 +269,13 @@ final class AppFlow {
     /// Letzter Roh-Fix mit Empfangszeit (Uhr `deps.now`) und Genauigkeit fuer "verpasst"; nur im RAM, nie beobachtet.
     @ObservationIgnored private var navFix: LocationFix?
     @ObservationIgnored private var navTasks: [Task<Void, Never>] = []
+    @ObservationIgnored private var positionTask: Task<Void, Never>?
     /// Fahrzeuge, fuer die die Puffer-/Anschluss-Haptik schon kam (einmal je Fahrzeug).
     @ObservationIgnored private var warnedVehicles: Set<Int> = []
     /// Zeile der Restfahrt angetippt: Karte zeigt diesen Punkt (MapScreen), Folgen pausiert bis "Zentrieren".
     var navFocus: NavMapFocus?
+    /// Karte ganz frei: Jetzt-Karte weg, Sheet nur eine Leiste. Zurueck per "Anweisung" oder automatisch bei neuem Schritt.
+    var navMapOnly = false
     var showsSettings = false
     /// Einstellungen direkt auf "Dein Server" oeffnen (Banner-Aktion).
     var settingsOpensServer = false
@@ -246,6 +289,8 @@ final class AppFlow {
     @ObservationIgnored private var waitingTask: Task<Void, Never>?
     @ObservationIgnored private var unblock: Task<Void, Never>?
     @ObservationIgnored private var fixTask: Task<Void, Never>?
+    @ObservationIgnored private var nearbyTask: Task<Void, Never>?
+    @ObservationIgnored private var nearbyLoadedAt: Date?
     @ObservationIgnored private var overlayTask: Task<Void, Never>?
     @ObservationIgnored private var lastPlanKey: PlanKey?
     // ponytail: fester Standardwert; SwiftData-PaceProfile anbinden, sobald die Gehzeit-Messung (Navigation) existiert.
@@ -286,6 +331,19 @@ final class AppFlow {
         slot == .origin ? origin : destination
     }
 
+    /// Feld mit Fokus in der Planen-Ansicht.
+    var activeSlot: EndpointSlot? {
+        if case .plan(let slot) = phase { slot } else { nil }
+    }
+
+    /// Beide Felder gefuellt und nutzbar: dann (und erst dann) zeigt Planen den Hauptknopf.
+    var endpointsFilled: Bool { canSwap }
+
+    /// Feld ist leer oder "Mein Standort" ohne Erlaubnis.
+    private func needs(_ slot: EndpointSlot) -> Bool {
+        endpoint(slot).map { !usable($0) } ?? true
+    }
+
     // MARK: Erster Start (A1, A2)
 
     /// "Weiter": loest den System-Dialog aus (CLServiceSession in CoreLocationService).
@@ -317,11 +375,16 @@ final class AppFlow {
         }
         fixTask?.cancel()
         fixTask = Task { await refreshFix() }
+        // Nach dem Hintergrund ist die Naehe verworfen; der Start fragt neu (hoechstens alle 2 Min.).
+        if phase == .start { loadSuggestions() }
     }
 
     /// Hintergrund: nichts Standortbezogenes behalten.
     func movedToBackground() {
         fixTask?.cancel()
+        nearbyTask?.cancel()
+        nearby = []
+        nearbyLoadedAt = nil
         lastAccuracy = nil
     }
 
@@ -340,21 +403,21 @@ final class AppFlow {
         switch (phase, event) {
         case (.start, .reset): nil
         case (_, .reset): .start
-        case (.start, .editEndpoint(let slot)): .search(slot, .start)
-        case (.options, .editEndpoint(let slot)): .search(slot, .options)
-        case (.search(_, .start), .endpointChosen): .routeSelection
-        case (.search(_, .options), .endpointChosen), (.search(_, .options), .back): .options
-        case (.search(_, .start), .back): .start
-        case (.routeSelection, .editOptions): .options
-        case (.options, .planTapped), (.routeSelection, .planTapped): .routeSelection
-        case (.options, .back): .routeSelection
+        case (.start, .editEndpoint(let slot)), (.plan, .editEndpoint(let slot)): .plan(slot)
+        // Start: Tipp auf Favorit, Verlauf oder Haltestelle in der Naehe sucht sofort (DESIGN.md B1).
+        case (.start, .endpointChosen), (.plan, .endpointChosen), (.plan, .planTapped), (.routeSelection, .planTapped): .routeSelection
+        case (.plan, .back): .start
+        // Eine Richtung zurueck: Details > Ergebnisse > Planen > Karte. Eingaben und Zeit bleiben im Zustand.
+        case (.routeSelection, .editOptions), (.routeSelection, .back): .plan(nil)
+        // Start waehrend der Rate-Limit-Sperre: Planen mit den Eingaben (AppFlow.set).
+        case (.start, .editOptions): .plan(nil)
         case (.routeSelection, .journeySelected(let i)): .tripDetails(i)
-        case (.routeSelection, .back): .start
         case (.routeSelection, .startNavigation(let i)), (.tripDetails, .startNavigation(let i)): .navigation(i)
         case (.tripDetails, .back): .routeSelection
         case (.navigation, .arrived): .arrival
         case (.navigation, .replan): .routeSelection
-        case (.navigation(let i), .back): .tripDetails(i)
+        // Beenden fuehrt zu den Ergebnissen derselben Suche, nicht zum leeren Start.
+        case (.navigation, .back): .routeSelection
         case (.arrival, .back): .start
         default: nil
         }
@@ -362,18 +425,18 @@ final class AppFlow {
 
     /// Animation setzt die View (sie kennt Reduce Motion); das Modell bleibt SwiftUI-frei.
     func send(_ event: FlowEvent) {
-        guard var new = Self.next(phase, event) else { return }
+        guard let new = Self.next(phase, event) else { return }
         let plans = event == .planTapped || event == .replan || (event == .endpointChosen && new == .routeSelection)
-        if plans, !canPlan {
-            // Ziel aus 1 Start, aber kein Start bekannt (ohne Standort): erst 2c statt leerer Liste.
-            guard event == .endpointChosen, blockedUntil == nil else { return }
-            new = .options
-        }
+        if plans, !canPlan { return }
+        let old = phase
         if new.workContext != phase.workContext { cancelWork() }
         if new == .start { discardRoutes() }
-        if case .search = new, phase != new { query = ""; results = SearchResults() }
+        if new.isPlan, phase != new { resetSearch() }
+        if new.isPlan, !old.isPlan { loadSuggestions() }
+        // Start und Planen zeigen beide die Naehe; erst danach wird der Abruf abgebrochen.
+        if !new.isPlan, new != .start { nearbyTask?.cancel() }
+        if !new.isPlan { assigningRole = nil }
         movedBackward = event.isBackward
-        let old = phase
         phase = new
         if plans, new == .routeSelection { startPlanning() }
         if case .navigation(let i) = new, event == .startNavigation(i) { beginNavigation(i) }
@@ -408,42 +471,51 @@ final class AppFlow {
 
     // MARK: Suche
 
-    /// Bei jeder Eingabe: entprellt.
-    func queryChanged() { scheduleSearch(immediately: false) }
+    /// Bei jeder Eingabe: entprellt. Zero-Knowledge: Bearbeiten nimmt den Server-Stand zurueck, geaenderter Text
+    /// geht nie unbemerkt ans Backend; die lokale Suche laeuft weiter.
+    func queryChanged() {
+        scope = .address
+        scheduleSearch(immediately: false)
+    }
 
-    /// Return: sofort.
-    func submitSearch() { scheduleSearch(immediately: true) }
+    /// Return: sofort (lokal; nach "beim Server suchen" nochmal mit demselben Text).
+    func submitSearch() {
+        if scope == .stops { searchOnServer() } else { scheduleSearch(immediately: true) }
+    }
 
-    /// Moduswechsel. Zero-Knowledge: Text aus dem Adressmodus (auch AutoFill-Adressen) darf nie als
-    /// Haltestellen-Suchtext ans Backend gehen. Beim Wechsel auf "Haltestelle" wird das Feld geleert, der Nutzer tippt neu.
-    func setScope(_ new: SearchScope) {
-        guard new != scope else { return }
-        scope = new
+    /// Erst dieser Tipp sendet den Suchtext an den Fahrplan-Server (ohne Standort).
+    func searchOnServer() {
+        guard phase.isPlan else { return }
+        let text = searchText
+        guard text.count >= 2 else { return }
         work?.cancel()
+        scope = .stops
+        results = SearchResults()
+        isSearching = true
+        work = Task { await runSearch(text, scope: .stops) }
+    }
+
+    var searchText: String {
+        String(query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxQueryLength))
+    }
+
+    private func resetSearch() {
+        work?.cancel()
+        scope = .address
+        query = ""
         results = SearchResults()
         isSearching = false
-        if banner == .locationDenied || banner == .locationUnavailable { banner = nil }
-        switch new {
-        case .stops: query = ""
-        case .address: queryChanged() // bleibt lokal (MKLocalSearch)
-        }
     }
 
     private func scheduleSearch(immediately: Bool) {
-        guard case .search = phase else { return }
+        guard phase.isPlan else { return }
         work?.cancel()
-        let text = String(query.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxQueryLength))
-        let scope = self.scope
-        guard text.count >= 2 else {
+        let text = searchText
+        // Ohne Standort-Erlaubnis keine Adresssuche (VPN-Schutz: nie ohne GPS-Region). Kein Banner und kein Dialog:
+        // Favoriten, Verlauf und die Server-Zeile bleiben nutzbar.
+        guard text.count >= 2, locationAllowed else {
             results = SearchResults()
             isSearching = false
-            return
-        }
-        // Ohne Standort-Erlaubnis keine Adresssuche (VPN-Schutz: nie ohne GPS-Region); Hinweis statt Dialog.
-        guard scope == .stops || locationAllowed else {
-            results = SearchResults()
-            isSearching = false
-            banner = .locationDenied
             return
         }
         let delay = deps.debounce
@@ -452,8 +524,81 @@ final class AppFlow {
             if !immediately {
                 do { try await Task.sleep(for: delay) } catch { return }
             }
-            await runSearch(text, scope: scope)
+            await runSearch(text, scope: .address)
         }
+    }
+
+    // MARK: Vorschlaege, Favoriten, Verlauf
+
+    /// Favoriten, Verlauf und Haltestellen in der Naehe fuer Start und Planen.
+    func loadSuggestions() {
+        reloadSaved()
+        loadNearby()
+    }
+
+    private func reloadSaved() {
+        favorites = deps.places.favorites()
+        let saved = Set(favorites.map(\.endpoint))
+        recents = deps.places.recents().filter { !saved.contains($0.endpoint) }
+    }
+
+    /// Haltestellen in der Naehe: nur die gerundete Koordinate geht ans Backend, nur mit Erlaubnis, hoechstens alle 2 Minuten.
+    /// Start und Planen loesen beim Erscheinen und bei Rueckkehr in die App aus; ein laufender Versuch genuegt,
+    /// so geht pro Anlass nur eine Anfrage raus.
+    private func loadNearby() {
+        guard locationAllowed else {
+            nearbyTask?.cancel()
+            nearby = []
+            return
+        }
+        if let running = nearbyTask, !running.isCancelled { return }
+        if let at = nearbyLoadedAt, deps.now().timeIntervalSince(at) < 120 { return }
+        nearbyTask = Task {
+            // Jeder abgeschlossene Versuch zaehlt fuer die 2-Minuten-Grenze, auch leer oder fehlgeschlagen.
+            // Abgebrochen: nichts anfassen, ein neuerer Versuch kann schon laufen.
+            defer {
+                if !Task.isCancelled {
+                    nearbyLoadedAt = deps.now()
+                    nearbyTask = nil
+                }
+            }
+            do {
+                let fix = try await deps.location.currentFix()
+                let response = try await deps.nearby(fix.coordinate)
+                guard !Task.isCancelled else { return }
+                nearby = Array(response.places.filter { $0.kind == .stop && $0.id != nil && $0.name != nil }.prefix(6))
+                attribution = response.attribution
+            } catch {
+                // Vorschlaege sind optional: kein Banner, die Suche bleibt nutzbar.
+            }
+        }
+    }
+
+    func addFavorite(_ endpoint: TripEndpoint) {
+        deps.places.addFavorite(endpoint, role: .other)
+        reloadSaved()
+    }
+
+    /// Leere Kachel (Zuhause, Uni, Arbeit, "+"): Planen oeffnen; die Wahl dort wird der Favorit.
+    func assignFavorite(_ role: FavoritePlace.Role) {
+        guard phase == .start else { return }
+        assigningRole = role
+        send(.editEndpoint(.destination))
+    }
+
+    func removeRecent(_ id: UUID) {
+        deps.places.removeRecent(id)
+        reloadSaved()
+    }
+
+    func removeFavorite(_ id: UUID) {
+        deps.places.removeFavorite(id)
+        reloadSaved()
+    }
+
+    func clearRecents() {
+        deps.places.clearRecents()
+        reloadSaved()
     }
 
     private func runSearch(_ text: String, scope: SearchScope) async {
@@ -467,29 +612,61 @@ final class AppFlow {
         } catch {
             guard !Task.isCancelled else { return }
             results = SearchResults()
-            await show(error)
+            // Ein fehlender Standort blockiert die Suche nie: Favoriten, Verlauf und Server-Zeile bleiben.
+            if error != .locationDenied, error != .locationUnavailable { await show(error) }
             guard !Task.isCancelled else { return }
         }
         isSearching = false
     }
 
+    /// Wahl eines Orts. Im Start (Favorit, Verlauf, Naehe) wie in Planen, aber immer ab "Mein Standort" und jetzt.
     func choose(_ endpoint: TripEndpoint) {
-        guard case .search(let slot, _) = phase else { return }
-        set(.place(endpoint), for: slot)
+        let focus: EndpointSlot
+        switch phase {
+        case .plan(let slot):
+            if let role = assigningRole {
+                deps.places.addFavorite(endpoint, role: role)
+                reloadSaved()
+                send(.back)
+                return
+            }
+            focus = slot ?? .destination
+        case .start:
+            origin = .currentLocation
+            customTime = nil
+            isArrivalTime = false
+            focus = .destination
+        default:
+            return
+        }
+        deps.places.remember(endpoint)
+        set(.place(endpoint), for: focus)
     }
 
-    /// "Mein Standort" als Start oder Ziel (Platzhalter, aufgeloest erst beim Planen).
+    /// "Mein Standort" als Start oder Ziel (Platzhalter, aufgeloest erst beim Planen; nie im Verlauf).
     func useCurrentLocation() {
-        guard case .search(let slot, _) = phase, locationAllowed else { return }
-        set(.currentLocation, for: slot)
+        // "Mein Standort" wird nie Favorit (AGENT.md 3.1.2).
+        guard case .plan(let focus) = phase, locationAllowed, assigningRole == nil else { return }
+        set(.currentLocation, for: focus ?? .destination)
     }
 
+    /// Wahl eintragen. Sind danach beide Felder nutzbar, startet die Suche sofort; sonst springt der Fokus zum
+    /// fehlenden Feld (z. B. ohne Standort erst Ziel, dann Start).
     private func set(_ endpoint: PlanEndpoint, for slot: EndpointSlot) {
         switch slot {
         case .origin: origin = endpoint
         case .destination: destination = endpoint
         }
-        send(.endpointChosen)
+        resetSearch()
+        reloadSaved()
+        if canPlan {
+            send(.endpointChosen)
+        } else if let missing = [EndpointSlot.destination, .origin].first(where: needs) {
+            send(.editEndpoint(missing))
+        } else if blockedUntil != nil {
+            // Sperre nach 429: Planen zeigt die Restzeit, statt den Tipp im Start still zu verwerfen.
+            send(.editOptions)
+        }
     }
 
     /// Tauschen dreht Von und Nach; "Mein Standort" bleibt Platzhalter, das Ziel geht nie verloren.
@@ -557,6 +734,11 @@ final class AppFlow {
                     attribution = r.attribution
                     stopWaitingHint()
                 case .calibrated(let r, let c):
+                    // Neusortierung nach der Kalibrierung: ein schon geoeffnetes Detail bleibt bei derselben Verbindung.
+                    if case .tripDetails(let i) = phase, let shown = routes?.journeys[safe: i],
+                       let moved = r.journeys.firstIndex(of: shown), moved != i {
+                        phase = .tripDetails(moved)
+                    }
                     routes = r
                     calibrated = c
                 }
@@ -641,21 +823,30 @@ final class AppFlow {
                 }
             },
         ]
-        // Ohne Erlaubnis kein Stream: liveUpdates wuerde bei .notDetermined den System-Dialog ausloesen. Dann nur nach Zeit.
-        guard locationAllowed else { return }
+    }
+
+    /// GPS erst ab der Schwelle: im Wartezustand (evtl. Stunden) kein Standortabruf, die Engine braucht ihn dort nicht.
+    /// Ohne Erlaubnis kein Stream: liveUpdates wuerde bei .notDetermined den System-Dialog ausloesen. Dann nur nach Zeit.
+    private func startPositionsIfNeeded(_ step: NavigationStep) {
+        guard positionTask == nil, locationAllowed else { return }
+        if case .waitingToLeave = step { return }
         let positions = deps.positions
-        navTasks.append(Task {
+        positionTask = Task {
             for await fix in positions() {
                 guard !Task.isCancelled else { return }
                 navigationUpdate(position: fix.coordinate, accuracy: fix.horizontalAccuracy, now: deps.now())
             }
-        })
+        }
     }
 
-    /// 60 s im Normalbetrieb, 20 s vor einem Umstieg (SPEZIFIKATION 2.1).
+    /// 60 s im Normalbetrieb, 20 s vor einem Umstieg (SPEZIFIKATION 2.1); im Wartezustand erst zur Schwelle.
     var refreshInterval: Duration {
         guard let journey = navJourney, let step = navStep else { return .seconds(60) }
         switch step {
+        case .waitingToLeave:
+            let due = NavigationEngine.leaveTime(journey)?.addingTimeInterval(-NavigationEngine.leaveLead).timeIntervalSince(navNow)
+            // Hoechstens 30 Min. Pause: ein Ausfall waehrend des Wartens faellt so rechtzeitig auf.
+            return .seconds(min(30 * 60, max(60, due ?? 60)))
         case .transferRouting: return .seconds(20)
         case .onBoardTransit(let v):
             let vehicles = journey.legs.filter { !$0.isWalk }
@@ -684,7 +875,8 @@ final class AppFlow {
         }.map { $0.seconds < 120 } ?? false
         let minute = { (d: Date) in Int(d.timeIntervalSince1970 / 60) }
         if step != navStep || tight || minute(now) != minute(navNow) || moved { navNow = now }
-        if step != navStep { navStep = step }
+        if step != navStep { navStep = step; navMapOnly = false }
+        startPositionsIfNeeded(step)
         if let buffer = currentBuffer, buffer.needsWarning, let target = NavigationEngine.targetVehicle(step),
            warnedVehicles.insert(target).inserted {
             navWarnings += 1
@@ -737,6 +929,16 @@ final class AppFlow {
         }
     }
 
+    /// Leere Ergebnisliste: dieselbe Suche 30 Minuten spaeter (aus der gewaehlten Zeit, sonst ab jetzt).
+    /// Aktuelle Zeit der App-Uhr (Tests setzen sie).
+    var now: Date { deps.now() }
+
+    func searchLater() {
+        // Eine verstrichene Wunschzeit zaehlt nicht: "30 Minuten spaeter" meint spaeter als jetzt.
+        customTime = max(customTime ?? deps.now(), deps.now()).addingTimeInterval(30 * 60)
+        send(.planTapped)
+    }
+
     /// "Nächste Verbindung": ab "Mein Standort" (sofern erlaubt), jetzt, gleiches Ziel.
     func nextConnection() {
         if locationAllowed {
@@ -754,6 +956,8 @@ final class AppFlow {
     private func stopNavigationTasks() {
         navTasks.forEach { $0.cancel() }
         navTasks = []
+        positionTask?.cancel()
+        positionTask = nil
     }
 
     /// Ende der Navigation: Standort und Stand verwerfen (AGENT.md 3.1.2).
@@ -769,6 +973,7 @@ final class AppFlow {
         navIsStale = false
         navExpired = false
         navFocus = nil
+        navMapOnly = false
     }
 
     func journey(at index: Int) -> Journey? {
@@ -812,14 +1017,16 @@ final class AppFlow {
         case .retry:
             guard blockedUntil == nil else { return }
             switch phase {
-            case .search: submitSearch()
+            case .plan: submitSearch()
             case .routeSelection: send(.planTapped)
             default: break
             }
         case .enterKey:
             settingsOpensServer = true
             showsSettings = true
-        case .switchToStops: setScope(.stops)
+        case .chooseOrigin:
+            if !phase.isPlan { send(.editOptions) }
+            send(.editEndpoint(.origin))
         case .allowLocation:
             banner = nil
             Task { await allowLocation() }
@@ -872,5 +1079,13 @@ final class AppFlow {
         await work?.value
         await overlayTask?.value
     }
+
+    func waitForNearby() async {
+        await nearbyTask?.value
+    }
     #endif
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
 }

@@ -13,3 +13,6 @@ ios/*.xcodeproj/
 ios/TransitPlanner/Info.plist
 .build/
 .swiftpm/
+
+# Geraete-Screenshots mit echten Adressen und Standort
+docs/refs/

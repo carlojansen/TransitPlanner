@@ -25,8 +25,10 @@ struct MapScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @Namespace private var mapScope
     @State private var camera: MapCameraPosition = .userLocation(fallback: .automatic)
-    @State private var sheetHeight: CGFloat = 140
-    @State private var nowCardHeight: CGFloat = 0
+    @State private var sheetHeight: CGFloat = 474
+    @State private var measuredCardHeight: CGFloat = 0
+    /// Karte ganz frei: die Jetzt-Karte ist weg und nimmt keinen Platz.
+    private var nowCardHeight: CGFloat { flow.navMapOnly ? 0 : measuredCardHeight }
     @State private var containerHeight: CGFloat = 800
     /// "Ganze Route" oder Zeile angetippt: Kamera folgt nicht mehr, bis "Zentrieren".
     @State private var followPaused = false
@@ -77,6 +79,11 @@ struct MapScreen: View {
                     UserAnnotation()
                 }
                 if let overlay = flow.overlay {
+                    // Heller Rand unter allen Fahrzeug-Linien: die Route trennt sich vom Kartenhintergrund.
+                    ForEach(overlay.segments.filter { !$0.isWalk }) { segment in
+                        MapPolyline(coordinates: segment.coordinates)
+                            .stroke(Color(.surfaceCard), style: StrokeStyle(lineWidth: 11, lineCap: .round, lineJoin: .round))
+                    }
                     ForEach(overlay.segments) { segment in
                         MapPolyline(coordinates: segment.coordinates)
                             .stroke(segment.mode == .walk ? Color(.modeWalk) : segment.mode.color,
@@ -84,24 +91,34 @@ struct MapScreen: View {
                                         ? StrokeStyle(lineWidth: 4, lineCap: .round, dash: [1, 7])
                                         : StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
                     }
+                    // Unterwegs zeigen eigene Position und Ziel-Halt den Weg; Start und Umstiege entfallen.
+                    ForEach(overlay.markers.filter { !guiding || $0.kind == .destination }) { marker in
+                        Annotation(marker.title, coordinate: marker.coordinate) {
+                            markerView(marker.kind)
+                        }
+                        .annotationTitles(marker.kind == .destination ? .visible : .hidden)
+                    }
                 }
             }
-            .mapStyle(.standard(pointsOfInterest: .excludingAll))
+            // Gedaempfte Karte: Strassen und Flaechen treten zurueck, die Route bleibt das Einzige mit Farbe.
+            .mapStyle(.standard(emphasis: .muted, pointsOfInterest: .excludingAll))
             .onMapCameraChange { heading = $0.camera.heading }
             // Unterwegs steht der Kompass im Overlay ueber "Zentrieren", sonst ueberdecken sie sich.
             .mapControls { if !guiding { MapCompass(scope: mapScope) } }
-            // Optisches Zentrum folgt dem Sheet, gedeckelt bei der Haelfte (sonst springt die Karte bei .large).
-            .safeAreaPadding(.bottom, min(sheetHeight, proxy.size.height * 0.5))
+            // Optisches Zentrum folgt dem Sheet, gedeckelt bei der Hoehe des mittleren Detents (sonst springt die Karte
+            // bei .large). Ein kleinerer Deckel liess das Ende der Route hinter dem mittleren Sheet verschwinden.
+            .safeAreaPadding(.bottom, min(sheetHeight, MiddleDetent.cap(proxy.size.height)))
             // Kopf-Steuerung oben (44 pt + 16 pt Rand) bzw. Jetzt-Karte + 16 pt Luft: die Route endet nie darunter.
             .safeAreaPadding(.top, (guiding ? nowCardHeight : 44 + 16) + 16)
+            .animation(reduceMotion ? nil : Motion.standard, value: flow.navMapOnly)
             .ignoresSafeArea(edges: .bottom)
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { containerHeight = $0 }
         // Kopf-Steuerung ausserhalb des Karten-Polsters, damit sie oben bleibt.
         .overlay(alignment: .top) {
-            if guiding, let input = flow.navInput {
+            if guiding, !flow.navMapOnly, let input = flow.navInput {
                 NowCardView(card: NavigationPresenter.card(input), maxScrollHeight: nowCardLimit)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { nowCardHeight = $0 }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measuredCardHeight = $0 }
                     .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
             }
         }
@@ -177,6 +194,26 @@ struct MapScreen: View {
         .sheet(isPresented: .constant(true)) {
             SheetRoot()
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sheetHeight = $0 }
+        }
+    }
+
+    @ViewBuilder private func markerView(_ kind: RouteOverlay.Marker.Kind) -> some View {
+        switch kind {
+        case .start:
+            Circle()
+                .fill(Color(.labelOnAccent))
+                .stroke(Color(.accentBlue), lineWidth: 4)
+                .frame(width: 16, height: 16)
+        case .transfer:
+            Circle()
+                .fill(Color(.surfaceCard))
+                .stroke(Color.secondary, lineWidth: 3)
+                .frame(width: 12, height: 12)
+        case .destination:
+            Image(systemName: "mappin.circle.fill")
+                .font(.title)
+                .foregroundStyle(Color(.statusAlert))
+                .background(Color(.labelOnAccent), in: .circle)
         }
     }
 
@@ -308,7 +345,7 @@ struct SheetRoot: View {
     @Environment(AppFlow.self) private var flow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
-    @State private var detent: PresentationDetent = .height(140)
+    @State private var detent: PresentationDetent = Self.middle
     /// Von der App gesetzter Detent; nur Nutzer-Wechsel loesen Haptik aus.
     @State private var appDetent: PresentationDetent?
     @State private var userDetentChanges = 0
@@ -322,7 +359,7 @@ struct SheetRoot: View {
         @Bindable var flow = flow
         ZStack {
             content
-                .id(flow.phase)
+                .id(flow.phase.viewID)
                 .transition(transition)
         }
         .animation(Motion.standard, value: flow.phase)
@@ -353,6 +390,7 @@ struct SheetRoot: View {
             applyPreferredDetent()
         }
         // Schriftgroesse waehrend der Navigation geaendert: Detent-Menge wechselt, gewaehlter Detent ggf. ungueltig.
+        .onChange(of: flow.navMapOnly) { applyPreferredDetent() }
         .onChange(of: typeSize) {
             let current = flow.phase.isGuiding ? navDetents : Self.detents
             if !current.contains(detent) { applyPreferredDetent() }
@@ -370,19 +408,19 @@ struct SheetRoot: View {
         }
     }
 
-    /// DESIGN.md 3: height(140) Start, Mitte (474 pt) Routenauswahl/2c, large Suche/Details; AX-Groessen immer large.
+    /// DESIGN.md 3 und B1 (27.10.): Start und Routenauswahl Mitte (474 pt), 140 pt nur als Einrast-Stufe zum Verkleinern;
+    /// large Planen/Details; AX-Groessen immer large (H4).
     /// Danach-Sheet startet kompakt (Kopf, engste Stelle, aktuelle und naechste Etappe), hochziehbar auf .medium fuer die
     /// ganze Restfahrt; die App wechselt den Detent unterwegs nie selbst, damit die Karte nicht springt. AX: Anteile, Inhalt scrollt.
-    private var navDetents: Set<PresentationDetent> { [navDetent, .medium] }
+    private var navDetents: Set<PresentationDetent> { flow.navMapOnly ? [.height(84)] : [navDetent, .medium] }
     private var navDetent: PresentationDetent { typeSize.isAccessibilitySize ? .fraction(0.3) : .height(NavigationSheet.compactHeight) }
 
     private var preferredDetent: PresentationDetent {
-        if flow.phase.isGuiding { return navDetent }
-        if typeSize.isAccessibilitySize, flow.phase != .start { return .large }
+        if flow.phase.isGuiding { return flow.navMapOnly ? .height(84) : navDetent }
+        if typeSize.isAccessibilitySize { return .large }
         switch flow.phase {
-        case .start: return .height(140)
-        case .search, .tripDetails: return .large
-        case .options, .routeSelection: return Self.middle
+        case .plan, .tripDetails: return .large
+        case .start, .routeSelection: return Self.middle
         case .navigation, .arrival: return navDetent
         }
     }
@@ -397,8 +435,7 @@ struct SheetRoot: View {
     @ViewBuilder private var content: some View {
         switch flow.phase {
         case .start: StartSheet()
-        case .search(let slot, _): SearchSheet(slot: slot)
-        case .options: OptionsSheet()
+        case .plan: PlanSheet()
         case .routeSelection: RouteSheet()
         case .tripDetails(let index): TripDetailsSheet(index: index)
         case .navigation, .arrival:
@@ -408,7 +445,8 @@ struct SheetRoot: View {
 }
 
 struct MiddleDetent: CustomPresentationDetent {
-    static func height(in context: Context) -> CGFloat? {
-        min(474, context.maxDetentValue * 0.6)
-    }
+    static func height(in context: Context) -> CGFloat? { cap(context.maxDetentValue) }
+
+    /// Hoehe des mittleren Detents bei gegebener Gesamthoehe; auch das Karten-Polster rechnet damit.
+    static func cap(_ maxHeight: CGFloat) -> CGFloat { min(474, maxHeight * 0.6) }
 }

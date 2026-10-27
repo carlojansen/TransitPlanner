@@ -64,7 +64,12 @@ private func iso(_ time: String) -> Date {
         clock.set("06:12:00")
         f.navigationUpdate(position: nil, now: clock.now)
         c = try card(f)
-        #expect(c.variant == .onBoard && c.headline == "Nächster Halt aussteigen")
+        // Ankunft 06:18, ohne Zwischenhalt: erst Restzeit, "Nächster Halt" nur in den letzten 3 Minuten
+        #expect(c.variant == .onBoard && c.headline == "Aussteigen in 6 Min.")
+        #expect(NavigationPresenter.overview(try #require(f.navInput)).rows.first?.detail.hasPrefix("aussteigen in 6 Min.") == true)
+        clock.set("06:15:30")
+        f.navigationUpdate(position: nil, now: clock.now)
+        #expect(try card(f).headline == "Nächster Halt aussteigen")
         #expect(c.eyebrow == "Im STR 704 Richtung Derendorf")
         #expect(c.metrics.map(\.label) == ["Ankunft", "Noch", "Danach"])
 
@@ -93,6 +98,47 @@ private func iso(_ time: String) -> Date {
 
         f.send(.reset)
         #expect(f.navPosition == nil && f.navJourney == nil && f.navStep == nil)
+    }
+
+    /// Fahrt weit voraus (Losgehen 06:00, Schwelle 05:30): ruhige Wartekarte, danach automatisch der normale Ablauf.
+    @Test func futureTripWaitsCalmlyThenStartsNormalFlow() async throws {
+        let clock = Clock()
+        clock.set("04:00:00")
+        let starts = Mutex(0)
+        let f = await navigatingFlow(clock: clock, positions: { starts.withLock { $0 += 1 }; return AsyncStream { _ in } })
+        #expect(f.navStep == .waitingToLeave(vehicle: 1))
+        let warnings = f.navWarnings
+        let c = try card(f)
+        #expect(c.variant == .waiting && c.eyebrow == "Fahrt geplant")
+        #expect(c.headline.hasPrefix("Losgehen in 2 Std."))
+        let departure = iso("06:08:00")
+        #expect(c.context.hasPrefix("Abfahrt ") && c.context.contains("\(departure.clockText) ab ") && c.context.contains("Gleis 2"))
+        #expect(c.metrics.map(\.label) == ["Losgehen", "Abfahrt", "Ankunft"])
+        // Keine Verpasst-Logik; Ausfall/Meldung des Betreibers (Fixture: Umleitung) bleibt sichtbar.
+        #expect(c.hint?.text != "Das reicht nicht mehr." && c.hint?.text.hasPrefix("Meldung des Betreibers") == true)
+        #expect(f.currentBuffer == nil)
+        // Kein Puffer ab jetzt am Zugangsweg in der Restfahrt
+        #expect(NavigationPresenter.overview(try #require(f.navInput)).rows.first?.buffer == nil)
+        // Kein 60-s-Takt im Wartezustand; hoechstens 30 Min. Pause, damit ein Ausfall auffaellt
+        #expect(f.refreshInterval == .seconds(30 * 60))
+        // Weit weg vom Halt: keine Verpasst-Logik, keine Haptik
+        f.navigationUpdate(position: GeoCoordinate(latitude: 51.0, longitude: 7.2), now: clock.now)
+        #expect(f.navStep == .waitingToLeave(vehicle: 1) && f.navWarnings == warnings)
+
+        // Kurz vor der Schwelle: Losgehen = Schwellenzeit der Engine (06:00), kein Sprung; noch kein GPS
+        clock.set("05:29:00")
+        f.navigationUpdate(position: nil, now: clock.now)
+        #expect(try card(f).headline == "Losgehen in 31 Min.")
+        #expect(try card(f).metrics.first?.value == .time(iso("06:00:00")))
+        #expect(starts.withLock { $0 } == 0)
+
+        clock.set("05:31:00")
+        f.navigationUpdate(position: nil, now: clock.now)
+        #expect(f.navStep == .approachingFirstStop(vehicle: 1))
+        for _ in 0..<20 where starts.withLock({ $0 }) == 0 { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(starts.withLock { $0 } == 1)
+        #expect(try card(f).variant == .walk)
+        #expect(f.refreshInterval == .seconds(60))
     }
 
     @Test func bufferWarningOnlyOncePerVehicleAndMissedOffersNextConnection() async throws {
@@ -147,7 +193,7 @@ private func iso(_ time: String) -> Date {
         f.navigationUpdate(position: Self.hbf, now: clock.now)
         #expect(f.navPosition != nil)
         f.send(.back)
-        #expect(f.phase == .tripDetails(0))
+        #expect(f.phase == .routeSelection)
         #expect(f.navPosition == nil && f.navStep == nil)
     }
 
@@ -319,6 +365,16 @@ private func iso(_ time: String) -> Date {
         }
         #expect(spoken(75).contains("Puffer 75 Sekunden"))
         #expect(spoken(180).contains("Puffer 3 Minuten"))
+        #expect(NavigationPresenter.shortBuffer(0) == "reicht nicht")
+        #expect(NavigationPresenter.spokenBuffer(0) == "reicht nicht")
+    }
+
+    /// Uhrzeiten einheitlich mit zweistelliger Stunde (Liste, Detail, VoiceOver).
+    @Test func clockUsesTwoDigitHour() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let date = try #require(calendar.date(from: DateComponents(year: 2026, month: 10, day: 24, hour: 8, minute: 32)))
+        #expect(date.formatted(Date.FormatStyle.clock.locale(Locale(identifier: "de_DE"))) == "08:32")
     }
 
     /// Ohne Indoor-Daten nur die Laenge, nichts erfunden.

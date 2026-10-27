@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "de",
   "strings" : {
+    "" : {
+
+    },
     "%@" : {
 
     },
@@ -13,7 +16,13 @@
     "%@ Min." : {
 
     },
+    "%@ Min. zu Fuß" : {
+
+    },
     "%@ Minuten später" : {
+
+    },
+    "%@ Minuten zu Fuß" : {
 
     },
     "%@ s" : {
@@ -24,6 +33,16 @@
     },
     "%@ Zwischenhalte" : {
 
+    },
+    "%@%@ Minuten Fußweg" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@%2$@ Minuten Fußweg"
+          }
+        }
+      }
     },
     "%lld Etappen" : {
       "extractionState" : "stale",
@@ -221,16 +240,7 @@
     "10:00 – 10:45 · 45 Min." : {
 
     },
-    "Abfahrt" : {
-
-    },
-    "Adresse" : {
-
-    },
     "Angabe des Fahrplan-Servers" : {
-
-    },
-    "Ankunft" : {
 
     },
     "Ankunft %@" : {
@@ -283,6 +293,9 @@
     "Fällt aus" : {
 
     },
+    "Favoriten" : {
+
+    },
     "Fußweg" : {
 
     },
@@ -295,7 +308,7 @@
     "Gleis %@" : {
 
     },
-    "Haltestelle" : {
+    "Haltestellen in der Nähe" : {
 
     },
     "In %lld Minuten losgehen" : {
@@ -321,19 +334,19 @@
         }
       }
     },
+    "In der Nähe" : {
+
+    },
     "Jetzt los" : {
 
     },
     "Karten- und Wegdaten" : {
 
     },
-    "Los in %@ Min." : {
+    "Los in %@" : {
 
     },
     "Los in 10 Min." : {
-
-    },
-    "Mit einer Haltestelle als Start erfährt der Server nicht, wo du gerade bist." : {
 
     },
     "Nach dem Einfügen den Schlüssel aus der Zwischenablage des anderen Geräts entfernen." : {
@@ -343,6 +356,9 @@
 
     },
     "Offene Fahrplan- und Echtzeitdaten über Transitous (MOTIS 2), u. a. DELFI." : {
+
+    },
+    "Öffnet die Planung" : {
 
     },
     "Ohne Schlüssel kann die App keine Haltestellen und Verbindungen abrufen." : {
@@ -366,7 +382,10 @@
     "statt %@" : {
 
     },
-    "Wählen" : {
+    "Sucht Verbindungen ab deinem Standort" : {
+
+    },
+    "Tippe einen Ort, eine Adresse oder eine Haltestelle." : {
 
     },
     "Wieder möglich in" : {

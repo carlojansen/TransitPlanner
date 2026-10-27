@@ -189,13 +189,22 @@ struct ContentCard<Content: View>: View {
     }
 }
 
+extension FormatStyle where Self == Date.FormatStyle {
+    /// Einheitliche Uhrzeit in UI und VoiceOver: zweistellige Stunde ("08:32"), 12-Std.-Gebietsschemata mit AM/PM.
+    static var clock: Date.FormatStyle { .dateTime.hour(.twoDigits(amPM: .abbreviated)).minute(.twoDigits) }
+}
+
+extension Date {
+    var clockText: String { formatted(.clock) }
+}
+
 /// Uhrzeit mit festen Ziffern und rollenden Zahlen.
 struct TimeText: View {
     let date: Date?
 
     var body: some View {
         Group {
-            if let date { Text(date, format: .dateTime.hour().minute()) } else { Text(verbatim: "--:--") }
+            if let date { Text(date, format: .clock) } else { Text(verbatim: "--:--") }
         }
         .monospacedDigit()
         .contentTransition(.numericText(countsDown: true))
@@ -251,7 +260,7 @@ struct InlineBanner: View {
     let error: TransitError
 
     var body: some View {
-        let message = Self.message(for: error, scope: flow.scope, phase: flow.phase)
+        let message = error.errorDescription ?? ""
         let tone = Self.tone(for: error)
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: Self.symbol(for: error))
@@ -306,13 +315,6 @@ struct InlineBanner: View {
         }
     }
 
-    nonisolated static func message(for error: TransitError, scope: SearchScope, phase: Phase) -> String {
-        if case .search = phase, scope == .address, error == .locationDenied || error == .locationUnavailable {
-            return String(localized: "Adresssuche braucht deinen Standort.")
-        }
-        return error.errorDescription ?? ""
-    }
-
     nonisolated static func tone(for error: TransitError) -> Tone {
         switch error {
         case .missingToken, .unauthorized, .locationDenied, .locationUnavailable: .info
@@ -342,7 +344,7 @@ extension BannerAction {
         case .enterKey: "Schlüssel eintragen"
         case .openSettings: "Einstellungen"
         case .allowLocation: "Standort erlauben"
-        case .switchToStops: "Haltestelle suchen"
+        case .chooseOrigin: "Start wählen"
         case .newSearch: "Neu suchen"
         }
     }

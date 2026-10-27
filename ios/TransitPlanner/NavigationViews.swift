@@ -113,17 +113,17 @@ private struct MetricValueText: View {
         Group {
             switch value {
             case .time(let date):
-                if let date { Text(date, format: .dateTime.hour().minute()) } else { Text(verbatim: "–") }
+                if let date { Text(date, format: .clock) } else { Text(verbatim: "–") }
             case .minutes(let m):
-                Text("\(m) Min.")
+                Text(DurationLabel.short(minutes: m))
             case .buffer(let seconds, let status):
                 Group {
-                    if seconds < 0 {
+                    if status == .missed {
                         Text("reicht nicht")
                     } else if seconds < 120 {
                         Text("\(seconds) s")
                     } else {
-                        Text("\(seconds / 60) Min.")
+                        Text(DurationLabel.short(minutes: seconds / 60))
                     }
                 }
                 .foregroundStyle(status.color)
@@ -179,6 +179,29 @@ struct NavigationSheet: View {
     static let compactHeight: CGFloat = 210
 
     var body: some View {
+        if flow.navMapOnly { mapBar } else { full }
+    }
+
+    /// Karte frei: eine Leiste mit dem Weg zurueck zur Anweisung (Daumenzone).
+    private var mapBar: some View {
+        HStack(spacing: 12) {
+            Button {
+                withAnimation(Motion.standard) { flow.navMapOnly = false }
+            } label: {
+                Label("Anweisung", systemImage: "list.bullet")
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.glassProminent)
+            .accessibilityHint("Zeigt wieder die aktuelle Anweisung")
+            .accessibilityIdentifier("backToInstruction")
+            endButton
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 20)
+    }
+
+    @ViewBuilder private var full: some View {
         let overview = flow.phase == .arrival ? nil : flow.navInput.map(NavigationPresenter.overview)
         let rows = overview?.rows ?? []
         // Kopf fest, damit ein Zug am Kopf das Sheet vergroessert; bei AX-Groessen scrollt er mit, sonst wuerde er im
@@ -198,8 +221,8 @@ struct NavigationSheet: View {
     @ViewBuilder private func top(_ overview: RouteOverview?) -> some View {
         // AX: Kopf untereinander statt abgeschnitten.
         ViewThatFits(in: .horizontal) {
-            HStack { header(overview); Spacer(); stale; endButton }
-            VStack(alignment: .leading, spacing: 4) { header(overview); stale; endButton }
+            HStack { header(overview); Spacer(); stale; mapButton; endButton }
+            VStack(alignment: .leading, spacing: 4) { header(overview); stale; mapButton; endButton }
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)
@@ -234,7 +257,7 @@ struct NavigationSheet: View {
             VStack(alignment: .leading, spacing: 2) {
                 Group {
                     if let arrival = overview.arrival {
-                        Text("Ankunft \(arrival, format: .dateTime.hour().minute())")
+                        Text("Ankunft \(arrival, format: .clock)")
                     } else {
                         Text("Restfahrt")
                     }
@@ -295,6 +318,21 @@ struct NavigationSheet: View {
             Label("Echtzeit pausiert", systemImage: "pause.circle")
                 .font(.footnote)
                 .foregroundStyle(Color(.statusWarn))
+        }
+    }
+
+    /// Karte ganz sehen: blendet Jetzt-Karte und Liste aus.
+    @ViewBuilder private var mapButton: some View {
+        if flow.phase != .arrival {
+            Button {
+                withAnimation(Motion.standard) { flow.navMapOnly = true }
+            } label: {
+                Label("Karte", systemImage: "map")
+                    .font(.body.weight(.semibold))
+                    .frame(minHeight: 44)
+            }
+            .accessibilityHint("Zeigt die Karte ohne Anweisung")
+            .accessibilityIdentifier("mapOnly")
         }
     }
 

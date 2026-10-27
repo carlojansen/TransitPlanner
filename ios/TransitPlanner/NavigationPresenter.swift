@@ -24,7 +24,7 @@ struct NowCard: Sendable, Equatable {
         var action: Action?
     }
 
-    enum Variant: Sendable, Equatable { case walk, platform, onBoard, transfer, replacement, finalWalk, arrived }
+    enum Variant: Sendable, Equatable { case waiting, walk, platform, onBoard, transfer, replacement, finalWalk, arrived }
 
     let variant: Variant
     let eyebrow: String
@@ -110,6 +110,8 @@ enum NavigationPresenter {
     private static func stepCard(_ input: Input, _ step: NavigationStep) -> NowCard {
         let base: NowCard
         switch step {
+        case .waitingToLeave(let v):
+            base = waitingCard(input, vehicle: v)
         case .missedDeparture(let v):
             // Fussweg- bzw. Umstiegskarte; der Puffer ist negativ und zeigt "Das reicht nicht mehr."
             base = stepCard(input, NavigationEngine.walkingStep(toward: v, in: input.journey))
@@ -133,6 +135,28 @@ enum NavigationPresenter {
 
     private static func leg(_ index: Int, _ journey: Journey) -> Leg? {
         journey.legs.first { $0.index == index }
+    }
+
+    /// Fahrt weit voraus: Abfahrt und "Losgehen in", keine Wegschritte, kein Puffer.
+    private static func waitingCard(_ input: Input, vehicle v: Int) -> NowCard {
+        let vehicle = leg(v, input.journey)
+        let departure = vehicle?.departure ?? vehicle?.plannedDeparture
+        // Losgehen = dieselbe Zeit wie die Schwelle der Engine, damit die Karte an der Schwelle nicht springt.
+        let leave = NavigationEngine.leaveTime(input.journey)
+        let when = departure.map { $0.formatted(.dateTime.weekday(.abbreviated)) + " " + $0.clockText } ?? "–"
+        var context = String(localized: "Abfahrt \(when) ab \(vehicle?.origin.name ?? "")")
+        if let platform = vehicle?.departurePlatform { context += ", " + String(localized: "Gleis \(platform)") }
+        if let vehicle { context += " · " + vehicle.badgeText }
+        let arrival = input.journey.legs.last.flatMap { $0.arrival ?? $0.plannedArrival }
+        return NowCard(variant: .waiting, eyebrow: String(localized: "Fahrt geplant"),
+                       headline: leave.map { String(localized: "Losgehen in \(DurationLabel.short(minutes: minutes(until: $0, input.now)))") }
+                           ?? String(localized: "Abfahrt \(when)"),
+                       context: context,
+                       metrics: [
+                           NowCard.Metric(label: String(localized: "Losgehen"), value: .time(leave)),
+                           NowCard.Metric(label: String(localized: "Abfahrt"), value: .time(departure)),
+                           NowCard.Metric(label: String(localized: "Ankunft"), value: .time(arrival)),
+                       ])
     }
 
     /// 4 Fussweg zum Gleis: Ueberschrift = naechste Wegaenderung.
@@ -178,8 +202,7 @@ enum NavigationPresenter {
     /// 4c Im Zug: Halte herunterzaehlen.
     private static func onBoardCard(_ input: Input, vehicle v: Int) -> NowCard {
         guard let vehicle = leg(v, input.journey) else { return finalWalkCard(input) }
-        let stops = NavigationEngine.stopsUntilExit(leg: vehicle, now: input.now)
-        let headline = stops <= 1 ? String(localized: "Nächster Halt aussteigen") : String(localized: "Aussteigen in \(stops) Halten")
+        let headline = exitText(vehicle, now: input.now, row: false)
         let direction = vehicle.direction.map { " " + String(localized: "Richtung \($0)") } ?? ""
         let eyebrow = String(localized: "Im \(vehicle.badgeText)") + direction
         let arrival = vehicle.arrival ?? vehicle.plannedArrival
@@ -244,7 +267,7 @@ enum NavigationPresenter {
         let lastVehicle = input.journey.legs.last { !$0.isWalk }
         let delay = max(0, (lastVehicle?.arrivalDelaySeconds ?? 0) / 60)
         return NowCard(variant: .arrived, eyebrow: String(localized: "Angekommen"), headline: input.destinationLabel,
-                       context: String(localized: "Ankunft \(input.now.formatted(date: .omitted, time: .shortened))"),
+                       context: String(localized: "Ankunft \(input.now.clockText)"),
                        metrics: [
                            NowCard.Metric(label: String(localized: "Unterwegs"), value: .minutes(travelled)),
                            NowCard.Metric(label: String(localized: "Zu Fuß"), value: .minutes(Int((Double(walkSeconds) / 60).rounded(.up)))),
@@ -342,6 +365,11 @@ enum NavigationPresenter {
         }
     }
 
+    /// Zeile der Wegbeschreibung: mehrere Treppen als "4 Treppen", sonst wie der einzelne Schritt.
+    static func lineTitle(_ line: WalkDirections.Line) -> String {
+        line.stairs > 1 ? String(localized: "\(line.stairs) Treppen") : stepTitle(line.step)
+    }
+
     /// Zeile der Wegbeschreibung: "Hüttenstraße folgen", "Rechts abbiegen in Bahnhofstraße", "Treppe runter".
     static func stepTitle(_ step: Step) -> String {
         if step.direction == .stairs || step.direction == .elevator || (step.isVertical && step.isStraight) {
@@ -373,6 +401,18 @@ enum NavigationPresenter {
         return String(localized: "Ziel")
     }
 
+    /// "Nächster Halt aussteigen" erst in den letzten `NavigationEngine.exitLead`; vorher "Aussteigen in 22 Min."
+    /// (z. B. ICE ohne Zwischenhalt), mit mehr Halten "Aussteigen in 3 Halten". `row`: Zeile der Restfahrt.
+    private static func exitText(_ leg: Leg, now: Date, row: Bool) -> String {
+        let stops = NavigationEngine.stopsUntilExit(leg: leg, now: now)
+        if stops > 1 { return row ? String(localized: "noch \(stops) Halte") : String(localized: "Aussteigen in \(stops) Halten") }
+        if let arrival = leg.arrival ?? leg.plannedArrival, arrival.timeIntervalSince(now) > NavigationEngine.exitLead {
+            let left = DurationLabel.short(minutes: minutes(until: arrival, now))
+            return row ? String(localized: "aussteigen in \(left)") : String(localized: "Aussteigen in \(left)")
+        }
+        return row ? String(localized: "nächster Halt aussteigen") : String(localized: "Nächster Halt aussteigen")
+    }
+
     private static func minutes(until date: Date?, _ now: Date) -> Int {
         guard let date else { return 0 }
         return max(0, Int((date.timeIntervalSince(now) / 60).rounded(.up)))
@@ -389,7 +429,7 @@ enum NavigationPresenter {
         let legs = input.journey.legs
         // Erste noch offene Etappe (Leg-Index) bzw. Umstieg vor Fahrzeug `to`.
         let current: Int? = switch input.step {
-        case .approachingFirstStop(let v), .missedDeparture(let v): NavigationEngine.walkLeg(before: v, in: input.journey)?.index ?? v
+        case .waitingToLeave(let v), .approachingFirstStop(let v), .missedDeparture(let v): NavigationEngine.walkLeg(before: v, in: input.journey)?.index ?? v
         case .waitingAtPlatform(let v), .onBoardTransit(let v): v
         case .transferRouting(_, let to): NavigationEngine.walkLeg(before: to, in: input.journey)?.index ?? to
         case .finalWalkToDestination: legs.last?.index
@@ -448,7 +488,9 @@ enum NavigationPresenter {
         let geometry = walk.flatMap { w in input.geometry.legs.first { $0.index == w.index } }
         let distance = (geometry ?? walk)?.distanceMeters
         // Puffer vor dem naechsten Fahrzeug; dieselbe Rechnung wie die Jetzt-Karte (vor der Ankunft zaehlt die Ankunft).
-        let buffer = to.flatMap {
+        // Im Wartezustand kein Puffer ab jetzt fuer den Zugangsweg (waere Tage lang); Umstiege bleiben.
+        let waiting = if case .waitingToLeave = input.step { from == nil } else { false }
+        let buffer = waiting ? nil : to.flatMap {
             NavigationEngine.buffer(journey: input.journey, geometry: input.geometry, vehicle: $0.index, walks: input.walks,
                                     position: isCurrent ? input.position : nil, now: input.now, pace: input.pace)
         }
@@ -499,8 +541,7 @@ enum NavigationPresenter {
         // Im Fahrzeug: Halte bis zum Ausstieg statt der Abfahrt, die schon war.
         var stops: String?
         if isCurrent, case .onBoardTransit = input.step {
-            let n = NavigationEngine.stopsUntilExit(leg: leg, now: input.now)
-            stops = n <= 1 ? String(localized: "nächster Halt aussteigen") : String(localized: "noch \(n) Halte")
+            stops = exitText(leg, now: input.now, row: true)
         }
         let detail = [stops ?? from, to.isEmpty ? nil : to].compactMap { $0 }.joined(separator: " · ")
         var spoken = [departure.map(spokenTime), Spoken.lineName(leg)]
@@ -521,7 +562,7 @@ enum NavigationPresenter {
         ((isCurrent ? [String(localized: "Jetzt")] : []) + parts).joined(separator: ", ") + "."
     }
 
-    private static func spokenTime(_ date: Date) -> String { date.formatted(date: .omitted, time: .shortened) }
+    private static func spokenTime(_ date: Date) -> String { date.clockText }
 
     /// Sichtbar: "Puffer 5 Min.", "Knapp: 20 s", "Reicht nicht" (nie nur Farbe).
     static func bufferLabel(_ buffer: WalkBuffer) -> String {
@@ -532,15 +573,15 @@ enum NavigationPresenter {
         }
     }
 
-    /// "20 s", ab 2 Min. "2 Min.", negativ "reicht nicht".
+    /// "20 s", ab 2 Min. "2 Min.", ab 0 s "reicht nicht" (wie `WalkBuffer.Status.missed`).
     static func shortBuffer(_ seconds: Int) -> String {
-        seconds < 0 ? String(localized: "reicht nicht")
+        seconds <= 0 ? String(localized: "reicht nicht")
             : seconds < tightLimit ? String(localized: "\(seconds) s") : String(localized: "\(seconds / 60) Min.")
     }
 
-    /// "20 Sekunden", ab 2 Min. "2 Minuten", negativ "reicht nicht".
+    /// "20 Sekunden", ab 2 Min. "2 Minuten", ab 0 s "reicht nicht".
     static func spokenBuffer(_ seconds: Int) -> String {
-        seconds < 0 ? String(localized: "reicht nicht")
+        seconds <= 0 ? String(localized: "reicht nicht")
             : seconds < tightLimit ? String(localized: "\(seconds) Sekunden") : String(localized: "\(seconds / 60) Minuten")
     }
 
@@ -572,7 +613,7 @@ enum NavigationPresenter {
         if !card.context.isEmpty { parts.append(card.context) }
         for metric in card.metrics {
             switch metric.value {
-            case .time(let date): parts.append("\(metric.label) \(date?.formatted(date: .omitted, time: .shortened) ?? "–")")
+            case .time(let date): parts.append("\(metric.label) \(date?.clockText ?? "–")")
             case .minutes(let m): parts.append("\(metric.label) " + String(localized: "\(m) Minuten"))
             case .buffer(let seconds, _):
                 parts.append("\(metric.label) " + spokenBuffer(seconds))
