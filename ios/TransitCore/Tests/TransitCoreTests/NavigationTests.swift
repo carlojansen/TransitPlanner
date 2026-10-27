@@ -25,6 +25,13 @@ import Testing
     }
 
     static let table: [Row] = [
+        // Fahrt weit voraus (Losgehen 06:00, Schwelle 30 Min.): ruhig warten, auch am Halt oder weit weg
+        Row(time: "05:00:00", position: nil, previous: nil, expected: .waitingToLeave(vehicle: 1)),
+        Row(time: "05:29:00", position: hbf, previous: nil, expected: .waitingToLeave(vehicle: 1)),
+        Row(time: "05:29:00", position: far, previous: .waitingToLeave(vehicle: 1), expected: .waitingToLeave(vehicle: 1)),
+        // Danach automatisch der normale Ablauf; nie zurueck ins Warten
+        Row(time: "05:31:00", position: nil, previous: .waitingToLeave(vehicle: 1), expected: .approachingFirstStop(vehicle: 1)),
+        Row(time: "05:00:00", position: nil, previous: .approachingFirstStop(vehicle: 1), expected: .approachingFirstStop(vehicle: 1)),
         Row(time: "06:01:00", position: start, previous: nil, expected: .approachingFirstStop(vehicle: 1)),
         Row(time: "06:01:00", position: nil, previous: nil, expected: .approachingFirstStop(vehicle: 1)),
         Row(time: "06:05:00", position: hbf, previous: nil, expected: .waitingAtPlatform(vehicle: 1)),
@@ -139,10 +146,23 @@ import Testing
         #expect(NavigationEngine.brokenConnection(after: 1, journey: journey, walks: slow, now: now, pace: pace) == 3)
     }
 
+    @Test func waitingStateUntilLeaveLead() throws {
+        let journey = try Fixture.routes().journeys[0]
+        #expect(NavigationEngine.leaveTime(journey) == Date.iso("2026-10-24T06:00:00Z"))
+        #expect(NavigationEngine.targetVehicle(.waitingToLeave(vehicle: 1)) == 1)
+        let threshold = Date.iso("2026-10-24T05:30:00Z")
+        #expect(NavigationEngine.resolve(journey: journey, fix: nil, now: threshold.addingTimeInterval(-1), previous: nil)
+            == .waitingToLeave(vehicle: 1))
+        #expect(NavigationEngine.resolve(journey: journey, fix: nil, now: threshold, previous: .waitingToLeave(vehicle: 1))
+            == .approachingFirstStop(vehicle: 1))
+    }
+
     @Test func bufferThresholds() {
         #expect(WalkBuffer(seconds: 120).status == .comfortable)
         #expect(WalkBuffer(seconds: 119).status == .tight)
-        #expect(WalkBuffer(seconds: 0).status == .tight)
+        #expect(WalkBuffer(seconds: 1).status == .tight)
+        // 0 s reicht nicht (Audit: "Engster Umstieg: 0 s" nur gelb)
+        #expect(WalkBuffer(seconds: 0).status == .missed)
         #expect(WalkBuffer(seconds: -1).status == .missed)
         #expect(WalkBuffer(seconds: 89).needsWarning && !WalkBuffer(seconds: 90).needsWarning)
     }
@@ -230,6 +250,16 @@ import Testing
         #expect(out == row.expected)
         // Gesamtdistanz bleibt (Fuehrung rechnet kumuliert).
         #expect(out.compactMap(\.distanceMeters).reduce(0, +) == row.steps.compactMap(\.distanceMeters).reduce(0, +))
+    }
+
+    @Test func adjacentStairsBecomeOneLine() {
+        let steps = [Self.s(.stairs, 12, from: 0, to: 1), Self.s(.stairs, 2, from: 1, to: 2), Self.s(.stairs, 12, from: 2, to: 3),
+                     Self.s(.stairs, 13, from: 3, to: 4), Self.s(.left, 20, "A"), Self.s(.stairs, 16, from: 4, to: 3)]
+        let lines = WalkDirections.grouped(steps)
+        #expect(lines.map(\.stairs) == [4, 0, 1])
+        #expect(lines[0].step.distanceMeters == 39)
+        #expect(lines[2].step == steps[5])
+        #expect(WalkDirections.grouped([]).isEmpty)
     }
 
     @Test func keyStepsShowManeuversOnlyWhenLong() {

@@ -64,7 +64,7 @@ public struct DepartureScheduler: Sendable {
 
     /// Nach einem Refresh: Wecker verschieben, beibehalten oder Verbindung verwerfen.
     public func reschedule(_ previous: TimeToLeave, with refreshed: CalibratedJourney) -> ScheduleUpdate {
-        guard !refreshed.journey.cancelled, !refreshed.transfers.contains(where: { $0.slackSeconds < 0 }),
+        guard !refreshed.journey.cancelled, !refreshed.transfers.contains(where: { $0.status == .missed }),
               let next = try? timeToLeave(for: refreshed)
         else { return .connectionLost }
         let delta = Int(next.leaveAt.timeIntervalSince(previous.leaveAt))

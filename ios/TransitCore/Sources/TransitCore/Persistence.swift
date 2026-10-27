@@ -53,10 +53,12 @@ public final class LocalSealer: Sendable {
 
 // MARK: - SwiftData-Modelle
 
-/// Favorit (Zuhause, Arbeit, ...). Name und Ort liegen nur verschluesselt vor.
+/// Favorit (Zuhause, Uni, Arbeit, ...). Name und Ort liegen nur verschluesselt vor.
 @Model
 public final class FavoritePlace {
-    public enum Role: String, Codable, Sendable { case home, work, other }
+    /// Feste Kacheln im Start (DESIGN.md B1) plus beliebig viele weitere (`other`). Rohwert als String: neue Faelle
+    /// brauchen keine Migration.
+    public enum Role: String, Codable, Sendable, CaseIterable { case home, uni, work, other }
 
     @Attribute(.unique) public var id: UUID
     public var roleRaw: String

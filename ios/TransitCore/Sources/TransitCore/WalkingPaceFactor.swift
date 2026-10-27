@@ -29,6 +29,11 @@ public struct WalkingPaceFactor: Codable, Sendable, Hashable {
         Int((max(0, seconds) * value).rounded(.up))
     }
 
+    /// Gehzeit in ganzen Minuten fuer eine Luftlinie (Haltestellen in der Naehe): aufgerundet, mindestens 1.
+    public func walkMinutes(meters: Int) -> Int {
+        max(1, Int((Double(apply(to: Double(max(0, meters)) / NavigationEngine.defaultWalkSpeed)) / 60).rounded(.up)))
+    }
+
     /// Nimmt eine Messung auf. Gibt false zurueck, wenn sie verworfen wurde.
     @discardableResult
     public mutating func record(predictedSeconds: Double, actualSeconds: Double) -> Bool {

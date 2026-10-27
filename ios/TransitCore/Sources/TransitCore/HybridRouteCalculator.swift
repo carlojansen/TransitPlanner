@@ -55,7 +55,9 @@ public struct TransferCheck: Sendable, Hashable {
     public let legIndex: Int
     /// Zeit, die nach dem kalibrierten Fussweg bis zur Abfahrt bleibt (negativ = nicht zu schaffen).
     public let slackSeconds: Int
-    public var isAtRisk: Bool { slackSeconds < TransferCheck.minimumSlackSeconds }
+    /// Dieselbe Einstufung wie der Puffer unterwegs: ab 0 s reicht es nicht, unter 2 Min. knapp.
+    public var status: WalkBuffer.Status { WalkBuffer(seconds: slackSeconds).status }
+    public var isAtRisk: Bool { status != .comfortable }
     /// Wie `WalkBuffer.Status.tight`: unter 2 Min. ist ein Umstieg knapp.
     public static let minimumSlackSeconds = 120
 }
@@ -117,11 +119,18 @@ public struct HybridRouteCalculator: Sendable {
         return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    let response = try await api.routes(request)
+                    let response = try await api.routes(request).bestFirst(arrivalSearch: request.isArrivalTime)
                     continuation.yield(.skeleton(response))
                     let calibrated = try await calibrate(response.journeys, pace: pace,
                                                          origin: originExact, destination: destinationExact)
-                    continuation.yield(.calibrated(response, calibrated))
+                    // Mit echten Gehzeiten kann eine andere Verbindung die beste sein: Reihenfolge beider Listen angleichen.
+                    if let best = CalibratedJourney.bestIndex(calibrated, arrivalSearch: request.isArrivalTime), best != 0 {
+                        var list = calibrated
+                        list.insert(list.remove(at: best), at: 0)
+                        continuation.yield(.calibrated(response.movingToFront(best), list))
+                    } else {
+                        continuation.yield(.calibrated(response, calibrated))
+                    }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

@@ -37,6 +37,16 @@ import Testing
         p.manualOverride = nil
         #expect(abs(p.value - 0.9) < 0.001)
     }
+
+    /// Haltestellen in der Naehe: Luftlinie / 1,3 m/s x Tempo, aufgerundet, nie 0 Min.
+    @Test func walkMinutesFromDistance() {
+        let p = WalkingPaceFactor()
+        #expect(p.walkMinutes(meters: 390) == 5)
+        #expect(p.walkMinutes(meters: 391) == 6)
+        #expect(p.walkMinutes(meters: 0) == 1)
+        #expect(p.walkMinutes(meters: -50) == 1)
+        #expect(WalkingPaceFactor(learned: 1.2).walkMinutes(meters: 390) == 6)
+    }
 }
 
 @Suite struct HybridRouteCalculatorTests {

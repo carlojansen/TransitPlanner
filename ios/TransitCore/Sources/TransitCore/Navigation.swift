@@ -2,6 +2,8 @@ import Foundation
 
 /// Zustaende der In-App-Navigation (SPEZIFIKATION 4.2, DESIGN.md C). Indizes sind Leg-Indizes der Verbindung.
 public enum NavigationStep: Sendable, Hashable {
+    /// Fahrt liegt noch weit voraus (mehr als `NavigationEngine.leaveLead` vor dem Losgehen): ruhig warten.
+    case waitingToLeave(vehicle: Int)
     /// 4 Fussweg zum ersten Halt
     case approachingFirstStop(vehicle: Int)
     /// 4b Am Gleis (4e, wenn das Fahrzeug Ersatzverkehr ist)
@@ -20,6 +22,7 @@ public enum NavigationStep: Sendable, Hashable {
     /// Fortschritt fuer die Monotonie: GPS-Rauschen darf nie einen Schritt zurueck schalten.
     var rank: Int {
         switch self {
+        case .waitingToLeave: -1
         case .approachingFirstStop(let v): v * 10
         case .transferRouting(_, let to): to * 10 + 1
         case .missedDeparture(let v): v * 10 + 1
@@ -38,13 +41,13 @@ public struct WalkBuffer: Sendable, Hashable {
         case comfortable
         /// unter 2 Minuten (orange); unter 90 s zusaetzlich Haptik `.warning`
         case tight
-        /// reicht nicht (rot): naechste Verbindung anbieten
+        /// reicht nicht (rot, ab 0 s): naechste Verbindung anbieten
         case missed
     }
 
     public let seconds: Int
     public var status: Status {
-        seconds < 0 ? .missed : (seconds < 120 ? .tight : .comfortable)
+        seconds <= 0 ? .missed : (seconds < TransferCheck.minimumSlackSeconds ? .tight : .comfortable)
     }
     /// DESIGN.md C4: Warnhaptik unter 90 s
     public var needsWarning: Bool { seconds < 90 }
@@ -78,6 +81,10 @@ public enum NavigationEngine {
     public static let defaultWalkSpeed: Double = 1.3
     /// "Verpasst" nur mit einem Fix, der hoechstens so alt ist (s); sonst entscheidet die Fahrplanzeit.
     public static let freshFix: TimeInterval = 30
+    /// Warten, bis das Losgehen (Beginn des ersten Abschnitts) hoechstens so nah ist (s).
+    public static let leaveLead: TimeInterval = 30 * 60
+    /// "Naechster Halt aussteigen" erst so kurz vor der Ankunft (s); vorher die Restzeit.
+    public static let exitLead: TimeInterval = 3 * 60
 
     /// Aktueller Zustand aus Zeit (Echtzeit-Abfahrten/Ankuenfte) und Position; nie hinter `previous` zurueck.
     /// ponytail: Einstieg/Ausstieg nach Fahrplanzeit statt Bewegung entlang der Polyline; bei Bedarf um Geschwindigkeit ergaenzen.
@@ -92,6 +99,9 @@ public enum NavigationEngine {
     static func compute(journey: Journey, fix: LocationFix?, now: Date, previous: NavigationStep?) -> NavigationStep {
         let position = fix?.coordinate
         let vehicles = journey.legs.filter { !$0.isWalk }
+        if let first = vehicles.first, let leave = leaveTime(journey), now < leave.addingTimeInterval(-leaveLead) {
+            return .waitingToLeave(vehicle: first.index)
+        }
         for (k, leg) in vehicles.enumerated() {
             let departure = leg.departure ?? leg.plannedDeparture ?? .distantPast
             let arrival = leg.arrival ?? leg.plannedArrival ?? departure
@@ -118,6 +128,11 @@ public enum NavigationEngine {
         return .finalWalkToDestination
     }
 
+    /// Beginn des ersten Abschnitts (inkl. Zugangsweg) nach Fahrplan/Echtzeit.
+    public static func leaveTime(_ journey: Journey) -> Date? {
+        journey.legs.first.flatMap { $0.departure ?? $0.plannedDeparture }
+    }
+
     private static func within(_ position: GeoCoordinate?, _ place: Place, _ radius: Double) -> Bool {
         guard let position, let c = place.coordinate else { return false }
         return position.distance(to: c) <= radius
@@ -126,7 +141,7 @@ public enum NavigationEngine {
     /// Fahrzeug, auf das der Zustand zulaeuft (fuer Puffer, Gleis, Abfahrt).
     public static func targetVehicle(_ step: NavigationStep) -> Int? {
         switch step {
-        case .approachingFirstStop(let v), .waitingAtPlatform(let v), .onBoardTransit(let v), .missedDeparture(let v): v
+        case .waitingToLeave(let v), .approachingFirstStop(let v), .waitingAtPlatform(let v), .onBoardTransit(let v), .missedDeparture(let v): v
         case .transferRouting(_, let to): to
         case .finalWalkToDestination, .arrived: nil
         }
@@ -267,6 +282,28 @@ public enum WalkDirections {
                                       // Nur ein gerades Stueck uebernimmt den Namen; "Links abbiegen" bleibt ohne fremden Namen.
                                       streetName: last.isStraight && !last.isVertical
                                           ? (last.streetName ?? step.streetName) : last.streetName)
+        }
+        return out
+    }
+
+    /// Eine Zeile der Wegbeschreibung; `stairs` > 1 fasst aufeinanderfolgende Treppen zusammen ("4 Treppen, 39 m").
+    public struct Line: Sendable, Hashable {
+        public let step: Step
+        public let stairs: Int
+    }
+
+    /// Aufeinanderfolgende Treppen (nach `condensed`) werden eine Zeile mit Anzahl und Gesamtstrecke.
+    public static func grouped(_ steps: [Step]) -> [Line] {
+        var out: [Line] = []
+        for step in steps {
+            if let last = out.last, last.step.direction == .stairs, step.direction == .stairs {
+                let meters: Int? = (last.step.distanceMeters == nil && step.distanceMeters == nil)
+                    ? nil : (last.step.distanceMeters ?? 0) + (step.distanceMeters ?? 0)
+                out[out.count - 1] = Line(step: Step(direction: .stairs, distanceMeters: meters, fromLevel: nil, toLevel: nil,
+                                                     streetName: nil), stairs: last.stairs + 1)
+            } else {
+                out.append(Line(step: step, stairs: step.direction == .stairs ? 1 : 0))
+            }
         }
         return out
     }
