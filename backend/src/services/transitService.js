@@ -68,7 +68,7 @@ function toMotisPlace(point) {
 	return `${fuzz(point.latitude, 4)},${fuzz(point.longitude, 4)}`;
 }
 
-export function createTransitService({client, gate = createUpstreamGate(), timeoutMs = 12_000, logger}) {
+export function createTransitService({client, gate = createUpstreamGate(), timeoutMs = 12_000, logger, routing = {}}) {
 	const searchCache = new TTLCache({maxEntries: 1000, ttlMs: 6 * 60 * 60 * 1000}); // Haltestellennamen aendern sich selten
 	const nearbyCache = new TTLCache({maxEntries: 1000, ttlMs: 10 * 60 * 1000});
 
@@ -147,6 +147,9 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 			detailedTransfers: true, // Fusswege mit Geometrie fuer die Karte
 			joinInterlinedLegs: true,
 			language: 'de',
+			maxPreTransitTime: routing.maxPreTransitSeconds ?? 1500,
+			maxPostTransitTime: routing.maxPostTransitSeconds ?? 1500,
+			additionalTransferTime: routing.additionalTransferMinutes ?? 0,
 		};
 		if (targetTime) query.time = new Date(targetTime).toISOString();
 		if (onlyNahverkehr) query.transitModes = joinList(NAHVERKEHR_MODES);

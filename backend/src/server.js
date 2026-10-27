@@ -18,7 +18,11 @@ const gate = createUpstreamGate({
 	intervalMs: config.UPSTREAM_INTERVAL_MS,
 	maxQueue: config.UPSTREAM_MAX_QUEUE,
 });
-const service = createTransitService({client, gate, timeoutMs: config.UPSTREAM_TIMEOUT_MS, logger});
+const service = createTransitService({client, gate, timeoutMs: config.UPSTREAM_TIMEOUT_MS, logger, routing: {
+	maxPreTransitSeconds: config.MAX_PRE_TRANSIT_SECONDS,
+	maxPostTransitSeconds: config.MAX_POST_TRANSIT_SECONDS,
+	additionalTransferMinutes: config.ADDITIONAL_TRANSFER_MINUTES,
+}});
 const app = createApp({config, service, logger});
 
 // Lauscht nur auf localhost. TLS 1.3 terminiert der Reverse-Proxy (deploy/Caddyfile).

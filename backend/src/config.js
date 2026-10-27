@@ -49,6 +49,17 @@ const schema = z.object({
 	UPSTREAM_TIMEOUT_MS: z.coerce.number().int().min(1000).default(12000),
 	UPSTREAM_MAX_QUEUE: z.coerce.number().int().min(1).default(20),
 
+	// Routing-Feinschliff (MOTIS 2 /plan). Keine zusaetzlichen Anfragen, nur Parameter der bestehenden.
+	// Max. Zeit des ersten/letzten Fussweges in Sekunden (MOTIS-Standard 900). 1500 s = 25 min erlaubt den
+	// Weg zu einer besseren Bahn. MOTIS begrenzt serverseitig mit street_routing_max_prepost_transit_seconds
+	// (MOTIS-Standard 3600); darueber schneidet der Server ab. Die Transitous-Konfiguration war offline nicht
+	// pruefbar, daher Obergrenze hier 3600.
+	MAX_PRE_TRANSIT_SECONDS: z.coerce.number().int().min(300).max(3600).default(1500),
+	MAX_POST_TRANSIT_SECONDS: z.coerce.number().int().min(300).max(3600).default(1500),
+	// Zusaetzliche Umsteigezeit in Minuten je Umstieg (MOTIS-Standard 0). MOTIS rechnet den Zuschlag in leg.duration der Umstiegswege ein, die App liest das als Gehzeit (Puffer waere zu klein).
+	// Daher 0: knappe Umstiege bestraft die App selbst (Journey.rank). Nur mit Anpassung des Mappers erhoehen.
+	ADDITIONAL_TRANSFER_MINUTES: z.coerce.number().int().min(0).max(10).default(0),
+
 	LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'silent']).default('info'),
 });
 
