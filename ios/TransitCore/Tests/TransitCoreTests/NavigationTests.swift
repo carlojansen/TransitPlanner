@@ -324,4 +324,20 @@ import Testing
         #expect(g.nextStep?.direction == .right)
         #expect(g.metersToNextStep == 75)
     }
+    /// Vorschau: das Manoever nach der naechsten Wegaenderung ("Danach: Treppe runter").
+    @Test func guidanceNamesTheStepAfterNext() throws {
+        let a = GeoCoordinate(latitude: 51.0, longitude: 7.0)
+        let json = """
+        {"index":0,"mode":"walk","realtime":false,"cancelled":false,"origin":{"kind":"stop","name":"A","latitude":51.0,"longitude":7.0},
+         "destination":{"kind":"stop","name":"B","latitude":51.0,"longitude":7.01},
+         "polyline":{"type":"LineString","coordinates":[[7.0,51.0],[7.01,51.0]]},
+         "steps":[{"direction":"depart","distanceMeters":70},
+                  {"direction":"left","distanceMeters":100},
+                  {"direction":"stairs","distanceMeters":10,"fromLevel":0,"toLevel":-1}]}
+        """
+        let leg = try TransitJSON.decoder().decode(Leg.self, from: Data(json.utf8))
+        let g = NavigationEngine.guidance(walk: leg, position: a)
+        #expect(g.nextStep?.direction == .left)
+        #expect(g.thenStep?.direction == .stairs)
+    }
 }

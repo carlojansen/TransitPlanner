@@ -61,11 +61,14 @@ public struct WalkGuidance: Sendable, Hashable {
     public let metersToNextStep: Int?
     /// Meter bis zum Ende des Fusswegs (Luftlinie, wenn keine Geometrie)
     public let remainingMeters: Int?
+    /// Wegaenderung nach `nextStep` (Vorschau "Danach: Treppe runter"), nil = keine mehr
+    public let thenStep: Step?
 
-    public init(nextStep: Step?, metersToNextStep: Int?, remainingMeters: Int?) {
+    public init(nextStep: Step?, metersToNextStep: Int?, remainingMeters: Int?, thenStep: Step? = nil) {
         self.nextStep = nextStep
         self.metersToNextStep = metersToNextStep
         self.remainingMeters = remainingMeters
+        self.thenStep = thenStep
     }
 }
 
@@ -227,9 +230,12 @@ public enum NavigationEngine {
         // Schritt i beginnt bei cumulative[i]; die naechste Aenderung ist das erste Manoever (Abbiegen, Treppe,
         // Aufzug), das noch vor uns liegt. Zusammengefasste Schritte: keine Mikroschritte ("In 3 m geradeaus").
         var start = 0.0
-        for step in WalkDirections.condensed(leg.steps) {
+        let steps = WalkDirections.condensed(leg.steps)
+        for (i, step) in steps.enumerated() {
             if start > along + 1, step.isManeuver {
-                return WalkGuidance(nextStep: step, metersToNextStep: Int((start - along).rounded()), remainingMeters: remaining)
+                let then = steps[(i + 1)...].first(where: \.isManeuver)
+                return WalkGuidance(nextStep: step, metersToNextStep: Int((start - along).rounded()), remainingMeters: remaining,
+                                    thenStep: then)
             }
             start += Double(step.distanceMeters ?? 0)
         }

@@ -53,6 +53,11 @@ public enum RoutePoint: Sendable, Hashable, Encodable {
     }
 }
 
+/// Verkehrsmittel-Pillen der App; Rohwerte wie `modes` in docs/API.md.
+public enum ModeFilter: String, Sendable, Hashable, Codable, CaseIterable {
+    case tram, subway, suburban, regional, bus
+}
+
 /// Body fuer POST /api/routes. Optionale Felder werden weggelassen (Backend lehnt `null` und unbekannte Felder ab).
 public struct RoutesRequest: Sendable, Hashable, Encodable {
     public var origin: RoutePoint
@@ -60,18 +65,21 @@ public struct RoutesRequest: Sendable, Hashable, Encodable {
     public var targetTime: Date?
     public var isArrivalTime: Bool
     public var onlyNahverkehr: Bool
+    /// Teilmenge der Pillen; nil = voller Nahverkehrsfilter.
+    public var modes: [ModeFilter]?
     /// 1-6, beim Init begrenzt.
     public private(set) var results: Int
     public var laterThan: String?
     public var earlierThan: String?
 
     public init(origin: RoutePoint, destination: RoutePoint, targetTime: Date? = nil,
-                isArrivalTime: Bool = false, onlyNahverkehr: Bool = true, results: Int = 4) {
+                isArrivalTime: Bool = false, onlyNahverkehr: Bool = true, modes: [ModeFilter]? = nil, results: Int = 4) {
         self.origin = origin
         self.destination = destination
         self.targetTime = targetTime
         self.isArrivalTime = isArrivalTime
         self.onlyNahverkehr = onlyNahverkehr
+        self.modes = modes
         self.results = min(max(results, 1), 6)
     }
 
@@ -85,7 +93,7 @@ public struct RoutesRequest: Sendable, Hashable, Encodable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case origin, destination, targetTime, isArrivalTime, onlyNahverkehr, results, laterThan, earlierThan
+        case origin, destination, targetTime, isArrivalTime, onlyNahverkehr, modes, results, laterThan, earlierThan
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -96,6 +104,7 @@ public struct RoutesRequest: Sendable, Hashable, Encodable {
         try c.encodeIfPresent(targetTime?.formatted(.iso8601), forKey: .targetTime)
         try c.encode(isArrivalTime, forKey: .isArrivalTime)
         try c.encode(onlyNahverkehr, forKey: .onlyNahverkehr)
+        try c.encodeIfPresent(modes, forKey: .modes)
         try c.encode(results, forKey: .results)
         try c.encodeIfPresent(laterThan, forKey: .laterThan)
         try c.encodeIfPresent(earlierThan, forKey: .earlierThan)
@@ -142,13 +151,14 @@ public protocol TripRequest: Sendable {
     var targetTime: Date { get }
     var isArrivalTime: Bool { get }
     var trigger: TripTrigger { get }
+    var modes: [ModeFilter]? { get }
 }
 
 public extension TripRequest {
     /// Einzige Stelle, an der aus einer Fahrt ein Backend-Request wird: nur Punkte, Zeit, Filter.
     func routesRequest(onlyNahverkehr: Bool = true, results: Int = 4) -> RoutesRequest {
         RoutesRequest(origin: origin.routePoint, destination: destination.routePoint, targetTime: targetTime,
-                      isArrivalTime: isArrivalTime, onlyNahverkehr: onlyNahverkehr, results: results)
+                      isArrivalTime: isArrivalTime, onlyNahverkehr: onlyNahverkehr, modes: modes, results: results)
     }
 }
 
@@ -163,9 +173,11 @@ public struct ManualTripRequest: TripRequest, Hashable, Codable {
     public var targetTime: Date
     public var isArrivalTime: Bool
     public var trigger: TripTrigger
+    public var modes: [ModeFilter]?
 
     public init(origin: TripEndpoint, destination: TripEndpoint, targetTime: Date,
-                isArrivalTime: Bool = false, trigger: TripTrigger = .manual) {
+                isArrivalTime: Bool = false, trigger: TripTrigger = .manual, modes: [ModeFilter]? = nil) {
+        self.modes = modes
         self.origin = origin
         self.destination = destination
         self.targetTime = targetTime
