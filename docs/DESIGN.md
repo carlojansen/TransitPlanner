@@ -54,10 +54,10 @@ Zeiten, Minuten, Meter: immer `.monospacedDigit()` und `.contentTransition(.nume
 - Seitenrand im Sheet und für Karten: 16 pt. Karten 370 pt breit auf dem Referenzgerät, also volle Breite minus 2 x 16.
 - Radien (`.rect(cornerRadius:style: .continuous)`): Badge 6, Karten-Hinweis 12, Inline-Banner 14, Karte 16, Jetzt-Karte 22, Hauptknopf Kapsel.
 - Touch-Ziel mindestens 44 x 44 pt (`.contentShape(.rect)`).
-- Sheet-Detents: `.height(140)` (Start), `.fraction(0.5)` (Routenauswahl, 2c), `.large` (Suche, Details, Einstellungen).
+- Sheet-Detents: `.height(140)` (Start; Suchfeld und Favoriten-Chips fest im Kopf, Liste scrollt darunter), `.fraction(0.5)` (Routenauswahl, 2c), `.large` (Suche, Details, Einstellungen).
   Die Quellenangabe muss im mittleren Detent sichtbar bleiben; in Figma braucht das 474 pt Sheet-Höhe. Ist die Liste länger,
   steht die Fußzeile direkt unter der Hero Card statt am Listenende.
-- Unterwegs: Danach-Sheet startet kompakt (`.height(210)`, AX `.fraction(0.3)`: Kopf, engste Stelle, aktuelle und nächste Etappe), hochziehbar auf `.medium` (ganze Restfahrt); die App wechselt den Detent unterwegs nie selbst, damit die Karte nicht springt (Carlo, 26.10.). Karte bleibt bedienbar (`presentationBackgroundInteraction(.enabled)`).
+- Unterwegs: Danach-Sheet startet kompakt (`.height(256)`, AX `.fraction(0.3)`: Kopf, engste Stelle, aktuelle und nächste Etappe), hochziehbar auf `.medium` (ganze Restfahrt) und `.large` (Fahrtdetails wie 3d, Wegbeschreibung ausgeklappt); die App wechselt den Detent unterwegs nie selbst, damit die Karte nicht springt (Carlo, 26.10.). Karte bleibt bedienbar (`presentationBackgroundInteraction(.enabled)`).
 
 ## 4. Komponenten
 
@@ -114,8 +114,8 @@ Zeiten, Minuten, Meter: immer `.monospacedDigit()` und `.contentTransition(.nume
 - Von oben: Von/Nach als zwei Zeilen (Von vorbelegt "Mein Standort", Nach hat den Fokus) mit Tausch-Knopf; Chip "Jetzt" (klappt Abfahrt/Ankunft + Zeit inline auf; weicht er vom Standard ab, ist er Akzent); Liste; unten "Verbindungen suchen" nur, wenn beide Felder gefüllt sind (kein toter Knopf). Ohne Standort ist Von leer und tippbar.
 - Ein Suchfeld ohne Modus. Leeres Feld: Mein Standort, Favoriten, Zuletzt gesucht, Haltestellen in der Nähe (nur gerundete Koordinate, nur mit Erlaubnis, höchstens alle 2 Min.). Getippt: passende Favoriten/Verlauf/Nähe, dann Apple Karten (MKLocalSearch, Region aus dem GPS-Fix), am Ende die Zeile "Haltestelle '<Text>' beim Fahrplan-Server suchen". Erst dieser Tipp sendet den Text; jede weitere Eingabe nimmt den Server-Stand zurück. Ohne Standort entfällt die Adresssuche ohne Banner.
 - Wahl eines Orts: sind danach beide Felder nutzbar, startet die Suche sofort (3a); sonst springt der Fokus zum fehlenden Feld. Favorit per Wischen auf einer Verlaufszeile, entfernen per Wischen. Verlauf und Favoriten verschlüsselt in SwiftData; "Mein Standort" nie im Verlauf.
-- Verkehrsmittel-Chip folgt mit dem Produktfilter (API kennt bisher nur `onlyNahverkehr`).
-- Erinnerung gehört nicht hierher, sondern als Knopf neben "Starten" in die Fahrtdetails (M4).
+- **Verkehrsmittel-Pillen (28.10.):** unter Von/Nach, Figma: Punkt in Modusfarbe + Name (Tram, S-Bahn, U-Bahn, Bus, Regio), aus = abgeblendet, mindestens eine bleibt an. Alle an sendet kein `modes` (voller Nahverkehrsfilter).
+- Erinnerung gehört nicht hierher, sondern als Knopf neben "Starten" in die Fahrtdetails (D1, seit 28.10. als Sheet mit lokaler Mitteilung; Liste und Nachführen bei Verspätung folgen in M4).
 - Zurück: Details > Ergebnisse > Planen > Karte; Eingaben und Zeit bleiben. "Beenden" in der Navigation führt zu den Ergebnissen. Leere Liste: "Später suchen" (+30 Min.).
 - Wege: Fußweg-Kopf "12 Min. · 875 m"; aufeinanderfolgende Treppen eine Zeile ("4 Treppen, 39 m").
 
@@ -146,7 +146,7 @@ Zeiten, Minuten, Meter: immer `.monospacedDigit()` und `.contentTransition(.nume
 - VoiceOver: "Achtung, Ersatzverkehr: Bus statt RE 5 bis Leverkusen Mitte, Abfahrt Breslauer Platz."
 
 **3d Fahrtdetails**
-- Tipp auf Hero Card oder Alternative öffnet die Details im selben Sheet (Detent .large, Zustand der State-Machine, kein Push). Zurück: "Verbindungen" oder Sheet nach unten ziehen.
+- Tipp auf Hero Card oder Alternative öffnet die Details im selben Sheet (Detent .large, Zustand der State-Machine, kein Push). Kopf als Standard-Toolbar (NavigationStack im Sheet, kein Push): Zurück "Verbindungen", Titel "Details" (Carlo, 31.10.). Unten per `.safeAreaBar`: "Erinnern" und "Starten", bei AX untereinander.
 - Zeitleiste: Zeitspalte monospacedDigit, Echtzeit darunter in status/warn; Schiene in Linienfarbe für Fahrten, gepunktet (mode/walk) für Fußwege.
 - Gleiswechsel: neues Gleis hervorgehoben + "statt 10"; `.sensoryFeedback(.warning)` beim Eintreffen, Puls einmalig.
 - "4 Zwischenhalte" klappt per Motion.micro auf (DisclosureGroup); Fußweg-Zeilen zeigen die kalibrierte Gehzeit.

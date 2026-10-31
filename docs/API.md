@@ -51,6 +51,7 @@ Es werden nur Haltestellen geliefert. `modes`, `area`, `distanceMeters` optional
 | `targetTime` | jetzt | ISO-8601 **mit Offset**, -6 h bis +60 Tage |
 | `isArrivalTime` | `false` | `true` = Ankunft spätestens |
 | `onlyNahverkehr` | `true` | nur Tram, U-/S-Bahn, Regionalzug, Bus, Fähre, Seil-/Schwebebahnen; Fernverkehr wird zusätzlich serverseitig herausgefiltert |
+| `modes` | – | optional, Teilmenge von `tram`, `subway`, `suburban`, `regional`, `bus` (Pillen in der App). Ersetzt den Modus-Satz von `onlyNahverkehr`; der Fernverkehr-Filter bleibt. Ohne Angabe gilt der volle Nahverkehrsfilter. Unbekannte Werte: `400` |
 | `results` | `4` | 1–6 |
 | `laterThan` / `earlierThan` | – | Paging mit `laterRef`/`earlierRef` der vorherigen Antwort. **Alle übrigen Felder unverändert mitschicken** (MOTIS-Regel). Schließen sich gegenseitig aus. |
 
