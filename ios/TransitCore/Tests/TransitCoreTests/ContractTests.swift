@@ -120,6 +120,14 @@ import Testing
         #expect(Set(destination.keys) == ["type", "id"])
     }
 
+    @Test func accessibilityIsSentOnlyWhenStepFreeAndSurvivesPaging() throws {
+        let plain = try jsonObject(TransitJSON.encoder().encode(RoutesRequest(origin: .stop(id: "a"), destination: .stop(id: "b"))))
+        #expect(plain["accessibility"] == nil)
+        let free = RoutesRequest(origin: .stop(id: "a"), destination: .stop(id: "b"), accessibility: .stepFree)
+        let json = try jsonObject(TransitJSON.encoder().encode(free.later("c")))
+        #expect(json["accessibility"] as? String == "stepFree")
+    }
+
     @Test func targetTimeIsISO8601WithOffsetAndPagingKeepsFields() throws {
         let base = RoutesRequest(origin: .stop(id: "a"), destination: .stop(id: "b"),
                                  targetTime: Date.iso("2026-10-24T06:15:00Z"), isArrivalTime: true, results: 3)

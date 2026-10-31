@@ -532,6 +532,19 @@ import TransitCore
         #expect(f.phase == .start)
     }
 
+    /// Stufenfrei reisen geht als Parameter ans Backend und bleibt lokal gespeichert.
+    @Test func stepFreeSettingReachesTheRequestAndIsStored() async {
+        let planner = FakeRoutePlanner()
+        let f = flow(planner: planner)
+        f.accessibility = .stepFree
+        let stored = Accessibility.stored
+        UserDefaults.standard.removeObject(forKey: Accessibility.key)
+        #expect(stored == .stepFree)
+        chooseDestination(f)
+        await f.waitForWork()
+        #expect(planner.recordedRequests.last?.accessibility == .stepFree)
+    }
+
     /// Ohne Standort fehlt der Start: Fokus springt auf Von, die Wahl dort startet die Suche.
     @Test func withoutLocationDestinationLeadsToOriginField() async {
         let planner = FakeRoutePlanner()

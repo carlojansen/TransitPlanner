@@ -108,7 +108,7 @@ struct AppDependencies: Sendable {
             loadPace: { UserDefaults.standard.data(forKey: paceKey).flatMap { try? JSONDecoder().decode(WalkingPaceFactor.self, from: $0) } ?? WalkingPaceFactor() },
             savePace: { if let data = try? JSONEncoder().encode($0) { UserDefaults.standard.set(data, forKey: paceKey) } },
             positions: { livePositions() },
-            refresh: { token throws(TransitError) in try await api.refresh(refreshToken: token, polylines: false).journey },
+            refresh: { token throws(TransitError) in try await api.refresh(refreshToken: token, polylines: false, accessibility: .stored).journey },
             blockedUntil: { await api.blocked?.until },
             nearby: { coordinate throws(TransitError) in try await api.nearbyStops(around: coordinate) },
             places: SwiftDataPlaces.live(secrets: secrets)
@@ -504,3 +504,9 @@ enum FakeData {
     }
 }
 #endif
+
+extension Accessibility {
+    static let key = "accessibility"
+    /// Gespeicherte Einstellung (UserDefaults); ohne Eintrag aus.
+    static var stored: Accessibility { UserDefaults.standard.string(forKey: key).flatMap(Accessibility.init(rawValue:)) ?? .none }
+}

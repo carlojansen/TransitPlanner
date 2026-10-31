@@ -434,6 +434,7 @@ struct PlanSheet: View {
         .animation(Motion.micro, value: flow.origin)
         if !focused { timeRow }
         if !focused { modePills }
+        if !focused { StepFreeToggle().font(.subheadline).padding(.horizontal, 6).padding(.top, -6) } // Rand wie die Pillen-Beschriftung
         if !focused, flow.endpointsFilled, flow.assigningRole == nil {
             PrimaryButton(title: "Verbindungen suchen", systemImage: "magnifyingglass") { flow.send(.planTapped) }
                 .disabled(!flow.canPlan)

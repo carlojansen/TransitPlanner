@@ -49,8 +49,8 @@ public actor TransitAPIClient {
         try await send(path: "/api/routes", body: try encode(request))
     }
 
-    public func refresh(refreshToken: String, polylines: Bool = false) async throws(TransitError) -> RefreshResponse {
-        try await send(path: "/api/refresh", body: try encode(RefreshRequest(refreshToken: refreshToken, polylines: polylines)))
+    public func refresh(refreshToken: String, polylines: Bool = false, accessibility: Accessibility = .none) async throws(TransitError) -> RefreshResponse {
+        try await send(path: "/api/refresh", body: try encode(RefreshRequest(refreshToken: refreshToken, polylines: polylines, accessibility: accessibility)))
     }
 
     // MARK: Intern

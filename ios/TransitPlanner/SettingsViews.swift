@@ -230,6 +230,11 @@ struct SettingsSheet: View {
                 }
                 .buttonStyle(.plain)
                 Section {
+                    StepFreeToggle()
+                } footer: {
+                    Text("Wege zu und zwischen den Fahrzeugen meiden Treppen und nutzen Aufzüge. Ob ein Fahrzeug selbst barrierefrei ist, steht nicht zuverlässig in den Daten.")
+                }
+                Section {
                     NavigationLink(value: Route.sources) { SettingsRow(title: "Quellen und Lizenzen") }
                     SettingsRow(title: "Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
                 }
@@ -324,5 +329,16 @@ private struct StaticLink: View {
 
     var body: some View {
         if let destination = URL(string: url) { Link(destination: destination) { linkLabel(title) } }
+    }
+}
+
+/// Stufenfrei reisen: ein Schalter, gilt fuer die naechste Suche (Einstellungen und Planen teilen den Wert).
+struct StepFreeToggle: View {
+    @Environment(AppFlow.self) private var flow
+
+    var body: some View {
+        @Bindable var flow = flow
+        Toggle("Stufenfrei reisen", isOn: Binding { flow.accessibility == .stepFree } set: { flow.accessibility = $0 ? .stepFree : .none })
+            .accessibilityIdentifier("stepFreeToggle")
     }
 }

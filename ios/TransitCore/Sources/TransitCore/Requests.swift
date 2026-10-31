@@ -58,6 +58,11 @@ public enum ModeFilter: String, Sendable, Hashable, Codable, CaseIterable {
     case tram, subway, suburban, regional, bus
 }
 
+/// Stufenfrei reisen (Einstellung); Rohwerte wie `accessibility` in docs/API.md. Wirkt auf die Fusswege, nicht auf Fahrzeuge.
+public enum Accessibility: String, Sendable, Hashable, Codable, CaseIterable {
+    case none, stepFree
+}
+
 /// Body fuer POST /api/routes. Optionale Felder werden weggelassen (Backend lehnt `null` und unbekannte Felder ab).
 public struct RoutesRequest: Sendable, Hashable, Encodable {
     public var origin: RoutePoint
@@ -67,13 +72,16 @@ public struct RoutesRequest: Sendable, Hashable, Encodable {
     public var onlyNahverkehr: Bool
     /// Teilmenge der Pillen; nil = voller Nahverkehrsfilter.
     public var modes: [ModeFilter]?
+    public var accessibility: Accessibility
     /// 1-6, beim Init begrenzt.
     public private(set) var results: Int
     public var laterThan: String?
     public var earlierThan: String?
 
     public init(origin: RoutePoint, destination: RoutePoint, targetTime: Date? = nil,
-                isArrivalTime: Bool = false, onlyNahverkehr: Bool = true, modes: [ModeFilter]? = nil, results: Int = 4) {
+                isArrivalTime: Bool = false, onlyNahverkehr: Bool = true, modes: [ModeFilter]? = nil,
+                accessibility: Accessibility = .none, results: Int = 4) {
+        self.accessibility = accessibility
         self.origin = origin
         self.destination = destination
         self.targetTime = targetTime
@@ -93,7 +101,7 @@ public struct RoutesRequest: Sendable, Hashable, Encodable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case origin, destination, targetTime, isArrivalTime, onlyNahverkehr, modes, results, laterThan, earlierThan
+        case origin, destination, targetTime, isArrivalTime, onlyNahverkehr, modes, accessibility, results, laterThan, earlierThan
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -105,6 +113,7 @@ public struct RoutesRequest: Sendable, Hashable, Encodable {
         try c.encode(isArrivalTime, forKey: .isArrivalTime)
         try c.encode(onlyNahverkehr, forKey: .onlyNahverkehr)
         try c.encodeIfPresent(modes, forKey: .modes)
+        if accessibility != .none { try c.encode(accessibility, forKey: .accessibility) }
         try c.encode(results, forKey: .results)
         try c.encodeIfPresent(laterThan, forKey: .laterThan)
         try c.encodeIfPresent(earlierThan, forKey: .earlierThan)
@@ -114,6 +123,16 @@ public struct RoutesRequest: Sendable, Hashable, Encodable {
 struct RefreshRequest: Encodable {
     let refreshToken: String
     let polylines: Bool
+    let accessibility: Accessibility
+
+    private enum CodingKeys: String, CodingKey { case refreshToken, polylines, accessibility }
+
+    func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(refreshToken, forKey: .refreshToken)
+        try c.encode(polylines, forKey: .polylines)
+        if accessibility != .none { try c.encode(accessibility, forKey: .accessibility) }
+    }
 }
 
 // MARK: - TripRequest (Kalender-Hook, SPEZIFIKATION 8 Punkt 7)
@@ -152,13 +171,17 @@ public protocol TripRequest: Sendable {
     var isArrivalTime: Bool { get }
     var trigger: TripTrigger { get }
     var modes: [ModeFilter]? { get }
+    var accessibility: Accessibility { get }
 }
 
 public extension TripRequest {
+    var accessibility: Accessibility { .none }
+
     /// Einzige Stelle, an der aus einer Fahrt ein Backend-Request wird: nur Punkte, Zeit, Filter.
     func routesRequest(onlyNahverkehr: Bool = true, results: Int = 4) -> RoutesRequest {
         RoutesRequest(origin: origin.routePoint, destination: destination.routePoint, targetTime: targetTime,
-                      isArrivalTime: isArrivalTime, onlyNahverkehr: onlyNahverkehr, modes: modes, results: results)
+                      isArrivalTime: isArrivalTime, onlyNahverkehr: onlyNahverkehr, modes: modes,
+                      accessibility: accessibility, results: results)
     }
 }
 
@@ -174,10 +197,13 @@ public struct ManualTripRequest: TripRequest, Hashable, Codable {
     public var isArrivalTime: Bool
     public var trigger: TripTrigger
     public var modes: [ModeFilter]?
+    public var accessibility: Accessibility
 
     public init(origin: TripEndpoint, destination: TripEndpoint, targetTime: Date,
-                isArrivalTime: Bool = false, trigger: TripTrigger = .manual, modes: [ModeFilter]? = nil) {
+                isArrivalTime: Bool = false, trigger: TripTrigger = .manual, modes: [ModeFilter]? = nil,
+                accessibility: Accessibility = .none) {
         self.modes = modes
+        self.accessibility = accessibility
         self.origin = origin
         self.destination = destination
         self.targetTime = targetTime

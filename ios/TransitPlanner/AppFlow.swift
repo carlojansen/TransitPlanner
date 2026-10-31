@@ -199,6 +199,7 @@ private struct PlanKey: Hashable {
     let time: Date?
     let isArrivalTime: Bool
     let modes: Set<ModeFilter>
+    let accessibility: Accessibility
 }
 
 @Observable @MainActor
@@ -231,6 +232,10 @@ final class AppFlow {
     var customTime: Date?
     /// Verkehrsmittel-Pillen (Figma); alle an = voller Nahverkehrsfilter. Mindestens eine bleibt an.
     var modeFilter = Set(ModeFilter.allCases)
+    /// Stufenfrei reisen (Einstellungen); lokal gespeichert, geht nur als Parameter ans Backend.
+    var accessibility = Accessibility.stored {
+        didSet { UserDefaults.standard.set(accessibility.rawValue, forKey: Accessibility.key) }
+    }
     var isArrivalTime = false
     private(set) var routes: RoutesResponse?
     /// nil, solange nur das Skelett vorliegt.
@@ -698,7 +703,7 @@ final class AppFlow {
         work?.cancel()
         guard let destination, blockedUntil == nil else { return }
         let origin = self.origin
-        let key = PlanKey(origin: origin, destination: destination, time: customTime, isArrivalTime: isArrivalTime, modes: modeFilter)
+        let key = PlanKey(origin: origin, destination: destination, time: customTime, isArrivalTime: isArrivalTime, modes: modeFilter, accessibility: accessibility)
         // H3: bei gleicher Anfrage bleibt die letzte Antwort fuer den Offline-Fall in Reserve.
         let previous = key == lastPlanKey ? (routes, calibrated) : (nil, nil)
         clearReminder()
@@ -722,7 +727,7 @@ final class AppFlow {
                     here = .coordinate(fix.coordinate, label: PlanEndpoint.currentLocation.label)
                 }
                 guard let start = origin.place ?? here, let end = destination.place ?? here else { throw .locationUnavailable }
-                let trip = ManualTripRequest(origin: start, destination: end, targetTime: time, isArrivalTime: arrival, modes: modes)
+                let trip = ManualTripRequest(origin: start, destination: end, targetTime: time, isArrivalTime: arrival, modes: modes, accessibility: accessibility)
                 try await consume(deps.planner.plan(trip, pace: pace))
                 guard !Task.isCancelled else { return }
                 lastPlanKey = key
@@ -1065,7 +1070,7 @@ final class AppFlow {
                     start = .coordinate(fix.coordinate, label: PlanEndpoint.currentLocation.label)
                     time = now
                 }
-                let trip = ManualTripRequest(origin: start, destination: target, targetTime: time, modes: modes)
+                let trip = ManualTripRequest(origin: start, destination: target, targetTime: time, modes: modes, accessibility: accessibility)
                 for try await stage in deps.planner.plan(trip, pace: pace) {
                     guard !Task.isCancelled else { return }
                     switch stage {
