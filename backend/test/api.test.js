@@ -270,6 +270,13 @@ describe('POST /api/routes', () => {
 		expect(q.transitModes).toBeUndefined();
 	});
 
+	it('Pillen-Auswahl schraenkt die Modi ein', async () => {
+		await request(app).post('/api/routes').set(auth).send({...body, modes: ['tram', 'regional']}).expect(200);
+		const [, q] = client.calls.find((c) => c[0] === 'plan');
+		expect(q.transitModes).toBe('TRAM,REGIONAL_RAIL');
+		await request(app).post('/api/routes').set(auth).send({...body, modes: ['zeppelin']}).expect(400);
+	});
+
 	it('mappt Verbindungen inkl. Polylines, Verspaetung, Gleiswechsel, Linienfarbe, Meldungen', async () => {
 		const r = await request(app).post('/api/routes').set(auth).send(body).expect(200);
 		const [hero, alt] = r.body.journeys;

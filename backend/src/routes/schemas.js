@@ -48,6 +48,8 @@ export const routesBody = z.object({
 	targetTime: z.iso.datetime({offset: true}).optional(),
 	isArrivalTime: z.boolean().default(false),
 	onlyNahverkehr: z.boolean().default(true),
+	// Teilmenge der Verkehrsmittel (Pillen in der App); ohne Angabe gilt der volle Nahverkehrsfilter.
+	modes: z.array(z.enum(['tram', 'subway', 'suburban', 'regional', 'bus'])).min(1).max(5).optional(),
 	results: z.number().int().min(1).max(6).default(4),
 	// Paging: Wert aus earlierRef/laterRef einer vorherigen Antwort. MOTIS verlangt dazu dieselben
 	// uebrigen Parameter wie bei der Ursprungsanfrage (inkl. targetTime).

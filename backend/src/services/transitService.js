@@ -16,6 +16,9 @@ export const NAHVERKEHR_MODES = Object.freeze([
 	'TRAM', 'SUBWAY', 'SUBURBAN', 'REGIONAL_RAIL', 'BUS', 'FERRY', 'FUNICULAR', 'AERIAL_LIFT', 'OTHER',
 ]);
 
+// Pillen der App -> MOTIS-Modi.
+const PILL_MODES = Object.freeze({tram: 'TRAM', subway: 'SUBWAY', suburban: 'SUBURBAN', regional: 'REGIONAL_RAIL', bus: 'BUS'});
+
 const NEARBY_RADIUS_M = 500;
 // Transitous-Nutzungsregel: Link auf die Quellen sichtbar anzeigen; dazu OSM-Namensnennung.
 const ATTRIBUTION = Object.freeze({
@@ -138,7 +141,7 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 	}
 
 	// POST /api/routes
-	async function routes({origin, destination, targetTime, isArrivalTime, onlyNahverkehr, results, laterThan, earlierThan}) {
+	async function routes({origin, destination, targetTime, isArrivalTime, onlyNahverkehr, modes, results, laterThan, earlierThan}) {
 		const query = {
 			fromPlace: toMotisPlace(origin),
 			toPlace: toMotisPlace(destination),
@@ -152,7 +155,8 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 			additionalTransferTime: routing.additionalTransferMinutes ?? 0,
 		};
 		if (targetTime) query.time = new Date(targetTime).toISOString();
-		if (onlyNahverkehr) query.transitModes = joinList(NAHVERKEHR_MODES);
+		if (modes?.length) query.transitModes = joinList([...new Set(modes.map((m) => PILL_MODES[m]))]);
+		else if (onlyNahverkehr) query.transitModes = joinList(NAHVERKEHR_MODES);
 		// Paging: MOTIS verlangt dieselben Parameter plus Cursor.
 		const cursor = laterThan ?? earlierThan;
 		if (cursor) query.pageCursor = cursor;
