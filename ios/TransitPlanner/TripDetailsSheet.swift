@@ -4,79 +4,109 @@ import TransitCore
 /// 3d Fahrtdetails: Zeitleiste im selben Sheet (Detent large), kein Push (DESIGN.md 3d).
 struct TripDetailsSheet: View {
     @Environment(AppFlow.self) private var flow
+    @Environment(\.dynamicTypeSize) private var typeSize
     let index: Int
 
     var body: some View {
+        // Entscheidung B (30.10.): Standard-Navigationsleiste, NavigationStack nur im Sheet-Inhalt, ohne Push.
+        // Einstellungen gehoeren nicht in die Fahrtdetails.
+        NavigationStack {
+            content
+                .navigationTitle(Text("Details"))
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Verbindungen", systemImage: "chevron.backward") { flow.send(.back) }
+                            .accessibilityLabel(Text(verbatim: "Zurück zu Verbindungen"))
+                            .accessibilityIdentifier("backToRoutes")
+                    }
+                }
+        }
+    }
+
+    @ViewBuilder private var content: some View {
         if let journey = flow.journey(at: index) {
             let calibrated = flow.calibratedJourney(at: index)
-            List {
-                Section {
+            ScrollView {
+                VStack(spacing: 12) {
                     DetailsHeader(journey: journey, calibrated: calibrated)
                     if let sev = Spoken.sev(journey) {
                         CardHint(text: sev, symbol: "bus.fill", tone: .alert)
                     }
-                }
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                .listRowSeparator(.hidden)
-                Section {
-                    ForEach(journey.legs, id: \.index) { leg in
-                        if leg.isWalk {
-                            WalkTimelineRow(leg: leg, estimate: calibrated?.walks[leg.index])
-                        } else {
-                            VehicleTimeline(leg: leg)
-                        }
-                    }
-                    if let last = journey.legs.last {
-                        StationRow(time: calibrated?.arrivalAtDestination ?? last.arrival, planned: nil, name: flow.destination?.label,
-                                   platform: nil, plannedPlatform: nil, delayMinutes: nil, rail: nil, leg: nil)
-                    }
-                } footer: {
-                    if let attribution = flow.routes?.attribution { AttributionFooter(attribution: attribution) }
-                }
-                if !journey.remarks.isEmpty {
-                    Section("Meldungen des Betreibers") {
-                        ForEach(journey.remarks, id: \.self) { remark in
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    if let summary = remark.summary { Text(summary).font(.headline) }
-                                    Text(remark.text).font(.subheadline)
+                    // Eine Karte fuer die ganze Zeitleiste (Figma), keine Listenzeilen mit Trennern.
+                    JourneyTimelineCard(journey: journey, calibrated: calibrated, destination: flow.destination?.label)
+                    if !journey.remarks.isEmpty {
+                        ContentCard {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Meldungen des Betreibers").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                                    .accessibilityAddTraits(.isHeader)
+                                ForEach(journey.remarks, id: \.self) { remark in
+                                    Label {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            if let summary = remark.summary { Text(summary).font(.subheadline.weight(.semibold)) }
+                                            Text(remark.text).font(.footnote)
+                                        }
+                                    } icon: {
+                                        Image(systemName: remark.type == .warning ? "exclamationmark.triangle.fill" : "info.circle")
+                                            .foregroundStyle(remark.type == .warning ? Color(.statusWarn) : Color(.accentBlue))
+                                    }
                                 }
-                            } icon: {
-                                Image(systemName: remark.type == .warning ? "exclamationmark.triangle.fill" : "info.circle")
-                                    .foregroundStyle(remark.type == .warning ? Color(.statusWarn) : Color(.accentBlue))
                             }
                         }
                     }
-                }
-            }
-            .scrollContentBackground(.hidden)
-            // Kompakt: keine grossen Leerflaechen ueber und zwischen Kopf, Hinweis und Zeitleiste.
-            .listSectionSpacing(.compact)
-            .contentMargins(.top, 0, for: .scrollContent)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                HStack {
-                    Button("Verbindungen", systemImage: "chevron.backward") { flow.send(.back) }
-                        .frame(minHeight: 44)
-                        .accessibilityIdentifier("backToRoutes")
-                    Spacer()
-                    SettingsButton()
+                    if let attribution = flow.routes?.attribution { AttributionFooter(attribution: attribution) }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 12)
+                .padding(.bottom, 8)
             }
-            .safeAreaInset(edge: .bottom) {
-                // Daumenzone: "Starten". "Erinnern" (D1) kommt mit Meilenstein 4.
-                // Fussleiste mit Hintergrund: die Zeitleiste endet darueber und scrollt, nichts wird ueberdeckt.
-                PrimaryButton(title: "Starten", systemImage: "location.fill") { flow.send(.startNavigation(index)) }
-                    .disabled(flow.blockedUntil != nil || journey.cancelled)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .frame(maxWidth: .infinity)
-                    .background(.bar)
+            .safeAreaBar(edge: .bottom, spacing: 0) {
+                // Daumenzone: "Erinnern" und "Starten" nebeneinander (Figma), ohne Leistenhintergrund;
+                // safeAreaBar statt .background(.bar): nur der System-Scroll-Edge-Effekt hinter den Knoepfen.
+                // Bei AX-Groessen untereinander, "Starten" (primaer) unten.
+                let reminderTime = flow.reminderTime(forJourney: index)
+                let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+                layout {
+                    SecondaryButton(title: reminderTime.map { "Erinnerung \($0.clockText)" } ?? "Erinnern",
+                                    systemImage: reminderTime == nil ? "bell" : "bell.fill") { flow.reminderJourneyIndex = index }
+                        // Eigene Breite: der Starten-Knopf darf "Erinnern" nicht zu einer schmalen, hohen Kapsel quetschen.
+                        .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: false)
+                        .accessibilityIdentifier("remindButton")
+                    PrimaryButton(title: "Starten", systemImage: "location.fill") { flow.send(.startNavigation(index)) }
+                        .disabled(flow.blockedUntil != nil || journey.cancelled)
+                        .accessibilityIdentifier("startButton")
+                        .layoutPriority(1)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
         } else {
             ContentUnavailableView("Verbindung nicht mehr vorhanden", systemImage: "tram")
+        }
+    }
+}
+
+/// Zeitleiste einer Verbindung in einer Karte; unterwegs mit ausgeklappter Wegbeschreibung (`expandWalks`).
+struct JourneyTimelineCard: View {
+    let journey: Journey
+    let calibrated: CalibratedJourney?
+    let destination: String?
+    var expandWalks = false
+
+    var body: some View {
+        ContentCard {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(journey.legs, id: \.index) { leg in
+                    if leg.isWalk {
+                        WalkTimelineRow(leg: leg, estimate: calibrated?.walks[leg.index], expanded: expandWalks)
+                    } else {
+                        VehicleTimeline(leg: leg)
+                    }
+                }
+                if let last = journey.legs.last {
+                    StationRow(time: calibrated?.arrivalAtDestination ?? last.arrival, planned: nil, name: destination,
+                               platform: nil, plannedPlatform: nil, delayMinutes: nil, rail: nil, leg: nil)
+                }
+            }
         }
     }
 }
@@ -246,7 +276,10 @@ private struct WalkTimelineRow: View {
     let leg: Leg
     let estimate: WalkEstimate?
     @Environment(\.dynamicTypeSize) private var typeSize
-    @State private var showsAll = false
+    @State private var showsAll: Bool
+    init(leg: Leg, estimate: WalkEstimate?, expanded: Bool = false) {
+        self.leg = leg; self.estimate = estimate; _showsAll = State(initialValue: expanded)
+    }
 
     /// "12 Min. · 875 m" mit klarem Trennzeichen; "ca." solange nur die Fahrplanzeit vorliegt.
     private var walkHeader: some View {
@@ -279,19 +312,17 @@ private struct WalkTimelineRow: View {
                     walkHeader
                     Text(leg.isTransfer == true ? "Umstieg" : "Fußweg").font(.footnote).foregroundStyle(.secondary)
                 }
-                // OSM-Teilstuecke und Treppen zusammengefasst; standardmaessig nur Abbiegungen, Treppen, Aufzuege.
-                let all = WalkDirections.grouped(WalkDirections.condensed(leg.steps))
-                let key = WalkDirections.keySteps(all.map(\.step))
-                // Stabile Identitaet: Index in der vollen Liste, damit Auf-/Zuklappen Zeilen nicht neu erzeugt.
-                let keyIndices = key.count == all.count ? Array(all.indices) : all.indices.filter { all[$0].step.isManeuver }
-                ForEach(showsAll ? Array(all.indices) : keyIndices, id: \.self) { i in
-                    WalkStepRow(line: all[i])
+                if estimate != nil {
+                    Text("An dein Gehtempo angepasst").font(.caption).foregroundStyle(Color(.labelSecondary))
                 }
-                if key.count < all.count {
+                // Wegbeschreibung eingeklappt (Figma); OSM-Teilstuecke und Treppen zusammengefasst.
+                let all = WalkDirections.grouped(WalkDirections.condensed(leg.steps))
+                if showsAll { ForEach(Array(all.indices), id: \.self) { WalkStepRow(line: all[$0]) } }
+                if !all.isEmpty {
                     Button {
                         withAnimation(Motion.micro) { showsAll.toggle() }
                     } label: {
-                        Label(showsAll ? String(localized: "Weniger Schritte") : String(localized: "Alle Schritte (\(all.count))"),
+                        Label(showsAll ? String(localized: "Weniger Schritte") : String(localized: "Wegbeschreibung (\(all.count))"),
                               systemImage: showsAll ? "chevron.up" : "chevron.down")
                             .font(.footnote)
                             .frame(minHeight: 44, alignment: .leading)
@@ -337,3 +368,49 @@ private struct WalkStepRow: View {
         .accessibilityLabel(Spoken.line(line))
     }
 }
+
+#if DEBUG
+// MARK: - Vorschau (Mock-Daten und Flow aus PreviewSupport.swift)
+
+#Preview("Details, Störung, Hell", traits: .modifier(PreviewFlow.details(PreviewData.disrupted))) {
+    PreviewSheetBackdrop { TripDetailsSheet(index: 0) }
+}
+#Preview("Details, Störung, Dunkel", traits: .modifier(PreviewFlow.details(PreviewData.disrupted))) {
+    PreviewSheetBackdrop { TripDetailsSheet(index: 0) }.preferredColorScheme(.dark)
+}
+#Preview("Details, Störung, AX3", traits: .modifier(PreviewFlow.details(PreviewData.disrupted))) {
+    PreviewSheetBackdrop { TripDetailsSheet(index: 0) }.dynamicTypeSize(.accessibility3)
+}
+#Preview("Details, kurz", traits: .modifier(PreviewFlow.details(PreviewData.short))) {
+    PreviewSheetBackdrop { TripDetailsSheet(index: 0) }
+}
+#Preview("Details, lang", traits: .modifier(PreviewFlow.details(PreviewData.long))) {
+    PreviewSheetBackdrop { TripDetailsSheet(index: 0) }
+}
+#Preview("Details, lang, AX3", traits: .modifier(PreviewFlow.details(PreviewData.long))) {
+    PreviewSheetBackdrop { TripDetailsSheet(index: 0) }.dynamicTypeSize(.accessibility3)
+}
+/// Index ausserhalb der Antwort: Leerzustand "Verbindung nicht mehr vorhanden".
+#Preview("Details, nicht mehr vorhanden", traits: .modifier(PreviewFlow.details(PreviewData.short))) {
+    PreviewSheetBackdrop { TripDetailsSheet(index: 5) }
+}
+
+#Preview("Zeitleiste, lang, Wege offen") {
+    ScrollView {
+        if let journey = PreviewData.long?.journeys.first {
+            JourneyTimelineCard(journey: journey, calibrated: nil, destination: "Flughafen Terminal", expandWalks: true)
+                .padding(16)
+        }
+    }
+    .background(Color(.surfaceSheet))
+}
+#Preview("Zeitleiste, Störung, Dunkel") {
+    ScrollView {
+        if let journey = PreviewData.disrupted?.journeys.first {
+            JourneyTimelineCard(journey: journey, calibrated: nil, destination: "Köln Hbf").padding(16)
+        }
+    }
+    .background(Color(.surfaceSheet))
+    .preferredColorScheme(.dark)
+}
+#endif

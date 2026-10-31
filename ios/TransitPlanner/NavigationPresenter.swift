@@ -36,6 +36,18 @@ struct NowCard: Sendable, Equatable {
     let context: String
     let metrics: [Metric]
     var hint: Hint?
+    /// Gehen: naechste Wegaenderung gross (Symbol, Meter), darunter die uebernaechste
+    var maneuver: Maneuver?
+
+    struct Maneuver: Sendable, Equatable {
+        let symbol: String
+        let title: String
+        let meters: Int
+        /// "Danach: Treppe runter"
+        var then: String?
+        /// Treppe: eigenes Warnsymbol-Verhalten in der Anzeige (Akzentfarbe Orange)
+        var isStairs: Bool
+    }
 }
 
 /// Restfahrt im Danach-Sheet: alle noch kommenden Etappen ab jetzt, die aktuelle zuerst, erledigte fallen weg.
@@ -172,7 +184,16 @@ enum NavigationPresenter {
         var card = NowCard(variant: .walk, eyebrow: String(localized: "Zu Fuß zum Gleis"), headline: headline,
                            context: context, metrics: departureMetrics(vehicle, input, third: bufferMetric(input, v)))
         card.hint = bufferHint(input, vehicle: v) ?? platformHint(vehicle)
+        card.maneuver = walk.flatMap { maneuver(NavigationEngine.guidance(walk: $0, position: input.position)) }
         return card
+    }
+
+    /// Grosse Wegaenderung fuer die Karte; nil ohne Position oder ohne Manoever (dann steht "Noch 120 m").
+    static func maneuver(_ g: WalkGuidance) -> NowCard.Maneuver? {
+        guard let step = g.nextStep, let meters = g.metersToNextStep else { return nil }
+        return NowCard.Maneuver(symbol: step.symbolName, title: maneuver(step), meters: meters,
+                                then: g.thenStep.map { String(localized: "Danach: \(maneuver($0))") },
+                                isStairs: step.direction == .stairs || (step.isVertical && step.direction != .elevator))
     }
 
     /// 4b Am Gleis bzw. 4e Ersatzverkehr.
@@ -251,13 +272,15 @@ enum NavigationPresenter {
         let seconds = remaining.map { input.pace.apply(to: Double($0) / NavigationEngine.defaultWalkSpeed) }
             ?? walk.flatMap { input.walks[$0.index]?.seconds ?? $0.durationSeconds } ?? 0
         let headline = guidance.map { instruction($0, target: input.destinationLabel) } ?? String(localized: "Zu \(input.destinationLabel)")
-        return NowCard(variant: .finalWalk, eyebrow: String(localized: "Zu Fuß zum Ziel"), headline: headline,
+        var card = NowCard(variant: .finalWalk, eyebrow: String(localized: "Zu Fuß zum Ziel"), headline: headline,
                        context: input.destinationLabel,
                        metrics: [
                            NowCard.Metric(label: String(localized: "Ankunft"), value: .time(input.now.addingTimeInterval(TimeInterval(seconds)))),
                            NowCard.Metric(label: String(localized: "Noch"), value: .minutes(Int((Double(seconds) / 60).rounded(.up)))),
                            NowCard.Metric(label: String(localized: "Strecke"), value: .meters(remaining)),
                        ])
+        card.maneuver = guidance.flatMap { maneuver($0) }
+        return card
     }
 
     /// 4f Ankunft: Zusammenfassung in drei Zahlen.

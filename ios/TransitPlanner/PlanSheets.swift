@@ -32,11 +32,16 @@ struct StartSheet: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("searchEntry")
-                SettingsButton()
+                SettingsButton(filled: true)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 20)
+            .padding(.top, 16)
             .padding(.bottom, 8)
+            // Favoriten-Chips gehoeren zum Kopf: schon im kleinen Detent (140 pt) erreichbar, nicht in der Liste versteckt.
+            if showsFixedTiles {
+                tiles
+                    .padding(.bottom, 4)
+            }
             List {
                 if flow.favorites.isEmpty, flow.recents.isEmpty {
                     // Leerzustand statt leerer Flaeche.
@@ -50,16 +55,19 @@ struct StartSheet: View {
                         .accessibilityIdentifier("setHome")
                     }
                 } else {
-                    Section {
-                        tiles
-                    } header: {
-                        if flow.favorites.contains(where: { $0.role != .other }) { favoritesHeader }
+                    // Bei fester Chip-Reihe stehen Chips und "Bearbeiten" im Kopf; ein leerer Abschnitt hinterliess nur Leerraum.
+                    if !showsFixedTiles {
+                        Section {
+                            tiles
+                        } header: {
+                            if hasRoleFavorites { favoritesHeader }
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     }
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                     let others = flow.favorites.filter { $0.role == .other }
                     if !others.isEmpty {
-                        Section("Weitere Favoriten") {
+                        CardSection("Weitere Favoriten") {
                             ForEach(others) { saved in
                                 EndpointRow(endpoint: saved.endpoint, symbol: saved.role.symbol)
                                     .swipeActions {
@@ -69,17 +77,15 @@ struct StartSheet: View {
                         }
                     }
                     if !flow.recents.isEmpty {
-                        Section("Zuletzt gesucht") {
+                        CardSection("Zuletzt gesucht") {
                             ForEach(flow.recents.prefix(Self.recentLimit)) { RecentRow(saved: $0) }
                         }
                     }
                 }
                 // Ohne Standort entfaellt der Abschnitt ohne Banner.
                 if flow.locationAllowed, !flow.nearby.isEmpty {
-                    Section {
+                    CardSection(title: "Haltestellen in der Nähe") {
                         ForEach(flow.nearby, id: \.id) { NearbyStopRow(stop: $0) }
-                    } header: {
-                        Text("Haltestellen in der Nähe")
                     } footer: {
                         if let attribution = flow.attribution { AttributionFooter(attribution: attribution) }
                     }
@@ -94,18 +100,30 @@ struct StartSheet: View {
         .onChange(of: flow.favorites.contains { $0.role != .other }) { if !flow.favorites.contains(where: { $0.role != .other }) { editingFavorites = false } }
     }
 
+    /// Chips in einer festen Reihe unter dem Suchfeld (nicht bei AX: dort stehen sie untereinander in der Liste).
+    private var showsFixedTiles: Bool {
+        !typeSize.isAccessibilitySize && !(flow.favorites.isEmpty && flow.recents.isEmpty)
+    }
+
+    private var hasRoleFavorites: Bool { flow.favorites.contains { $0.role != .other } }
+
     private var favoritesHeader: some View {
         HStack {
             Text("Favoriten")
             Spacer()
-            Button(editingFavorites ? "Fertig" : "Bearbeiten") {
-                withAnimation(Motion.micro) { editingFavorites.toggle() }
-            }
-            .frame(minHeight: 44)
-            .contentShape(.rect)
-            .accessibilityIdentifier("editFavorites")
+            editButton
         }
         .textCase(nil)
+    }
+
+    private var editButton: some View {
+        Button(editingFavorites ? "Fertig" : "Bearbeiten") {
+            withAnimation(Motion.micro) { editingFavorites.toggle() }
+        }
+        .font(.subheadline)
+        .frame(minHeight: 44)
+        .contentShape(.rect)
+        .accessibilityIdentifier("editFavorites")
     }
 
     private struct Tile: Identifiable {
@@ -122,26 +140,28 @@ struct StartSheet: View {
         return fixed + [Tile(id: "add", role: .other, saved: nil)]
     }
 
-    /// Vier Kacheln in einer Reihe, weitere seitlich scrollbar; bei AX-Groessen untereinander.
+    /// Favoriten als Chips in einer Reihe (Figma), seitlich scrollbar; bei AX-Groessen untereinander.
     @ViewBuilder private var tiles: some View {
         if typeSize.isAccessibilitySize {
-            VStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
                 ForEach(tileModels) { tile($0) }
             }
         } else {
             ScrollView(.horizontal) {
                 HStack(spacing: 8) {
-                    ForEach(tileModels) { tile($0).containerRelativeFrame(.horizontal, count: 4, spacing: 8) }
+                    ForEach(tileModels) { tile($0) }
+                    if hasRoleFavorites { editButton.padding(.leading, 8) }
                 }
+                .padding(.horizontal, 16)
             }
             .scrollIndicators(.hidden)
+            .scrollClipDisabled()
         }
     }
 
     private func tile(_ tile: Tile) -> some View {
         let isAdd = tile.role == .other && tile.saved == nil
         let title = isAdd ? String(localized: "Hinzufügen") : (tile.role.title ?? tile.saved?.endpoint.label ?? "")
-        let subtitle: String? = tile.role == .other ? nil : (tile.saved?.endpoint.label ?? String(localized: "Festlegen"))
         let removing = editingFavorites && tile.saved != nil
         return Button {
             if let saved = tile.saved {
@@ -150,39 +170,33 @@ struct StartSheet: View {
                 flow.assignFavorite(tile.role)
             }
         } label: {
-            VStack(spacing: 4) {
+            HStack(spacing: 6) {
                 Image(systemName: isAdd ? "plus" : tile.role.symbol)
-                    .font(.title3)
-                    .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(Color(.accentBlue))
-                Text(title).font(.footnote.weight(.semibold)).foregroundStyle(.primary)
-                if let subtitle {
-                    Text(subtitle).font(.caption2).foregroundStyle(.secondary)
-                }
+                    .accessibilityHidden(true)
+                Text(title).foregroundStyle(tile.saved == nil && !isAdd ? Color(.labelSecondary) : Color.primary)
             }
-            // Nur in der Kachelreihe gekuerzt; bei AX-Groessen nie (H4).
+            .font(.subheadline.weight(.semibold))
             .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
-            .multilineTextAlignment(.center)
-            .padding(8)
-            .frame(maxWidth: .infinity, minHeight: 72)
-            .background(Color(.surfaceCard), in: .rect(cornerRadius: 16, style: .continuous))
+            .padding(.horizontal, 16)
+            .frame(minHeight: 40)
+            .background(Color(.surfaceCard), in: .capsule)
             .overlay {
-                if colorScheme == .dark {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.separator, lineWidth: 0.5)
-                }
+                if colorScheme == .dark { Capsule().strokeBorder(.separator, lineWidth: 0.5) }
             }
+            .padding(.vertical, 2) // Tippflaeche 44 pt, sichtbar 40 pt
             .overlay(alignment: .topLeading) {
                 if removing {
                     Image(systemName: "minus.circle.fill")
                         .symbolRenderingMode(.palette)
                         .foregroundStyle(Color(.labelOnAccent), Color(.statusAlert))
                         .font(.title3)
-                        .padding(4)
+                        .offset(x: -4, y: -4)
                         .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
                 }
             }
             .opacity(editingFavorites && tile.saved == nil ? 0.4 : 1)
-            .contentShape(.rect(cornerRadius: 16, style: .continuous))
+            .contentShape(.capsule)
         }
         .buttonStyle(.plain)
         .disabled(editingFavorites && tile.saved == nil)
@@ -293,11 +307,15 @@ struct NearbyStopRow: View {
 struct SettingsButton: View {
     @Environment(AppFlow.self) private var flow
 
+    /// Im Start als graue Kreisflaeche (Figma).
+    var filled = false
+
     var body: some View {
         Button("Einstellungen", systemImage: "gearshape") { flow.showsSettings = true }
             .labelStyle(.iconOnly)
             .font(.title3)
             .frame(width: 44, height: 44)
+            .background(filled ? Color(.fillTertiary) : .clear, in: .circle)
             .contentShape(.rect)
             .accessibilityIdentifier("settingsButton")
     }
@@ -310,25 +328,23 @@ struct SettingsButton: View {
 /// "beim Fahrplan-Server suchen" ans Backend.
 struct PlanSheet: View {
     @Environment(AppFlow.self) private var flow
+    @Environment(\.sheetLevel) private var level
     @FocusState private var focused: Bool
-    @ScaledMetric(relativeTo: .subheadline) private var labelWidth = 44.0
+
+    /// Kleinster Detent ohne Eingabe: nur Zusammenfassung und Suchen-Knopf (Formular und Liste haetten dort keinen Platz).
+    private var showsPeek: Bool { level == .peek && flow.activeSlot == nil && flow.assigningRole == nil }
 
     var body: some View {
         // Kopf ausserhalb der Liste: als Inset liefe der Listeninhalt durchscheinend darunter durch (Texte ueberlagerten sich).
         VStack(spacing: 0) {
-            header
-            List {
-                if flow.searchText.count >= 2 { typed } else { suggestions }
-            }
-            .scrollContentBackground(.hidden)
-        }
-        .safeAreaInset(edge: .bottom) {
-            // Erst mit beiden Feldern: vorher gaebe es einen toten Knopf. Beim Festlegen eines Favoriten nie.
-            if flow.endpointsFilled, flow.assigningRole == nil {
-                PrimaryButton(title: "Verbindungen suchen", systemImage: "magnifyingglass") { flow.send(.planTapped) }
-                    .disabled(!flow.canPlan)
-                    .accessibilityIdentifier("planButton")
-                    .padding(16)
+            if showsPeek {
+                peek
+            } else {
+                header
+                List {
+                    if flow.searchText.count >= 2 { typed } else { suggestions }
+                }
+                .scrollContentBackground(.hidden)
             }
         }
         .onChange(of: flow.query) {
@@ -337,10 +353,34 @@ struct PlanSheet: View {
         }
     }
 
+    // MARK: Peek (140 pt)
+
+    private var peek: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Text(label(of: .origin) ?? String(localized: "Start"))
+                Image(systemName: "arrow.right").foregroundStyle(.secondary).accessibilityHidden(true)
+                Text(label(of: .destination) ?? String(localized: "Ziel"))
+            }
+            .font(.headline)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            if flow.endpointsFilled {
+                PrimaryButton(title: "Verbindungen suchen", systemImage: "magnifyingglass") { flow.send(.planTapped) }
+                    .disabled(!flow.canPlan)
+                    .accessibilityIdentifier("planButton")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 24)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
     // MARK: Kopf
 
     private var header: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 12) {
             HStack {
                 Button("Abbrechen") { flow.send(.back) }
                     .frame(minHeight: 44)
@@ -354,92 +394,169 @@ struct PlanSheet: View {
                     .font(.headline)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityAddTraits(.isHeader)
-                field(.destination)
+                card { field(.destination) }
             } else {
                 endpointsAndTime
             }
         }
+        .animation(Motion.micro, value: flow.endpointsFilled)
         .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.top, 16)
         .padding(.bottom, 8)
     }
 
+    /// Weisse Karte (surface/card) wie in Figma; im Dark Mode mit feinem Rand.
+    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .background(Color(.surfaceCard), in: .rect(cornerRadius: 16, style: .continuous))
+    }
+
     @ViewBuilder private var endpointsAndTime: some View {
+        @Bindable var flow = flow
         HStack(spacing: 8) {
-            VStack(spacing: 8) {
-                field(.origin)
-                field(.destination)
+            card {
+                VStack(spacing: 0) {
+                    field(.origin)
+                    Divider().padding(.leading, 16)
+                    field(.destination)
+                }
             }
             Button("Start und Ziel tauschen", systemImage: "arrow.up.arrow.down") { flow.swapEndpoints() }
                 .labelStyle(.iconOnly)
+                .foregroundStyle(Color(.accentBlue))
                 .frame(width: 44, height: 44)
-                .contentShape(.rect)
+                .background(Color(.fillTertiary), in: .circle)
+                .contentShape(.circle)
                 .sensoryFeedback(.selection, trigger: flow.origin)
                 .disabled(!flow.canSwap)
                 .accessibilityIdentifier("swapButton")
         }
         .animation(Motion.micro, value: flow.origin)
-        HStack(spacing: 8) {
-            timeMenu
-            if flow.customTime != nil {
-                @Bindable var flow = flow
-                // System-Pille fuer Datum und Uhrzeit; auch Tage im Voraus.
-                DatePicker("Zeit", selection: Binding { flow.customTime ?? Date() } set: { flow.customTime = $0 },
-                           in: Date()...)
-                    .labelsHidden()
-                    .datePickerStyle(.compact)
-                    .frame(minHeight: 44)
-                    .accessibilityIdentifier("timePicker")
-            }
-            Spacer(minLength: 0)
+        if !focused { timeRow }
+        if !focused { modePills }
+        if !focused, flow.endpointsFilled, flow.assigningRole == nil {
+            PrimaryButton(title: "Verbindungen suchen", systemImage: "magnifyingglass") { flow.send(.planTapped) }
+                .disabled(!flow.canPlan)
+                .accessibilityIdentifier("planButton")
         }
     }
 
-    private func field(_ slot: EndpointSlot) -> some View {
+    /// Zeit in einem Segment (Jetzt / Abfahrt / Ankunft); erst bei Abfahrt oder Ankunft erscheint darunter das Datumsfeld.
+    @ViewBuilder private var timeRow: some View {
         @Bindable var flow = flow
-        let title: LocalizedStringKey = slot == .origin ? "Von" : "Nach"
-        // Beim Festlegen eines Favoriten zaehlt das bisherige Ziel nicht.
-        let current = self.flow.assigningRole == nil ? label(of: slot) : nil
-        return HStack(spacing: 8) {
-            Text(title)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .frame(width: labelWidth, alignment: .leading)
-                .accessibilityHidden(true)
-            if self.flow.activeSlot == slot {
-                TextField(title, text: $flow.query, prompt: Text(current ?? String(localized: "Haltestelle oder Adresse")))
-                    .autocorrectionDisabled()
-                    .submitLabel(.search)
-                    .focused($focused)
-                    .onAppear { focused = true }
-                    .onSubmit { self.flow.submitSearch() }
-                    .accessibilityIdentifier("searchField")
-                Image(systemName: "magnifyingglass")
-                    .symbolEffect(.variableColor.iterative, options: .repeating, isActive: self.flow.isSearching)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-            } else {
-                Button { self.flow.send(.editEndpoint(slot)) } label: {
-                    HStack(spacing: 6) {
-                        if case .currentLocation = self.flow.endpoint(slot) {
-                            Image(systemName: "location.fill").accessibilityHidden(true)
-                        }
-                        Text(current ?? String(localized: "Haltestelle oder Adresse"))
-                            .lineLimit(1)
-                    }
-                    .foregroundStyle(current == nil ? Color.secondary : (isCurrentLocation(slot) ? Color(.accentBlue) : Color.primary))
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(title))
-                .accessibilityValue(current ?? String(localized: "leer"))
-                .accessibilityIdentifier(slot == .origin ? "originRow" : "destinationRow")
+        VStack(spacing: 8) {
+            Picker("Zeit", selection: Binding {
+                if flow.customTime == nil { TimeKind.now } else if flow.isArrivalTime { TimeKind.arrival } else { TimeKind.departure }
+            } set: { kind in
+                flow.isArrivalTime = kind == .arrival
+                if kind == .now { flow.customTime = nil } else if flow.customTime == nil { flow.customTime = Date() }
+            }) {
+                Text("Jetzt").tag(TimeKind.now)
+                Text("Abfahrt").tag(TimeKind.departure)
+                Text("Ankunft").tag(TimeKind.arrival)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("timeMode")
+            if flow.customTime != nil {
+                DatePicker(flow.isArrivalTime ? "Ankunft um" : "Abfahrt um", selection: Binding { flow.customTime ?? Date() } set: { flow.customTime = $0 }, in: Date()...)
+                    .datePickerStyle(.compact)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("timePicker")
+                    .transition(.opacity)
             }
         }
-        .padding(.horizontal, 12)
-        .frame(minHeight: 44)
-        .background(Color(.fillTertiary), in: .capsule)
+        .animation(Motion.micro, value: flow.customTime == nil)
+    }
+
+    private enum TimeKind: Hashable { case now, departure, arrival }
+
+    /// Verkehrsmittel-Pillen (Figma): Punkt in Modusfarbe + Name; aus = abgeblendet. Mindestens eine bleibt an.
+    private var modePills: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("VERKEHRSMITTEL").font(.caption2.weight(.semibold)).foregroundStyle(Color(.labelSecondary))
+                .accessibilityHidden(true)
+            HFlow(spacing: 8) {
+                ForEach(ModeFilter.allCases, id: \.self) { mode in
+                    let on = flow.modeFilter.contains(mode)
+                    Button { withAnimation(Motion.micro) { flow.toggle(mode) } } label: {
+                        HStack(spacing: 4) {
+                            Circle().fill(mode.transitMode.color).frame(width: 8, height: 8)
+                            Text(mode.title).font(.footnote.weight(.semibold))
+                        }
+                        .foregroundStyle(on ? Color.primary : Color(.labelSecondary))
+                        .padding(.horizontal, 8)
+                        .frame(minHeight: 32)
+                        .background(on ? Color(.surfaceCard) : .clear, in: .capsule)
+                        .overlay { if !on { Capsule().strokeBorder(.separator, lineWidth: 1) } }
+                        .opacity(on ? 1 : 0.7)
+                        .frame(minHeight: 44) // Tippflaeche 44 pt, sichtbar 32 pt
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                    .accessibilityIdentifier("modePill.\(mode.rawValue)")
+                }
+            }
+        }
+        .sensoryFeedback(.selection, trigger: flow.modeFilter)
+    }
+
+    @ViewBuilder private func field(_ slot: EndpointSlot) -> some View {
+        let title: LocalizedStringKey = slot == .origin ? "Von" : "Nach"
+        if flow.activeSlot == slot {
+            fieldContent(slot, title: title)
+        } else {
+            // Ganzes Feld inkl. Padding ist die Tippflaeche (mind. 56 pt hoch), nicht nur die Textzeile.
+            let current = flow.assigningRole == nil ? label(of: slot) : nil
+            Button { flow.send(.editEndpoint(slot)) } label: {
+                fieldContent(slot, title: title).contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(title))
+            .accessibilityValue(current ?? String(localized: "leer"))
+            .accessibilityIdentifier(slot == .origin ? "originRow" : "destinationRow")
+        }
+    }
+
+    private func fieldContent(_ slot: EndpointSlot, title: LocalizedStringKey) -> some View {
+        @Bindable var flow = flow
+        // Beim Festlegen eines Favoriten zaehlt das bisherige Ziel nicht.
+        let current = self.flow.assigningRole == nil ? label(of: slot) : nil
+        return VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(Color(.labelSecondary))
+                .accessibilityHidden(true)
+            if self.flow.activeSlot == slot {
+                HStack(spacing: 8) {
+                    TextField(title, text: $flow.query, prompt: Text(current ?? String(localized: "Haltestelle oder Adresse")))
+                        .autocorrectionDisabled()
+                        .submitLabel(.search)
+                        .focused($focused)
+                        .onAppear { focused = true }
+                        .onSubmit { self.flow.submitSearch() }
+                        .accessibilityIdentifier("searchField")
+                    Image(systemName: "magnifyingglass")
+                        .symbolEffect(.variableColor.iterative, options: .repeating, isActive: self.flow.isSearching)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+                .frame(minHeight: 28)
+            } else {
+                HStack(spacing: 6) {
+                    if case .currentLocation = self.flow.endpoint(slot) {
+                        Image(systemName: "location.fill").accessibilityHidden(true)
+                    }
+                    Text(current ?? String(localized: "Haltestelle oder Adresse"))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(current == nil ? Color.secondary : (isCurrentLocation(slot) ? Color(.accentBlue) : Color.primary))
+                .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .frame(minHeight: 56)
     }
 
     /// Text des Feldes; "Mein Standort" ohne Erlaubnis zaehlt als leer, dann ist das Feld einfach tippbar.
@@ -455,46 +572,15 @@ struct PlanSheet: View {
         flow.endpoint(slot) == .currentLocation && flow.locationAllowed
     }
 
-    private var timeMode: LocalizedStringKey {
-        flow.customTime == nil ? "Jetzt" : (flow.isArrivalTime ? "Ankunft" : "Abfahrt")
-    }
-
-    /// Pille links: Jetzt / Abfahrt / Ankunft. Die Zeit steht rechts daneben im Datumsfeld.
-    private var timeMenu: some View {
-        Menu {
-            Button("Jetzt", systemImage: "clock") {
-                flow.customTime = nil
-                flow.isArrivalTime = false
-            }
-            Button("Abfahrt", systemImage: "figure.walk.departure") {
-                flow.isArrivalTime = false
-                if flow.customTime == nil { flow.customTime = Date() }
-            }
-            Button("Ankunft", systemImage: "figure.walk.arrival") {
-                flow.isArrivalTime = true
-                if flow.customTime == nil { flow.customTime = Date() }
-            }
-        } label: {
-            Label(timeMode, systemImage: "clock")
-                .font(.subheadline)
-                .foregroundStyle(flow.customTime != nil ? Color(.accentBlue) : Color.primary)
-                .padding(.horizontal, 12)
-                .frame(minHeight: 44)
-                .background(flow.customTime != nil ? Color(.accentBlueTint) : Color(.fillTertiary), in: .capsule)
-                .contentShape(.capsule)
-        }
-        .accessibilityIdentifier("timeChip")
-    }
-
     // MARK: Leeres Feld
 
     @ViewBuilder private var suggestions: some View {
         let isEmpty = flow.favorites.isEmpty && flow.recents.isEmpty && flow.nearby.isEmpty && !flow.locationAllowed
         if flow.locationAllowed, flow.assigningRole == nil {
-            Section { locationRow }
+            Section { locationRow.listRowBackground(Color(.surfaceCard)) }
         }
         if !flow.favorites.isEmpty {
-            Section("Favoriten") {
+            CardSection("Favoriten") {
                 ForEach(flow.favorites) { saved in
                     EndpointRow(endpoint: saved.endpoint, symbol: saved.role.symbol)
                         .swipeActions {
@@ -504,15 +590,13 @@ struct PlanSheet: View {
             }
         }
         if !flow.recents.isEmpty {
-            Section("Zuletzt gesucht") {
+            CardSection("Zuletzt gesucht") {
                 ForEach(flow.recents) { RecentRow(saved: $0) }
             }
         }
         if !flow.nearby.isEmpty {
-            Section {
+            CardSection(title: "In der Nähe") {
                 ForEach(flow.nearby, id: \.id) { NearbyStopRow(stop: $0) }
-            } header: {
-                Text("In der Nähe")
             } footer: {
                 if let attribution = flow.attribution { AttributionFooter(attribution: attribution) }
             }
@@ -625,6 +709,17 @@ struct RouteSheet: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        // Entscheidung B (30.10.): Standard-Navigationsleiste. Der NavigationStack lebt nur im Sheet-Inhalt und hat
+        // keinen Pfad (kein Push); Phasenwechsel und Detents steuert weiter SheetRoot.
+        NavigationStack {
+            list
+                .navigationTitle(Text("Nach \(flow.destination?.label ?? "")"))
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { toolbar }
+        }
+    }
+
+    private var list: some View {
         List {
             if flow.banner == .noConnections {
                 ContentUnavailableView {
@@ -644,7 +739,6 @@ struct RouteSheet: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .safeAreaInset(edge: .top, spacing: 0) { header }
         .safeAreaInset(edge: .bottom) {
             // H4: bei AX-Groessen bleibt "Starten" als Knopf unten in der Daumenzone.
             if typeSize.isAccessibilitySize, flow.routes?.journeys.isEmpty == false {
@@ -662,30 +756,31 @@ struct RouteSheet: View {
             : String(localized: "Keine Nahverkehrs-Verbindung ab \(time).")
     }
 
-    /// Kopf: Ziel und Zeit (zurueck zur Planung), Einstellungen.
-    private var header: some View {
-        HStack(spacing: 8) {
-            Button { flow.send(.back) } label: {
-                Image(systemName: "chevron.backward")
-                    .frame(width: 44, height: 44)
-                    .contentShape(.rect)
-            }
-            .accessibilityLabel("Zurück zur Planung")
-            .accessibilityIdentifier("backToPlan")
-            Button { flow.send(.editOptions) } label: {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(flow.destination?.label ?? "").font(.headline).foregroundStyle(.primary)
-                    Text(subtitle).font(.footnote).foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("optionsButton")
-            SettingsButton()
+    /// Leiste: Zurueck zur Planung links, Titel "Nach Ziel", Zeit rechts (oeffnet die Planung).
+    @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button("Zurück zur Planung", systemImage: "chevron.backward") { flow.send(.back) }
+                .accessibilityIdentifier("backToPlan")
         }
-        .padding(.horizontal, 8)
-        .padding(.top, 12)
+        ToolbarItem(placement: .topBarTrailing) {
+            Button { flow.send(.editOptions) } label: {
+                HStack(spacing: 4) {
+                    Text(timeLabel).monospacedDigit().contentTransition(.numericText())
+                    Image(systemName: "chevron.down").imageScale(.small)
+                }
+                .font(.subheadline.weight(.semibold))
+            }
+            .accessibilityLabel(Text(subtitle))
+            .accessibilityHint("Ändert Start, Ziel oder Zeit")
+            .accessibilityIdentifier("optionsButton")
+        }
+    }
+
+    private var timeLabel: String {
+        flow.customTime.map {
+            Calendar.current.isDateInToday($0) ? $0.clockText
+                : $0.formatted(.dateTime.day().month(.abbreviated).hour(.twoDigits(amPM: .abbreviated)).minute(.twoDigits))
+        } ?? String(localized: "Jetzt")
     }
 
     private var subtitle: String {
@@ -753,16 +848,30 @@ struct RouteSheet: View {
             .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
         }
         if routes.journeys.count > 1 {
-            Section("Alternativen") {
-                ForEach(Array(routes.journeys.enumerated().dropFirst()), id: \.offset) { index, journey in
-                    Button { flow.send(.journeySelected(index)) } label: {
-                        AlternativeRow(journey: journey, calibrated: flow.calibratedJourney(at: index))
+            // Eine weisse Karte mit Zeilen und Trennern (Figma), ohne Abschnittstitel.
+            Section {
+                let rest = Array(routes.journeys.enumerated().dropFirst())
+                VStack(spacing: 0) {
+                    // Unsichtbarer Abschnittstitel fuer VoiceOver (Rotor "Ueberschriften"), sichtbar bleibt es ohne Titel.
+                    Color.clear.frame(height: 0)
+                        .accessibilityElement()
+                        .accessibilityLabel(Text(verbatim: "Weitere Verbindungen"))
+                        .accessibilityAddTraits(.isHeader)
+                    ForEach(Array(rest.enumerated()), id: \.offset) { position, entry in
+                        if position > 0 { Divider().padding(.leading, 16) }
+                        Button { flow.send(.journeySelected(entry.offset)) } label: {
+                            AlternativeRow(journey: entry.element, calibrated: flow.calibratedJourney(at: entry.offset))
+                                .padding(.horizontal, 16)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("alternativeRow")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("alternativeRow")
                 }
+                .background(Color(.surfaceCard), in: .rect(cornerRadius: 16, style: .continuous))
+                .opacity(flow.isStale ? 0.5 : 1)
             }
-            .opacity(flow.isStale ? 0.5 : 1)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
         }
     }
 }
@@ -781,15 +890,15 @@ struct HeroCard: View {
             let arrive = calibrated?.arrivalAtDestination ?? journey.arrival
             let firstTransit = journey.legs.first { !$0.isWalk }
             ContentCard {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 12) {
                     Button { flow.send(.journeySelected(0)) } label: {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("BESTE VERBINDUNG").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-                            HStack(alignment: .firstTextBaseline) {
-                                countdown(leave: leave, now: context.date)
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("BESTE VERBINDUNG").font(.caption2.weight(.semibold)).foregroundStyle(Color(.labelSecondary))
                                 Spacer()
                                 if let delay = firstTransit?.departureDelayMinutes, !flow.isStale { DelayBadge(minutes: delay) }
                             }
+                            countdown(leave: leave, now: context.date)
                             // AX: Uhrzeiten und Dauer untereinander statt gequetscht in einer Zeile.
                             ViewThatFits(in: .horizontal) {
                                 HStack(spacing: 4) {
@@ -805,8 +914,14 @@ struct HeroCard: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             LegBar(journey: journey, calibrated: calibrated)
+                            // Hinweise als einfache Zeile in Statusfarbe, ohne Kasten (Figma).
                             ForEach(Array(hints.enumerated()), id: \.offset) { _, hint in
-                                CardHint(text: hint.text, symbol: hint.symbol, tone: hint.tone)
+                                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                    Image(systemName: hint.symbol).imageScale(.small).accessibilityHidden(true)
+                                    Text(hint.text).fixedSize(horizontal: false, vertical: true)
+                                }
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(hint.tone.foreground)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -818,6 +933,7 @@ struct HeroCard: View {
                     .accessibilityHint("Öffnet die Fahrtdetails")
                     .accessibilityIdentifier("heroCard")
                     if !typeSize.isAccessibilitySize {
+                        // Entscheidung A (30.10.): nur "Starten"; die Fahrtdetails oeffnet ein Tipp auf die Karte.
                         PrimaryButton(title: "Starten", systemImage: "location.fill") { flow.send(.startNavigation(0)) }
                             .disabled(flow.blockedUntil != nil || journey.cancelled)
                             .accessibilityIdentifier("startButton")
@@ -881,7 +997,7 @@ struct HeroCard: View {
     }
 }
 
-/// Alternative: Uhrzeiten, Badges, Status, Dauer; 46 pt.
+/// Alternative (Figma): Uhrzeiten, Badges, Status links, Dauer rechts; 46 pt.
 struct AlternativeRow: View {
     let journey: Journey
     let calibrated: CalibratedJourney?
@@ -890,28 +1006,43 @@ struct AlternativeRow: View {
         TimelineView(.everyMinute) { context in
             let leave = calibrated?.departureFromOrigin ?? journey.departure
             let arrive = calibrated?.arrivalAtDestination ?? journey.arrival
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 4) {
-                        TimeText(date: leave)
-                        Text(verbatim: "–")
-                        TimeText(date: arrive)
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    HStack(spacing: 4) {
-                        ForEach(journey.legs.filter { !$0.isWalk }, id: \.index) { LineBadge(leg: $0) }
+            HStack(spacing: 8) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { times(leave, arrive); badges; status }
+                    VStack(alignment: .leading, spacing: 4) {
+                        times(leave, arrive)
+                        HStack(spacing: 8) { badges; status }
                     }
                 }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 4) {
-                    if let leave, let arrive { MinutesText(seconds: Int(arrive.timeIntervalSince(leave))).font(.subheadline) }
-                    status
+                Spacer(minLength: 4)
+                if let leave, let arrive {
+                    MinutesText(seconds: Int(arrive.timeIntervalSince(leave)))
+                        .font(.footnote)
+                        .foregroundStyle(Color(.labelSecondary))
+                        .fixedSize()
                 }
             }
             .frame(minHeight: 46)
+            .padding(.vertical, 4)
             .contentShape(.rect)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Spoken.journey(journey, calibrated: calibrated, now: context.date))
+        }
+    }
+
+    private func times(_ leave: Date?, _ arrive: Date?) -> some View {
+        HStack(spacing: 4) {
+            TimeText(date: leave)
+            Text(verbatim: "–")
+            TimeText(date: arrive)
+        }
+        .font(.footnote.weight(.semibold))
+        .fixedSize()
+    }
+
+    private var badges: some View {
+        HStack(spacing: 4) {
+            ForEach(journey.legs.filter { !$0.isWalk }, id: \.index) { LineBadge(leg: $0) }
         }
     }
 
@@ -923,7 +1054,9 @@ struct AlternativeRow: View {
         } else if let delay = journey.legs.first(where: { !$0.isWalk })?.departureDelayMinutes {
             DelayBadge(minutes: delay)
         } else if journey.realtime {
-            Text("Pünktlich").font(.caption).foregroundStyle(Color(.statusOk))
+            Text("pünktlich").font(.caption).foregroundStyle(Color(.statusOk))
+        } else if journey.transfers > 0 {
+            TransfersText(count: journey.transfers).font(.caption).foregroundStyle(Color(.labelSecondary))
         }
     }
 }
@@ -940,3 +1073,103 @@ struct TransfersText: View {
         }
     }
 }
+
+/// Pillen laufen in die naechste Zeile, wenn die Breite nicht reicht (AX-Groessen).
+private struct HFlow: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(width: proposal.width ?? .infinity, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arrange(width: bounds.width, subviews: subviews)
+        for (index, origin) in result.origins.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y), proposal: .unspecified)
+        }
+    }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> (size: CGSize, origins: [CGPoint]) {
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, maxX: CGFloat = 0
+        var origins: [CGPoint] = []
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width { x = 0; y += rowHeight + spacing; rowHeight = 0 }
+            origins.append(CGPoint(x: x, y: y))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+            maxX = max(maxX, x - spacing)
+        }
+        return (CGSize(width: maxX, height: y + rowHeight), origins)
+    }
+}
+
+#if DEBUG
+// MARK: - Vorschau (Mock-Daten und Flow aus PreviewSupport.swift)
+
+#Preview("Start, Hell", traits: .modifier(PreviewFlow.start)) { PreviewSheetBackdrop { StartSheet() } }
+#Preview("Start, Dunkel", traits: .modifier(PreviewFlow.start)) { PreviewSheetBackdrop { StartSheet() }.preferredColorScheme(.dark) }
+#Preview("Start, AX3", traits: .modifier(PreviewFlow.start)) { PreviewSheetBackdrop { StartSheet() }.dynamicTypeSize(.accessibility3) }
+#Preview("Start, leer", traits: .modifier(PreviewFlow.startEmpty)) { PreviewSheetBackdrop { StartSheet() } }
+#Preview("Start, ohne Standort", traits: .modifier(PreviewFlow.startNoLocation)) { PreviewSheetBackdrop { StartSheet() } }
+
+#Preview("Planen, leer", traits: .modifier(PreviewFlow.plan())) { PreviewSheetBackdrop { PlanSheet() } }
+#Preview("Planen, Eingabe", traits: .modifier(PreviewFlow.plan(query: "Musterstraße"))) { PreviewSheetBackdrop { PlanSheet() } }
+#Preview("Planen, Dunkel", traits: .modifier(PreviewFlow.plan())) { PreviewSheetBackdrop { PlanSheet() }.preferredColorScheme(.dark) }
+#Preview("Planen, AX3", traits: .modifier(PreviewFlow.plan())) { PreviewSheetBackdrop { PlanSheet() }.dynamicTypeSize(.accessibility3) }
+
+#Preview("Routen, Störung, Hell", traits: .modifier(PreviewFlow.routes(PreviewData.disrupted))) { PreviewSheetBackdrop { RouteSheet() } }
+#Preview("Routen, Störung, Dunkel", traits: .modifier(PreviewFlow.routes(PreviewData.disrupted))) {
+    PreviewSheetBackdrop { RouteSheet() }.preferredColorScheme(.dark)
+}
+#Preview("Routen, Störung, AX3", traits: .modifier(PreviewFlow.routes(PreviewData.disrupted))) {
+    PreviewSheetBackdrop { RouteSheet() }.dynamicTypeSize(.accessibility3)
+}
+#Preview("Routen, kurz", traits: .modifier(PreviewFlow.routes(PreviewData.short))) { PreviewSheetBackdrop { RouteSheet() } }
+#Preview("Routen, lang", traits: .modifier(PreviewFlow.routes(PreviewData.long))) { PreviewSheetBackdrop { RouteSheet() } }
+#Preview("Routen, lang, AX3", traits: .modifier(PreviewFlow.routes(PreviewData.long))) {
+    PreviewSheetBackdrop { RouteSheet() }.dynamicTypeSize(.accessibility3)
+}
+#Preview("Routen, Laden", traits: .modifier(PreviewFlow.loading)) { PreviewSheetBackdrop { RouteSheet() } }
+#Preview("Routen, leer", traits: .modifier(PreviewFlow.noConnections)) { PreviewSheetBackdrop { RouteSheet() } }
+#Preview("Routen, Server weg", traits: .modifier(PreviewFlow.failure(.upstreamUnavailable))) {
+    PreviewSheetBackdrop { RouteSheet() }
+}
+
+/// Hero Card und Alternativen ohne Kalibrierung ("ca."), je Mock-Fall.
+private struct JourneyCardsGallery: View {
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                ForEach(Array([PreviewData.short, PreviewData.disrupted, PreviewData.long, PreviewData.tight]
+                    .compactMap { $0?.journeys.first }.enumerated()), id: \.offset) { _, journey in
+                    HeroCard(journey: journey, calibrated: nil)
+                    AlternativeRow(journey: journey, calibrated: nil)
+                }
+                HStack(spacing: 16) {
+                    TransfersText(count: 0)
+                    TransfersText(count: 3)
+                }
+            }
+            .padding(16)
+        }
+        .background(Color(.surfaceSheet))
+    }
+}
+
+#Preview("Hero Card, Hell", traits: .modifier(PreviewFlow.start)) { JourneyCardsGallery() }
+#Preview("Hero Card, Dunkel", traits: .modifier(PreviewFlow.start)) { JourneyCardsGallery().preferredColorScheme(.dark) }
+#Preview("Hero Card, AX3", traits: .modifier(PreviewFlow.start)) { JourneyCardsGallery().dynamicTypeSize(.accessibility3) }
+
+#Preview("Zeilen", traits: .modifier(PreviewFlow.start)) {
+    List {
+        RecentRow(saved: SavedPlace(id: UUID(), endpoint: .stop(id: "de-DELFI_de:05315:11201", label: "Köln Hbf"), isFavorite: false))
+        EndpointRow(endpoint: .stop(id: "hha", label: "Heinrich-Heine-Allee"), symbol: "star.fill")
+        ForEach(FakeData.stops, id: \.self) { NearbyStopRow(stop: $0) }
+        HStack {
+            SettingsButton()
+            SettingsButton(filled: true)
+        }
+    }
+}
+#endif

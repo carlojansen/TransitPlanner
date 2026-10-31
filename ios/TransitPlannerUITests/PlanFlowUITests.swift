@@ -41,7 +41,7 @@ final class PlanFlowUITests: XCTestCase {
 
         // Planen: beide Felder gefuellt (Hauptknopf da), Zeit-Chip, anderer Start per Adresse plant sofort
         tap(app.buttons["optionsButton"])
-        XCTAssertTrue(app.buttons["timeChip"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.segmentedControls["timeMode"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["planButton"].exists)
         tap(app.buttons["originRow"])
         let addressField = app.textFields["searchField"]
@@ -62,7 +62,9 @@ final class PlanFlowUITests: XCTestCase {
         tap(app.buttons["planButton"])
         XCTAssertTrue(app.buttons["heroCard"].waitForExistence(timeout: 10))
 
-        // G1 Einstellungen -> Dein Server
+        // G1 Einstellungen -> Dein Server (Einstellungen nur auf Start und Planen, nicht auf der Routenauswahl)
+        tap(app.buttons["backToPlan"])
+        XCTAssertTrue(app.buttons["settingsButton"].firstMatch.waitForExistence(timeout: 5))
         tap(app.buttons["settingsButton"].firstMatch)
         tap(app.buttons["serverKeyLink"])
         XCTAssertTrue(app.staticTexts["Schlüssel gespeichert"].waitForExistence(timeout: 5))

@@ -20,10 +20,48 @@ struct PrimaryButton: View {
             .frame(maxWidth: .infinity, minHeight: 50)
             .contentShape(.capsule)
         }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.capsule)
-        // Eigene Knopfflaeche: weisse Schrift mind. 4,5:1 (Dunkel), 7:1 bei Hohem Kontrast (AGENT.md 4.1.2).
-        .tint(Color(.buttonFill))
+        // Gleiche Hoehe wie SecondaryButton (50 pt): .borderedProminent addiert eigenen Innenabstand (62 pt).
+        .buttonStyle(FilledCapsuleStyle())
+    }
+}
+
+/// Eigene Knopfflaeche: weisse Schrift mind. 4,5:1 (Dunkel), 7:1 bei Hohem Kontrast (AGENT.md 4.1.2).
+struct FilledCapsuleStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        FilledCapsuleBody(configuration: configuration)
+    }
+
+    private struct FilledCapsuleBody: View {
+        let configuration: Configuration
+        @Environment(\.isEnabled) private var isEnabled
+
+        var body: some View {
+            configuration.label
+                .background(Color(.buttonFill), in: .capsule)
+                .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.4)
+        }
+    }
+}
+
+/// Zweitknopf neben dem Hauptknopf (Figma): graue Kapsel, Akzent-Schrift, 50 pt.
+struct SecondaryButton: View {
+    let title: LocalizedStringKey
+    var systemImage: String?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Group {
+                if let systemImage { Label(title, systemImage: systemImage) } else { Text(title) }
+            }
+            .font(.headline)
+            .foregroundStyle(Color(.accentBlue))
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .background(Color(.fillTertiary), in: .capsule)
     }
 }
 
@@ -39,8 +77,10 @@ struct ListRow<Trailing: View>: View {
         HStack(spacing: 12) {
             Image(systemName: symbol)
                 .symbolRenderingMode(.hierarchical)
+                .font(.subheadline)
                 .foregroundStyle(tint)
-                .frame(width: 28)
+                .frame(width: 32, height: 32)
+                .background(Color(.fillTertiary), in: .circle)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.body).foregroundStyle(.primary)
@@ -49,7 +89,7 @@ struct ListRow<Trailing: View>: View {
             Spacer(minLength: 8)
             trailing.font(.footnote).foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
         .contentShape(.rect)
     }
 }
@@ -90,11 +130,13 @@ struct LineBadge: View {
             Image(systemName: leg.displayMode.symbolName)
             Text(leg.badgeText)
         }
-        .font(.caption2.weight(.semibold))
+        .font(.footnote.weight(.semibold))
+        .lineLimit(1)
+        .fixedSize()
         .foregroundStyle(Color(.labelOnAccent))
-        .padding(.vertical, 2)
-        .padding(.horizontal, 6)
-        .background(leg.displayMode.color, in: .rect(cornerRadius: 6, style: .continuous))
+        .padding(.horizontal, 8)
+        .frame(minHeight: 28)
+        .background(leg.displayMode.color, in: .rect(cornerRadius: 8, style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Spoken.lineName(leg))
     }
@@ -118,8 +160,13 @@ struct WalkChip: View {
                 .contentTransition(.numericText(countsDown: true))
                 .animation(Motion.micro, value: minutes)
         }
-        .font(.caption.weight(.semibold))
+        .font(.footnote.weight(.semibold))
+        .lineLimit(1)
+        .fixedSize()
         .foregroundStyle(Color(.modeWalk))
+        .padding(.horizontal, 8)
+        .frame(minHeight: 28)
+        .background(Color(.fillTertiary), in: .rect(cornerRadius: 8, style: .continuous))
         .fixedSize() // nie in Silben umbrechen (AX-Groessen)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(estimated ? "Etwa \(minutes) Minuten Fußweg" : "\(minutes) Minuten Fußweg"))
@@ -231,23 +278,59 @@ struct LegBar: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        // Umbricht statt zu quetschen: lange Ketten (4 Fahrzeuge, 3 Umstiege) bleiben lesbar (Chips nie umgebrochen).
         let layout = typeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
-            : AnyLayout(HStackLayout(spacing: 4))
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(FlowLayout(spacing: 4, lineSpacing: 8))
         layout {
             ForEach(Array(journey.legs.enumerated()), id: \.element.index) { position, leg in
-                if position > 0, !typeSize.isAccessibilitySize {
-                    Image(systemName: "chevron.compact.right").font(.caption2).foregroundStyle(.tertiary)
-                        .accessibilityHidden(true)
-                }
-                if leg.isWalk {
-                    if let seconds = calibrated?.walks[leg.index]?.seconds ?? leg.durationSeconds, seconds > 0 {
-                        WalkChip(seconds: seconds, estimated: calibrated == nil)
-                    }
+                if leg.isWalk, (calibrated?.walks[leg.index]?.seconds ?? leg.durationSeconds ?? 0) <= 0 {
+                    EmptyView()
                 } else {
-                    LineBadge(leg: leg)
+                    HStack(spacing: 4) {
+                        if position > 0, !typeSize.isAccessibilitySize {
+                            Image(systemName: "chevron.compact.right").font(.caption).foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
+                        }
+                        if leg.isWalk {
+                            WalkChip(seconds: calibrated?.walks[leg.index]?.seconds ?? leg.durationSeconds ?? 0, estimated: calibrated == nil)
+                        } else {
+                            LineBadge(leg: leg)
+                        }
+                    }
                 }
             }
+        }
+    }
+}
+
+/// Zeilenumbruch fuer Chip-Ketten: jedes Kind behaelt seine Idealgroesse, passt es nicht mehr, beginnt eine neue Zeile.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 4
+    var lineSpacing: CGFloat = 8
+
+    private func arrange(_ width: CGFloat, _ subviews: Subviews) -> (size: CGSize, origins: [CGPoint]) {
+        var origins: [CGPoint] = []
+        var x: CGFloat = 0, y: CGFloat = 0, lineHeight: CGFloat = 0, maxX: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width { x = 0; y += lineHeight + lineSpacing; lineHeight = 0 }
+            origins.append(CGPoint(x: x, y: y))
+            x += size.width + spacing
+            maxX = max(maxX, x - spacing)
+            lineHeight = max(lineHeight, size.height)
+        }
+        return (CGSize(width: maxX, height: y + lineHeight), origins)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(proposal.width ?? .infinity, subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let origins = arrange(bounds.width, subviews).origins
+        for (view, origin) in zip(subviews, origins) {
+            view.place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y), proposal: .unspecified)
         }
     }
 }
@@ -402,3 +485,126 @@ struct AttributionFooter: View {
         }
     }
 }
+
+/// Abschnittstitel wie in Figma: kleine Versalien in label/secondary.
+struct SectionTitle: View {
+    let title: LocalizedStringKey
+    init(_ title: LocalizedStringKey) { self.title = title }
+
+    var body: some View {
+        Text(title)
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(Color(.labelSecondary))
+            .textCase(.uppercase)
+    }
+}
+
+/// Listenabschnitt als weisse Karte (surface/card) mit Titel in Versalien.
+struct CardSection<Content: View, Footer: View>: View {
+    let title: LocalizedStringKey
+    @ViewBuilder var content: Content
+    @ViewBuilder var footer: Footer
+
+    var body: some View {
+        Section {
+            content.listRowBackground(Color(.surfaceCard))
+        } header: {
+            SectionTitle(title)
+        } footer: {
+            footer
+        }
+    }
+}
+
+extension CardSection where Footer == EmptyView {
+    init(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) {
+        self.init(title: title, content: content, footer: { EmptyView() })
+    }
+}
+
+#if DEBUG
+// MARK: - Vorschau
+
+/// Alle Bausteine auf einer Seite (Mock-Daten aus PreviewSupport.swift).
+private struct ComponentsGallery: View {
+    private var journeys: [Journey] {
+        [PreviewData.short, PreviewData.disrupted, PreviewData.long].compactMap { $0?.journeys.first }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                PrimaryButton(title: "Starten", systemImage: "location.fill") {}
+                PrimaryButton(title: "Starten", systemImage: "location.fill") {}.disabled(true)
+                SecondaryButton(title: "Erinnern", systemImage: "bell") {}
+                SectionTitle("Favoriten")
+                ContentCard {
+                    VStack(spacing: 0) {
+                        ListRow(symbol: TransitMode.tram.symbolName, tint: TransitMode.tram.color, title: "Düsseldorf Hbf",
+                                subtitle: "Düsseldorf") { Text(verbatim: "8 Min.") }
+                        ListRow(symbol: "clock.arrow.circlepath", tint: Color(.accentBlue),
+                                title: "Messe Ost/Stockumer Kirchstraße, Düsseldorf-Stockum")
+                        SettingsRow(title: "Favoriten", value: "3", chevron: true)
+                    }
+                }
+                ForEach(Array(journeys.enumerated()), id: \.offset) { _, journey in
+                    HStack(spacing: 4) {
+                        ForEach(journey.legs.filter { !$0.isWalk }, id: \.index) { LineBadge(leg: $0) }
+                    }
+                    LegBar(journey: journey, calibrated: nil)
+                }
+                HStack(spacing: 8) {
+                    WalkChip(seconds: 240, estimated: true)
+                    WalkChip(seconds: 720, estimated: false)
+                    DelayBadge(minutes: 3)
+                }
+                CardHint(text: "Gleiswechsel: Gleis 2 statt 1", tone: .warn)
+                CardHint(text: "Anschluss RB 25 in Köln Messe/Deutz reicht nicht mehr.", symbol: "xmark.octagon.fill", tone: .alert)
+                ContentCard {
+                    HStack {
+                        TimeText(date: PreviewData.base)
+                        TimeText(date: nil)
+                        Spacer()
+                        MinutesText(seconds: 754)
+                    }
+                }
+                if let attribution = PreviewData.attribution { AttributionFooter(attribution: attribution) }
+            }
+            .padding(16)
+        }
+        .background(Color(.surfaceSheet))
+    }
+}
+
+#Preview("Bausteine, Hell") { ComponentsGallery() }
+#Preview("Bausteine, Dunkel") { ComponentsGallery().preferredColorScheme(.dark) }
+#Preview("Bausteine, AX3") { ComponentsGallery().dynamicTypeSize(.accessibility3) }
+
+/// Inline-Banner fuer die haeufigen Fehlerarten (H1); Aktionen kommen aus dem Flow.
+private struct BannerGallery: View {
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                ForEach([TransitError.offline, .upstreamUnavailable, .rateLimited, .missingToken, .locationDenied,
+                         .refreshExpired, .pinningFailed], id: \.self) { InlineBanner(error: $0) }
+            }
+            .padding(.vertical, 16)
+        }
+    }
+}
+
+#Preview("Inline-Banner, Hell", traits: .modifier(PreviewFlow.start)) { BannerGallery() }
+#Preview("Inline-Banner, Dunkel", traits: .modifier(PreviewFlow.start)) { BannerGallery().preferredColorScheme(.dark) }
+#Preview("Inline-Banner, AX3", traits: .modifier(PreviewFlow.start)) { BannerGallery().dynamicTypeSize(.accessibility3) }
+
+#Preview("Abschnitt in Liste") {
+    List {
+        CardSection("Favoriten") {
+            ListRow(symbol: "house.fill", tint: Color(.accentBlue), title: "Altstadt")
+            ListRow(symbol: "graduationcap.fill", tint: Color(.accentBlue), title: "Weyertal 119a")
+        }
+    }
+    .scrollContentBackground(.hidden)
+    .background(Color(.surfaceSheet))
+}
+#endif

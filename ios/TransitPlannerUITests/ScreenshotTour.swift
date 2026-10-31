@@ -141,6 +141,9 @@ final class ScreenshotTour: XCTestCase {
         XCTAssertTrue(app.buttons["backToRoutes"].waitForExistence(timeout: 5))
         shot(app, "11-details-sev", mode)
         tap(app.buttons["backToRoutes"])
+        // Einstellungen nur auf Start und Planen, nicht auf der Routenauswahl
+        tap(app.buttons["backToPlan"])
+        XCTAssertTrue(app.buttons["settingsButton"].firstMatch.waitForExistence(timeout: 5))
 
         tap(app.buttons["settingsButton"].firstMatch)
         XCTAssertTrue(app.buttons["serverKeyLink"].waitForExistence(timeout: 5))

@@ -1,9 +1,6 @@
 {
   "sourceLanguage" : "de",
   "strings" : {
-    "" : {
-
-    },
     "%@" : {
 
     },
@@ -16,7 +13,16 @@
     "%@ Min." : {
 
     },
+    "%@ Min. früher" : {
+
+    },
+    "%@ Min. später" : {
+
+    },
     "%@ Min. zu Fuß" : {
+
+    },
+    "%@ Minuten" : {
 
     },
     "%@ Minuten später" : {
@@ -240,7 +246,26 @@
     "10:00 – 10:45 · 45 Min." : {
 
     },
+    "Ab %@, %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Ab %1$@, %2$@"
+          }
+        }
+      }
+    },
+    "Abfahrt" : {
+
+    },
+    "An dein Gehtempo angepasst" : {
+
+    },
     "Angabe des Fahrplan-Servers" : {
+
+    },
+    "Ankunft" : {
 
     },
     "Ankunft %@" : {
@@ -255,10 +280,19 @@
     "Der Schlüssel liegt nur auf diesem iPhone im Schlüsselbund (ohne iCloud) und wird nicht wieder angezeigt." : {
 
     },
+    "Details" : {
+
+    },
     "Die App fragt Fahrpläne über deinen eigenen Server ab. Der Schlüssel zeigt dem Server, dass die Anfrage von dir kommt." : {
 
     },
     "direkt" : {
+
+    },
+    "ERINNERN" : {
+
+    },
+    "Erinnerung um %@" : {
 
     },
     "Ersatzverkehr" : {
@@ -305,10 +339,10 @@
     "Gehzeiten berechnet Apple Karten auf dem Gerät. Die Karte stammt von Apple." : {
 
     },
-    "Gleis %@" : {
+    "gleich schnell" : {
 
     },
-    "Haltestellen in der Nähe" : {
+    "Gleis %@" : {
 
     },
     "In %lld Minuten losgehen" : {
@@ -334,7 +368,7 @@
         }
       }
     },
-    "In der Nähe" : {
+    "Jetzt" : {
 
     },
     "Jetzt los" : {
@@ -343,13 +377,31 @@
     "Karten- und Wegdaten" : {
 
     },
+    "Keine Verbindung gefunden" : {
+
+    },
     "Los in %@" : {
 
     },
     "Los in 10 Min." : {
 
     },
+    "Losgehen %@" : {
+
+    },
+    "Mein Standort" : {
+
+    },
+    "Meldungen des Betreibers" : {
+
+    },
+    "Nach %@" : {
+
+    },
     "Nach dem Einfügen den Schlüssel aus der Zwischenablage des anderen Geräts entfernen." : {
+
+    },
+    "Nächste Station" : {
 
     },
     "Nahverkehr" : {
@@ -367,7 +419,7 @@
     "Platzhalter für die Leg-Bar" : {
 
     },
-    "Pünktlich" : {
+    "pünktlich" : {
 
     },
     "reicht nicht" : {
@@ -386,6 +438,9 @@
 
     },
     "Tippe einen Ort, eine Adresse oder eine Haltestelle." : {
+
+    },
+    "VERKEHRSMITTEL" : {
 
     },
     "Wieder möglich in" : {

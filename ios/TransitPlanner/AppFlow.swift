@@ -1,6 +1,7 @@
 import Foundation
 import MapKit
 import Observation
+import UserNotifications
 import TransitCore
 
 /// Welcher Endpunkt gerade gesucht wird.
@@ -197,6 +198,7 @@ private struct PlanKey: Hashable {
     let destination: PlanEndpoint
     let time: Date?
     let isArrivalTime: Bool
+    let modes: Set<ModeFilter>
 }
 
 @Observable @MainActor
@@ -227,6 +229,8 @@ final class AppFlow {
     private(set) var destination: PlanEndpoint?
     /// nil = jetzt (beim Tippen auf "Verbindungen suchen" bestimmt).
     var customTime: Date?
+    /// Verkehrsmittel-Pillen (Figma); alle an = voller Nahverkehrsfilter. Mindestens eine bleibt an.
+    var modeFilter = Set(ModeFilter.allCases)
     var isArrivalTime = false
     private(set) var routes: RoutesResponse?
     /// nil, solange nur das Skelett vorliegt.
@@ -276,7 +280,15 @@ final class AppFlow {
     var navFocus: NavMapFocus?
     /// Karte ganz frei: Jetzt-Karte weg, Sheet nur eine Leiste. Zurueck per "Anweisung" oder automatisch bei neuem Schritt.
     var navMapOnly = false
+    /// "Alternativen" unterwegs: Suche ab Standort, waehrend die Fahrt im Hintergrund weiterlaeuft.
+    enum Peek { case loading, loaded(RoutesResponse, [CalibratedJourney]?), failed(TransitError) }
+    private(set) var peek: Peek?
+    @ObservationIgnored private var peekTask: Task<Void, Never>?
     var showsSettings = false
+    /// Index der Verbindung, fuer die das Erinnerungs-Sheet offen ist (D1).
+    var reminderJourneyIndex: Int?
+    /// Zuletzt gesetzte Erinnerung, an ihre Verbindung gebunden (Anzeige nur in deren Fahrtdetails).
+    private(set) var reminder: (journey: Journey, at: Date)?
     /// Einstellungen direkt auf "Dein Server" oeffnen (Banner-Aktion).
     var settingsOpensServer = false
 
@@ -418,6 +430,8 @@ final class AppFlow {
         case (.navigation, .replan): .routeSelection
         // Beenden fuehrt zu den Ergebnissen derselben Suche, nicht zum leeren Start.
         case (.navigation, .back): .routeSelection
+        // Wechsel auf eine Alternative aus der Fahrt ("Alternativen"): neue Verbindung, Navigation startet neu.
+        case (.navigation, .startNavigation(let i)): .navigation(i)
         case (.arrival, .back): .start
         default: nil
         }
@@ -442,6 +456,7 @@ final class AppFlow {
         if case .navigation(let i) = new, event == .startNavigation(i) { beginNavigation(i) }
         if new == .arrival {
             // Angekommen: Live-Standort sofort verwerfen (AGENT.md 3.1.2), die Zusammenfassung braucht ihn nicht.
+            closeAlternatives()
             stopNavigationTasks()
             navPosition = nil
             navFix = nil
@@ -452,6 +467,7 @@ final class AppFlow {
 
     /// Zurueck zum Start: Verbindungen enthalten (gerundete) Start-Koordinaten und werden nicht laenger gehalten.
     private func discardRoutes() {
+        clearReminder()
         overlayTask?.cancel()
         routes = nil
         calibrated = nil
@@ -681,9 +697,10 @@ final class AppFlow {
         work?.cancel()
         guard let destination, blockedUntil == nil else { return }
         let origin = self.origin
-        let key = PlanKey(origin: origin, destination: destination, time: customTime, isArrivalTime: isArrivalTime)
+        let key = PlanKey(origin: origin, destination: destination, time: customTime, isArrivalTime: isArrivalTime, modes: modeFilter)
         // H3: bei gleicher Anfrage bleibt die letzte Antwort fuer den Offline-Fall in Reserve.
         let previous = key == lastPlanKey ? (routes, calibrated) : (nil, nil)
+        clearReminder()
         routes = nil
         calibrated = nil
         isStale = false
@@ -692,6 +709,7 @@ final class AppFlow {
         startWaitingHint()
         let time = customTime ?? deps.now()
         let arrival = isArrivalTime
+        let modes: [ModeFilter]? = modeFilter.count == ModeFilter.allCases.count ? nil : ModeFilter.allCases.filter(modeFilter.contains)
         work = Task {
             do throws(TransitError) {
                 // "Mein Standort": nur die Koordinate geht (gerundet) ans Backend, das Label bleibt lokal.
@@ -703,7 +721,7 @@ final class AppFlow {
                     here = .coordinate(fix.coordinate, label: PlanEndpoint.currentLocation.label)
                 }
                 guard let start = origin.place ?? here, let end = destination.place ?? here else { throw .locationUnavailable }
-                let trip = ManualTripRequest(origin: start, destination: end, targetTime: time, isArrivalTime: arrival)
+                let trip = ManualTripRequest(origin: start, destination: end, targetTime: time, isArrivalTime: arrival, modes: modes)
                 try await consume(deps.planner.plan(trip, pace: pace))
                 guard !Task.isCancelled else { return }
                 lastPlanKey = key
@@ -962,6 +980,7 @@ final class AppFlow {
 
     /// Ende der Navigation: Standort und Stand verwerfen (AGENT.md 3.1.2).
     private func endNavigation() {
+        closeAlternatives()
         stopNavigationTasks()
         navStep = nil
         navPosition = nil
@@ -974,6 +993,114 @@ final class AppFlow {
         navExpired = false
         navFocus = nil
         navMapOnly = false
+    }
+
+    /// Wo die Alternativen starten: am Standort oder an der naechsten Station der Fahrt (Umstieg, Einstieg, Ausstieg).
+    enum PeekOrigin: Hashable { case position, nextStation }
+    var peekOrigin: PeekOrigin = .position
+
+    /// Naechste Station der laufenden Fahrt mit der Zeit, zu der man dort ist; nil kurz vor dem Ziel.
+    var nextStation: (endpoint: TripEndpoint, name: String, time: Date)? {
+        guard let journey = navJourney, let step = navStep else { return nil }
+        let now = deps.now()
+        func stop(_ place: Place, at time: Date?) -> (TripEndpoint, String, Date)? {
+            let name = place.name ?? ""
+            let when = max(now, time ?? now)
+            if let id = place.id { return (.stop(id: id, label: name), name, when) }
+            guard let coordinate = place.coordinate else { return nil }
+            return (.coordinate(coordinate, label: name), name, when)
+        }
+        switch step {
+        case .onBoardTransit(let v):
+            guard let leg = journey.legs.first(where: { $0.index == v }) else { return nil }
+            return stop(leg.destination, at: leg.arrival)
+        case .waitingToLeave(let v), .approachingFirstStop(let v), .waitingAtPlatform(let v), .missedDeparture(let v):
+            guard let leg = journey.legs.first(where: { $0.index == v }) else { return nil }
+            return stop(leg.origin, at: leg.departure.map { $0.addingTimeInterval(-300) })
+        case .transferRouting(_, let to):
+            guard let leg = journey.legs.first(where: { $0.index == to }) else { return nil }
+            return stop(leg.origin, at: leg.departure.map { $0.addingTimeInterval(-300) })
+        case .finalWalkToDestination, .arrived:
+            return nil
+        }
+    }
+
+    /// Alternativen zum Ziel; Navigation und Karte bleiben unberuehrt.
+    func openAlternatives(from origin: PeekOrigin? = nil) {
+        guard case .navigation = phase, let target = destination?.place else { return }
+        let source = origin ?? peekOrigin
+        let next = nextStation
+        peekOrigin = source == .nextStation && next != nil ? .nextStation : .position
+        peekTask?.cancel()
+        peek = .loading
+        let now = deps.now()
+        let pace = self.pace
+        let useNext = peekOrigin == .nextStation
+        let modes: [ModeFilter]? = modeFilter.count == ModeFilter.allCases.count ? nil : ModeFilter.allCases.filter(modeFilter.contains)
+        peekTask = Task {
+            do {
+                let start: TripEndpoint
+                let time: Date
+                if useNext, let next {
+                    start = next.endpoint
+                    time = next.time
+                } else {
+                    let fix = try await deps.location.currentFix()
+                    start = .coordinate(fix.coordinate, label: PlanEndpoint.currentLocation.label)
+                    time = now
+                }
+                let trip = ManualTripRequest(origin: start, destination: target, targetTime: time, modes: modes)
+                for try await stage in deps.planner.plan(trip, pace: pace) {
+                    guard !Task.isCancelled else { return }
+                    switch stage {
+                    case .skeleton(let r): peek = .loaded(r, nil)
+                    case .calibrated(let r, let c): peek = .loaded(r, c)
+                    }
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                peek = .failed((error as? TransitError) ?? .internal)
+            }
+        }
+    }
+
+    /// Es gibt genau eine aktive Erinnerung: feste IDs, damit Verwerfen und Neusetzen die alten Mitteilungen wirklich entfernen.
+    nonisolated static let reminderIdentifiers = ["reminder.warn", "reminder.leave"]
+
+    func clearReminder() {
+        reminder = nil
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: Self.reminderIdentifiers)
+    }
+
+    func setReminder(at time: Date, forJourney index: Int) {
+        reminder = journey(at: index).map { ($0, time) }
+    }
+
+    /// Erinnerungszeit nur fuer die Verbindung, fuer die sie gesetzt wurde (Neusortierung nach Kalibrierung inklusive).
+    func reminderTime(forJourney index: Int) -> Date? {
+        guard let reminder, journey(at: index) == reminder.journey else { return nil }
+        return reminder.at
+    }
+
+    func closeAlternatives() {
+        peekTask?.cancel()
+        peekTask = nil
+        peek = nil
+    }
+
+    /// Wechsel auf eine Alternative: ersetzt die laufende Verbindung.
+    func chooseAlternative(_ index: Int) {
+        guard case .loaded(let response, let walks) = peek, index < response.journeys.count else { return }
+        routes = response
+        calibrated = walks
+        attribution = response.attribution
+        isStale = false
+        closeAlternatives()
+        send(.startNavigation(index))
+    }
+
+    func toggle(_ mode: ModeFilter) {
+        if modeFilter.contains(mode) { if modeFilter.count > 1 { modeFilter.remove(mode) } } else { modeFilter.insert(mode) }
     }
 
     func journey(at index: Int) -> Journey? {
@@ -1086,6 +1213,6 @@ final class AppFlow {
     #endif
 }
 
-private extension Array {
+extension Array {
     subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
 }

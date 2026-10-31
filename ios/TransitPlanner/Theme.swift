@@ -133,3 +133,25 @@ enum Tone {
         }
     }
 }
+
+extension ModeFilter {
+    var title: String {
+        switch self {
+        case .tram: String(localized: "Tram")
+        case .subway: String(localized: "U-Bahn")
+        case .suburban: String(localized: "S-Bahn")
+        case .regional: String(localized: "Regio")
+        case .bus: String(localized: "Bus")
+        }
+    }
+
+    var transitMode: TransitMode {
+        switch self {
+        case .tram: .tram
+        case .subway: .subway
+        case .suburban: .suburban
+        case .regional: .regional
+        case .bus: .bus
+        }
+    }
+}

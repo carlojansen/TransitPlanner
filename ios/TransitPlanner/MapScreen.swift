@@ -349,6 +349,7 @@ struct SheetRoot: View {
     /// Von der App gesetzter Detent; nur Nutzer-Wechsel loesen Haptik aus.
     @State private var appDetent: PresentationDetent?
     @State private var userDetentChanges = 0
+    @State private var sheetLevel = SheetLevel.middle
 
     /// Mittlerer Detent 474 pt statt fraction(0.5): so viel braucht die Routenauswahl, damit die Quellenangabe
     /// unter der Hero Card sichtbar bleibt (DESIGN.md 3, Figma-Mass). Auf kleinen Geraeten hoechstens 60 % der Hoehe.
@@ -362,6 +363,8 @@ struct SheetRoot: View {
                 .id(flow.phase.viewID)
                 .transition(transition)
         }
+        .environment(\.sheetLevel, sheetLevel)
+        .onGeometryChange(for: SheetLevel.self) { SheetLevel(height: $0.size.height) } action: { sheetLevel = $0 }
         .animation(Motion.standard, value: flow.phase)
         .safeAreaInset(edge: .top, spacing: 0) {
             if let error = flow.banner, error.showsBanner {
@@ -398,6 +401,9 @@ struct SheetRoot: View {
         .sheet(isPresented: $flow.showsSettings, onDismiss: { flow.settingsOpensServer = false }) {
             SettingsSheet(opensServer: flow.settingsOpensServer)
         }
+        .sheet(isPresented: Binding(get: { flow.reminderJourneyIndex != nil }, set: { if !$0 { flow.reminderJourneyIndex = nil } })) {
+            if let index = flow.reminderJourneyIndex { ReminderSheet(index: index) }
+        }
     }
 
     private func applyPreferredDetent() {
@@ -411,15 +417,17 @@ struct SheetRoot: View {
     /// DESIGN.md 3 und B1 (27.10.): Start und Routenauswahl Mitte (474 pt), 140 pt nur als Einrast-Stufe zum Verkleinern;
     /// large Planen/Details; AX-Groessen immer large (H4).
     /// Danach-Sheet startet kompakt (Kopf, engste Stelle, aktuelle und naechste Etappe), hochziehbar auf .medium fuer die
-    /// ganze Restfahrt; die App wechselt den Detent unterwegs nie selbst, damit die Karte nicht springt. AX: Anteile, Inhalt scrollt.
-    private var navDetents: Set<PresentationDetent> { flow.navMapOnly ? [.height(84)] : [navDetent, .medium] }
+    /// ganze Restfahrt und .large fuer die Fahrtdetails mit Wegbeschreibung; die App wechselt den Detent unterwegs nie selbst, damit die Karte nicht springt. AX: Anteile, Inhalt scrollt.
+    private var navDetents: Set<PresentationDetent> { flow.navMapOnly ? [.height(84)] : [navDetent, .medium, .large] }
     private var navDetent: PresentationDetent { typeSize.isAccessibilitySize ? .fraction(0.3) : .height(NavigationSheet.compactHeight) }
 
     private var preferredDetent: PresentationDetent {
         if flow.phase.isGuiding { return flow.navMapOnly ? .height(84) : navDetent }
         if typeSize.isAccessibilitySize { return .large }
         switch flow.phase {
-        case .plan, .tripDetails: return .large
+        case .tripDetails: return .large
+        // Planen: tippt man in ein Feld (Tastatur) oder fehlt ein Ort, volle Hoehe; sonst reicht der mittlere Detent fuer Formular und Knopf.
+        case .plan: return flow.activeSlot == nil && flow.endpointsFilled && flow.assigningRole == nil ? Self.middle : .large
         case .start, .routeSelection: return Self.middle
         case .navigation, .arrival: return navDetent
         }
@@ -444,9 +452,44 @@ struct SheetRoot: View {
     }
 }
 
+/// Wie viel vom Sheet sichtbar ist; Inhalte zeigen je Stufe nur, was dort Platz hat (Peek: Zusammenfassung und
+/// ein Knopf, Mitte: Formular, voll: alles inkl. Vorschlaege).
+enum SheetLevel: Equatable {
+    case peek, middle, full
+
+    init(height: CGFloat) {
+        self = height < 260 ? .peek : height < 600 ? .middle : .full
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var sheetLevel = SheetLevel.middle
+}
+
 struct MiddleDetent: CustomPresentationDetent {
     static func height(in context: Context) -> CGFloat? { cap(context.maxDetentValue) }
 
     /// Hoehe des mittleren Detents bei gegebener Gesamthoehe; auch das Karten-Polster rechnet damit.
     static func cap(_ maxHeight: CGFloat) -> CGFloat { min(474, maxHeight * 0.6) }
 }
+
+#if DEBUG
+// MARK: - Vorschau (Fakes aus PreviewSupport.swift; Kartenkacheln laedt MapKit selbst)
+
+#Preview("Erster Start", traits: .modifier(PreviewFlow.onboarding)) { RootView() }
+#Preview("Karte, Start", traits: .modifier(PreviewFlow.start)) { RootView() }
+#Preview("Karte, Start, Dunkel", traits: .modifier(PreviewFlow.start)) { RootView().preferredColorScheme(.dark) }
+#Preview("Karte, Start, AX3", traits: .modifier(PreviewFlow.start)) { RootView().dynamicTypeSize(.accessibility3) }
+#Preview("Karte, Routen", traits: .modifier(PreviewFlow.routes(PreviewData.long))) { MapScreen() }
+#Preview("Karte, unterwegs", traits: .modifier(PreviewFlow.navigation(PreviewData.long, atMinute: 25))) { MapScreen() }
+
+#Preview("Status", traits: .modifier(PreviewFlow.start)) {
+    StatusIndicator().padding(16).background(Color(.fillTertiary))
+}
+#Preview("Status, ohne Standort", traits: .modifier(PreviewFlow.startNoLocation)) {
+    StatusIndicator().padding(16).background(Color(.fillTertiary))
+}
+#Preview("Sheet-Wurzel, Routen", traits: .modifier(PreviewFlow.routes(PreviewData.disrupted))) {
+    Color(.fillTertiary).ignoresSafeArea().sheet(isPresented: .constant(true)) { SheetRoot() }
+}
+#endif
