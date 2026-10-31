@@ -354,6 +354,19 @@ describe('POST /api/routes', () => {
 		expect(r.body.removedLongDistance).toBe(3);
 	});
 
+	it('filtert Fernverkehr auch bei modes ohne Nahverkehrsfilter', async () => {
+		build({
+			async plan() {
+				return {itineraries: [
+					itinerary({id: 'ic-als-regio', legs: [leg({mode: 'REGIONAL_RAIL', displayName: 'IC 2045 (2045)', extra: {routeShortName: 'IC 2045', category: {id: 'IC', name: 'Intercity', shortName: 'IC'}}})]}),
+					itinerary({id: 'regio'}),
+				]};
+			},
+		});
+		const r = await request(app).post('/api/routes').set(auth).send({...body, onlyNahverkehr: false, modes: ['regional']}).expect(200);
+		expect(r.body.journeys.map((j) => j.refreshToken)).toEqual(['regio']);
+	});
+
 	it('fragt genau einmal mit mehr Verbindungen nach, wenn der Filter alles verworfen hat', async () => {
 		let n = 0;
 		build({

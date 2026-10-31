@@ -166,7 +166,8 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 			if (!r || !Array.isArray(r.itineraries)) throw shapeError();
 			return r;
 		};
-		const keep = (list) => (onlyNahverkehr ? list.filter((it) => !isLongDistanceItinerary(it)) : list);
+		const filterLongDistance = onlyNahverkehr || modes?.length > 0; // API.md: bei modes bleibt der Fernverkehr-Filter
+		const keep = (list) => (filterLongDistance ? list.filter((it) => !isLongDistanceItinerary(it)) : list);
 
 		let res = await fetchPlan(query);
 		let itineraries = keep(res.itineraries);
