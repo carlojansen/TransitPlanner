@@ -52,6 +52,7 @@ Es werden nur Haltestellen geliefert. `modes`, `area`, `distanceMeters` optional
 | `isArrivalTime` | `false` | `true` = Ankunft spätestens |
 | `onlyNahverkehr` | `true` | nur Tram, U-/S-Bahn, Regionalzug, Bus, Fähre, Seil-/Schwebebahnen; Fernverkehr wird zusätzlich serverseitig herausgefiltert |
 | `modes` | – | optional, Teilmenge von `tram`, `subway`, `suburban`, `regional`, `bus` (Pillen in der App). Ersetzt den Modus-Satz von `onlyNahverkehr`; der Fernverkehr-Filter bleibt. Ohne Angabe gilt der volle Nahverkehrsfilter. Unbekannte Werte: `400` |
+| `accessibility` | `none` | `none` oder `stepFree`. `stepFree` setzt `pedestrianProfile=WHEELCHAIR` für alle Fußwege (Zu-/Abgang und Umstiege): keine Treppen, stattdessen Aufzug (`steps.direction = elevator`). Fahrten werden **nicht** gefiltert: Transitous liefert `wheelchairAccessible` für Fahrzeuge fast überall als `NOT_ACCESSIBLE` (am 31.10. gemessen, auch ICE), das Feld taugt nur als Hinweis. Eine Zwischenstufe "wenig Treppen" gibt es in MOTIS nicht. Unbekannte Werte: `400` |
 | `results` | `4` | 1–6 |
 | `laterThan` / `earlierThan` | – | Paging mit `laterRef`/`earlierRef` der vorherigen Antwort. **Alle übrigen Felder unverändert mitschicken** (MOTIS-Regel). Schließen sich gegenseitig aus. |
 
@@ -117,7 +118,7 @@ Step: `{ "direction": "depart", "distanceMeters": 40, "fromLevel": 0, "toLevel":
 
 Fahrzeug: `line {name, productName, fahrtNr, operator, color, textColor}` (Farben als `#RRGGBB` oder `null`),
 `direction`, `tripId`, `departurePlatform`, `plannedDeparturePlatform`, `arrivalPlatform`, `plannedArrivalPlatform`,
-`platformChanged` (Bool, löst `.warning`-Haptik aus), `replacement` (Bool: Schienenersatzverkehr, erkannt an GTFS-`route_type` 714 oder „SEV“/„Ersatz“ im Linien- bzw. Produktnamen; `mode` bleibt dabei meist `bus`), `loadFactor` (derzeit immer `null`, Transitous liefert keine Auslastung),
+`platformChanged` (Bool, löst `.warning`-Haptik aus), `wheelchairAccessible` (`yes` | `no` | `unknown`; `unknown` = Feld fehlt, gilt nie als barrierefrei; nur Hinweis, siehe `accessibility`), `replacement` (Bool: Schienenersatzverkehr, erkannt an GTFS-`route_type` 714 oder „SEV“/„Ersatz“ im Linien- bzw. Produktnamen; `mode` bleibt dabei meist `bus`), `loadFactor` (derzeit immer `null`, Transitous liefert keine Auslastung),
 `stopovers [Stopover]`, `remarks [Remark]`.
 
 `polyline`: `{type:"LineString", coordinates:[[lon,lat],...]}` oder `null`.
@@ -141,8 +142,9 @@ die App unterscheidet damit Ausfall, Umleitung und verlegte Haltestelle.
 
 ## `POST /api/refresh`
 ```json
-{ "refreshToken": "opaque", "polylines": false }
+{ "refreshToken": "opaque", "polylines": false, "accessibility": "none" }
 ```
+`accessibility` wie bei `/api/routes`; mit `stepFree` rechnet MOTIS die Umstiegswege des Tokens mit dem Rollstuhlprofil neu.
 Antwort `200 { "journey": Journey, "fetchedAt": "...", "attribution": {...} }`.
 Ohne `polylines: true` sind alle `polyline`-Felder `null` (spart Datenvolumen beim Live-Polling).
 Ungültiger/abgelaufener Token oder nicht mehr rekonstruierbare Fahrt: `410 REFRESH_EXPIRED`.

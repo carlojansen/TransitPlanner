@@ -141,7 +141,7 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 	}
 
 	// POST /api/routes
-	async function routes({origin, destination, targetTime, isArrivalTime, onlyNahverkehr, modes, results, laterThan, earlierThan}) {
+	async function routes({origin, destination, targetTime, isArrivalTime, onlyNahverkehr, modes, accessibility, results, laterThan, earlierThan}) {
 		const query = {
 			fromPlace: toMotisPlace(origin),
 			toPlace: toMotisPlace(destination),
@@ -154,6 +154,7 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 			maxPostTransitTime: routing.maxPostTransitSeconds ?? 1500,
 			additionalTransferTime: routing.additionalTransferMinutes ?? 0,
 		};
+		if (accessibility === 'stepFree') query.pedestrianProfile = 'WHEELCHAIR';
 		if (targetTime) query.time = new Date(targetTime).toISOString();
 		if (modes?.length) query.transitModes = joinList([...new Set(modes.map((m) => PILL_MODES[m]))]);
 		else if (onlyNahverkehr) query.transitModes = joinList(NAHVERKEHR_MODES);
@@ -203,10 +204,11 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 	}
 
 	// POST /api/refresh
-	async function refresh({refreshToken, polylines}) {
+	async function refresh({refreshToken, polylines, accessibility}) {
 		let it;
 		try {
-			it = await call((signal) => client.refreshItinerary({itineraryId: refreshToken, detailedTransfers: true, joinInterlinedLegs: true, language: 'de'}, signal));
+			it = await call((signal) => client.refreshItinerary({itineraryId: refreshToken, detailedTransfers: true, joinInterlinedLegs: true, language: 'de',
+				...(accessibility === 'stepFree' ? {pedestrianProfile: 'WHEELCHAIR'} : {})}, signal));
 		} catch (err) {
 			if (err.code === ErrorCode.NOT_FOUND || err.code === ErrorCode.INVALID_REQUEST) {
 				throw new TransitError(ErrorCode.REFRESH_EXPIRED, {cause: err});

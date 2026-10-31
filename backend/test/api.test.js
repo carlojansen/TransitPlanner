@@ -367,6 +367,20 @@ describe('POST /api/routes', () => {
 		expect(r.body.journeys.map((j) => j.refreshToken)).toEqual(['regio']);
 	});
 
+	it('stepFree setzt das Rollstuhlprofil, ohne bleibt es aus; wheelchairAccessible wird dreiwertig gemappt', async () => {
+		const queries = [];
+		build({async plan(q) {
+			queries.push(q);
+			return {itineraries: [itinerary({legs: [leg({extra: {wheelchairAccessible: 'ACCESSIBLE'}}), leg({extra: {wheelchairAccessible: 'NOT_ACCESSIBLE'}}), leg({})]})]};
+		}});
+		const r = await request(app).post('/api/routes').set(auth).send({...body, accessibility: 'stepFree'}).expect(200);
+		await request(app).post('/api/routes').set(auth).send(body).expect(200);
+		expect(queries[0].pedestrianProfile).toBe('WHEELCHAIR');
+		expect(queries[1].pedestrianProfile).toBeUndefined();
+		expect(r.body.journeys[0].legs.filter((l) => l.mode !== 'walk').map((l) => l.wheelchairAccessible)).toEqual(['yes', 'no', 'unknown']);
+		await request(app).post('/api/routes').set(auth).send({...body, accessibility: 'fewStairs'}).expect(400);
+	});
+
 	it('fragt genau einmal mit mehr Verbindungen nach, wenn der Filter alles verworfen hat', async () => {
 		let n = 0;
 		build({

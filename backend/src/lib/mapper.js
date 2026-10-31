@@ -226,6 +226,8 @@ export function mapLeg(leg, index, {withPolylines = true} = {}) {
 		plannedArrivalPlatform: arrPlanned,
 		platformChanged: Boolean((depPlatform && depPlanned && depPlatform !== depPlanned) || (arrPlatform && arrPlanned && arrPlatform !== arrPlanned)),
 		replacement: isReplacement(leg),
+		// Fehlendes Feld = unbekannt, nie als barrierefrei werten
+		wheelchairAccessible: leg.wheelchairAccessible === 'ACCESSIBLE' ? 'yes' : leg.wheelchairAccessible === 'NOT_ACCESSIBLE' ? 'no' : 'unknown',
 		loadFactor: null, // Transitous liefert keine Auslastung
 		stopovers: Array.isArray(leg.intermediateStops) ? leg.intermediateStops.map((p) => mapStopover(p, realtime)) : [],
 		remarks: mapAlerts([...(leg.alerts ?? []), ...(leg.from?.alerts ?? []), ...(leg.to?.alerts ?? [])]),
