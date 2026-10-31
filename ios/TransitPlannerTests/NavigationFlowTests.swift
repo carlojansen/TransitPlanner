@@ -41,6 +41,23 @@ private func iso(_ time: String) -> Date {
         NavigationPresenter.card(try #require(f.navInput))
     }
 
+    /// Der Weg vom letzten Ausstieg (06:38) bis zur Ankunft wird gegen die Schaetzung gemessen und gespeichert.
+    @Test func finalWalkTrainsPace() async throws {
+        let clock = Clock()
+        let f = await navigatingFlow(clock: clock)
+        #expect(f.pace.sampleCount == 0)
+        clock.set("06:21:00")
+        f.navigationUpdate(position: Self.bilkBus, now: clock.now)
+        clock.set("06:40:00")
+        f.navigationUpdate(position: nil, now: clock.now)
+        #expect(f.navStep == .finalWalkToDestination)
+        clock.set("06:41:00") // 180 s statt geschaetzter 149 s
+        f.navigationUpdate(position: Self.destination, now: clock.now)
+        #expect(f.phase == .arrival)
+        #expect(f.pace.sampleCount == 1)
+        #expect(f.pace.learned != 1.0)
+    }
+
     @Test func walkThroughAllStates() async throws {
         let clock = Clock()
         let f = await navigatingFlow(clock: clock)

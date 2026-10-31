@@ -305,11 +305,12 @@ final class AppFlow {
     @ObservationIgnored private var nearbyLoadedAt: Date?
     @ObservationIgnored private var overlayTask: Task<Void, Never>?
     @ObservationIgnored private var lastPlanKey: PlanKey?
-    // ponytail: fester Standardwert; SwiftData-PaceProfile anbinden, sobald die Gehzeit-Messung (Navigation) existiert.
-    @ObservationIgnored let pace = WalkingPaceFactor()
+    /// Gelernter Gehzeit-Faktor (UserDefaults); lernt aus dem Fussweg zum Ziel, siehe `recordFinalWalk`.
+    @ObservationIgnored private(set) var pace: WalkingPaceFactor
 
     init(_ deps: AppDependencies) {
         self.deps = deps
+        pace = deps.loadPace()
         let choice = deps.loadOnboarding()
         locationAuthorization = deps.authorization()
         do {
@@ -893,6 +894,7 @@ final class AppFlow {
         }.map { $0.seconds < 120 } ?? false
         let minute = { (d: Date) in Int(d.timeIntervalSince1970 / 60) }
         if step != navStep || tight || minute(now) != minute(navNow) || moved { navNow = now }
+        if navStep == .finalWalkToDestination, step == .arrived { recordFinalWalk(journey, now: now) }
         if step != navStep { navStep = step; navMapOnly = false }
         startPositionsIfNeeded(step)
         if let buffer = currentBuffer, buffer.needsWarning, let target = NavigationEngine.targetVehicle(step),
@@ -906,6 +908,18 @@ final class AppFlow {
             navWarnings += 1
         }
         if step == .arrived { send(.arrived) }
+    }
+
+    /// Misst den Weg vom letzten Ausstieg bis zur Ankunft am Ziel gegen die Apple-Maps-Schaetzung (ohne Faktor).
+    /// Nur wenn die Fahrt wirklich bis dort beobachtet wurde; Ausreisser verwirft `record`.
+    private func recordFinalWalk(_ journey: Journey, now: Date) {
+        guard let walk = journey.legs.last, walk.isWalk, let estimate = navWalks[walk.index],
+              let alighted = journey.legs.last(where: { !$0.isWalk })?.arrival else { return }
+        let predicted = Double(estimate.seconds) / pace.value
+        var updated = pace
+        guard updated.record(predictedSeconds: predicted, actualSeconds: now.timeIntervalSince(alighted)) else { return }
+        pace = updated
+        deps.savePace(updated)
     }
 
     /// Puffer fuer Fussweg zum Gleis und Umstieg; sonst nil.
@@ -1030,7 +1044,9 @@ final class AppFlow {
         guard case .navigation = phase, let target = destination?.place else { return }
         let source = origin ?? peekOrigin
         let next = nextStation
-        peekOrigin = source == .nextStation && next != nil ? .nextStation : .position
+        // Ohne Standorterlaubnis nie currentFix() anfragen (loest sonst den System-Dialog aus): dann ab der naechsten Station.
+        peekOrigin = (source == .nextStation || !locationAllowed) && next != nil ? .nextStation : .position
+        guard peekOrigin == .nextStation || locationAllowed else { peek = .failed(.locationDenied); return }
         peekTask?.cancel()
         peek = .loading
         let now = deps.now()

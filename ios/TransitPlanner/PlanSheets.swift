@@ -458,7 +458,7 @@ struct PlanSheet: View {
             .pickerStyle(.segmented)
             .accessibilityIdentifier("timeMode")
             if flow.customTime != nil {
-                DatePicker(flow.isArrivalTime ? "Ankunft um" : "Abfahrt um", selection: Binding { flow.customTime ?? Date() } set: { flow.customTime = $0 }, in: Date()...)
+                DatePicker(flow.isArrivalTime ? "Ankunft um" : "Abfahrt um", selection: Binding { flow.customTime ?? Date() } set: { flow.customTime = $0 }, in: Date()...Date().addingTimeInterval(59 * 24 * 3600))
                     .datePickerStyle(.compact)
                     .frame(minHeight: 44)
                     .accessibilityIdentifier("timePicker")

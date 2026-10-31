@@ -11,6 +11,8 @@ struct ReminderSheet: View {
     @State private var earlierMinutes = 0
     @State private var warnMinutes = 0
     @State private var failure: String?
+    /// Verbindung beim Oeffnen: aendert sich die Liste darunter (Neu laden, Kalibrierung), gilt der Index nicht mehr.
+    @State private var openedToken: String?
 
     private static let earlierChoices = [0, 5, 10, 15, 20]
     private static let warnChoices = [0, 5, 10]
@@ -55,6 +57,10 @@ struct ReminderSheet: View {
         .presentationDragIndicator(.visible)
         .sensoryFeedback(.selection, trigger: earlierMinutes)
         .sensoryFeedback(.selection, trigger: warnMinutes)
+        .onAppear { openedToken = flow.journey(at: index)?.refreshToken }
+        .onChange(of: flow.journey(at: index)?.refreshToken) { _, token in
+            if let openedToken, token != openedToken { dismiss() }
+        }
     }
 
     // MARK: Ergebnis
