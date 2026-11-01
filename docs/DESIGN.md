@@ -232,7 +232,7 @@ der Karte; bei bequemem Puffer entfällt die Zeile). Liste aller noch kommenden 
 - Oben nur das Ergebnis ("Losgehen 12:52" in App/Anweisung, "Erinnerung um 12:47") und darunter die Rechnung.
 - "Früher losgehen" ist das Hauptelement: Stepper in 5-Min.-Schritten plus Schnellwahl 0/5/10/15/20. Ändern rechnet sofort neu (numericText). Wert pro Ziel gemerkt.
 - "Vorwarnen" getrennt davon: Mitteilung X Min. vor dem Losgehen. Zum Losgehen selbst kommt immer die zeitkritische Mitteilung.
-- "Am Gleis sein vorher" ist der globale Umstiegspuffer aus den Einstellungen, hier nur angezeigt.
+- "Am Gleis sein vorher" ist der globale Puffer vor dem ersten Fahrzeug aus den Einstellungen (Standard 2 Min.), hier nur angezeigt. Umstiege bewertet die App davon unabhängig.
 - Wer zu einer festen Zeit da sein muss, plant in 2c mit "Ankunft"; die Erinnerung rechnet von dort rückwärts.
 - Mitteilungs-Erlaubnis wird erst hier beim ersten Scharfschalten abgefragt.
 
@@ -262,7 +262,7 @@ der Karte; bei bequemem Puffer entfällt die Zeile). Liste aller noch kommenden 
 
 **G1 Einstellungen**
 - Einstieg über den Knopf rechts neben dem Suchfeld im Start-Sheet.
-- Einstellungszeilen: Gehtempo (gelernter WalkingPaceFactor als Prozent, Detail mit "Zurücksetzen"), Umstiegspuffer, Verkehrsmittel (Produktfilter), Mitteilungen, Standort, Dein Server, Quellen und Lizenzen, Version.
+- Einstellungszeilen: Gehtempo (gelernter WalkingPaceFactor als Prozent, Detail mit "Zurücksetzen"), Am Gleis sein vorher (Stepper 0 bis 15 Min.), Verkehrsmittel (Produktfilter), Mitteilungen, Standort, Dein Server, Quellen und Lizenzen, Version.
 - Standort und Mitteilungen öffnen die iOS-Einstellungen (`openSettingsURLString`).
 - "Suchverlauf löschen" mit confirmationDialog; löscht nur den Verlauf, keine Favoriten.
 - Inset-Grouped-Liste mit `.scrollContentBackground(.hidden)`.
