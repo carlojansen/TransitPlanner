@@ -1,57 +1,72 @@
 {
   "sourceLanguage" : "de",
   "strings" : {
-    "%@" : {
+    "%@ entfernen" : {
 
     },
-    "%@ Etappen" : {
+    "%@ festlegen" : {
 
     },
-    "%@ m" : {
+    "%@ folgen" : {
 
     },
-    "%@ Min." : {
+    "%@ fällt aus." : {
 
     },
-    "%@ Min. früher" : {
-
-    },
-    "%@ Min. später" : {
-
-    },
-    "%@ Min. zu Fuß" : {
-
-    },
-    "%@ Minuten" : {
-
-    },
-    "%@ Minuten später" : {
-
-    },
-    "%@ Minuten zu Fuß" : {
-
-    },
-    "%@ s" : {
-
-    },
-    "%@ Umstiege" : {
-
-    },
-    "%@ Zwischenhalte" : {
-
-    },
-    "%@%@ Minuten Fußweg" : {
+    "%@ in %@" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@%2$@ Minuten Fußweg"
+            "value" : "%1$@ in %2$@"
           }
         }
       }
     },
+    "%@ nach %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ nach %2$@"
+          }
+        }
+      }
+    },
+    "%@%lld Minuten Fußweg" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@%2$lld Minuten Fußweg"
+          }
+        }
+      }
+    },
+    "%@, %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@"
+          }
+        }
+      }
+    },
+    "%@: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$@"
+          }
+        }
+      }
+    },
+    "%lld" : {
+
+    },
     "%lld Etappen" : {
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "variations" : {
@@ -73,8 +88,32 @@
         }
       }
     },
+    "%lld Meter" : {
+
+    },
+    "%lld Min." : {
+
+    },
+    "%lld Min. früher" : {
+
+    },
+    "%lld Min. später" : {
+
+    },
+    "%lld Min. zu Fuß" : {
+
+    },
+    "%lld Min. · %lld m" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld Min. · %2$lld m"
+          }
+        }
+      }
+    },
     "%lld Minuten" : {
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "variations" : {
@@ -97,7 +136,6 @@
       }
     },
     "%lld Minuten Fußweg" : {
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "variations" : {
@@ -120,7 +158,6 @@
       }
     },
     "%lld Minuten später" : {
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "variations" : {
@@ -143,7 +180,6 @@
       }
     },
     "%lld Minuten verspätet" : {
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "variations" : {
@@ -165,8 +201,10 @@
         }
       }
     },
+    "%lld Minuten zu Fuß" : {
+
+    },
     "%lld Sekunden" : {
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "variations" : {
@@ -188,8 +226,10 @@
         }
       }
     },
+    "%lld Treppen" : {
+
+    },
     "%lld Umstiege" : {
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "variations" : {
@@ -212,7 +252,6 @@
       }
     },
     "%lld Zwischenhalte" : {
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "variations" : {
@@ -234,16 +273,22 @@
         }
       }
     },
-    "© OpenStreetMap-Mitwirkende, verfügbar unter der Open Database License (ODbL)." : {
+    "%lld m" : {
 
     },
-    "+%@ Min." : {
+    "%lld s" : {
 
     },
-    "± %@ m" : {
+    "+%lld Min." : {
+
+    },
+    ", dann " : {
 
     },
     "10:00 – 10:45 · 45 Min." : {
+
+    },
+    "Ab" : {
 
     },
     "Ab %@, %@" : {
@@ -256,13 +301,68 @@
         }
       }
     },
+    "Abbrechen" : {
+
+    },
     "Abfahrt" : {
+
+    },
+    "Abfahrt %@" : {
+
+    },
+    "Abfahrt %@ ab %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Abfahrt %1$@ ab %2$@"
+          }
+        }
+      }
+    },
+    "Abfahrt um" : {
+
+    },
+    "Achtung, Ersatzverkehr:" : {
+
+    },
+    "Adressen brauchen deinen Standort." : {
+
+    },
+    "Adressen werden nur mit Apple Karten auf dem Gerät gesucht." : {
+
+    },
+    "Aktuelle Fahrt" : {
+
+    },
+    "Alternativen" : {
+
+    },
+    "Alternativen ab" : {
+
+    },
+    "Alternativen vergleichen" : {
+
+    },
+    "Alternativen werden gesucht" : {
+
+    },
+    "Am Gleis" : {
+
+    },
+    "Am Gleis sein vorher" : {
 
     },
     "An dein Gehtempo angepasst" : {
 
     },
+    "Andere Zeit wählen" : {
+
+    },
     "Angabe des Fahrplan-Servers" : {
+
+    },
+    "Angekommen" : {
 
     },
     "Ankunft" : {
@@ -271,13 +371,89 @@
     "Ankunft %@" : {
 
     },
+    "Ankunft %@." : {
+
+    },
+    "Ankunft um" : {
+
+    },
+    "Anschluss %@ in %@ reicht nicht mehr." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Anschluss %1$@ in %2$@ reicht nicht mehr."
+          }
+        }
+      }
+    },
+    "Anweisung" : {
+
+    },
+    "Arbeit" : {
+
+    },
+    "Aufzug" : {
+
+    },
+    "Aus" : {
+
+    },
+    "Aussteigen in %@" : {
+
+    },
+    "Aussteigen in %lld Halten" : {
+
+    },
+    "Ausstieg %@" : {
+
+    },
     "BESTE VERBINDUNG" : {
 
     },
-    "ca." : {
+    "Bearbeiten" : {
+
+    },
+    "Beenden" : {
+
+    },
+    "Beim Verwenden" : {
+
+    },
+    "Beste Verbindung:" : {
+
+    },
+    "Bus" : {
+
+    },
+    "Bus ab %@" : {
+
+    },
+    "Danach" : {
+
+    },
+    "Danach bringt dich ein Tipp nach Hause." : {
+
+    },
+    "Danach: %@" : {
+
+    },
+    "Das reicht nicht mehr." : {
+
+    },
+    "Dein Server" : {
+
+    },
+    "Dein Standort bleibt auf dem iPhone. Der Fahrplan-Server bekommt nur eine gerundete Koordinate." : {
 
     },
     "Der Schlüssel liegt nur auf diesem iPhone im Schlüsselbund (ohne iCloud) und wird nicht wieder angezeigt." : {
+
+    },
+    "Der Schlüssel muss 32 bis 512 Zeichen lang sein, ohne Leerzeichen." : {
+
+    },
+    "Der Zeitpunkt zum Losgehen ist schon vorbei." : {
 
     },
     "Details" : {
@@ -286,10 +462,60 @@
     "Die App fragt Fahrpläne über deinen eigenen Server ab. Der Schlüssel zeigt dem Server, dass die Anfrage von dir kommt." : {
 
     },
-    "direkt" : {
+    "Die Verbindung ist nicht mehr aktuell." : {
+
+    },
+    "Direkt." : {
 
     },
     "ERINNERN" : {
+
+    },
+    "Ebene %@" : {
+
+    },
+    "Ebene %@ zu %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Ebene %1$@ zu %2$@"
+          }
+        }
+      }
+    },
+    "Echtzeit pausiert" : {
+
+    },
+    "Einige Verbindungen wurden ausgeblendet (Fernverkehr)." : {
+
+    },
+    "Einstellungen" : {
+
+    },
+    "Engster Umstieg: %@, %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Engster Umstieg: %1$@, %2$@"
+          }
+        }
+      }
+    },
+    "Entfernen" : {
+
+    },
+    "Erinnern" : {
+
+    },
+    "Erinnerung %@" : {
+
+    },
+    "Erinnerung gelöscht" : {
+
+    },
+    "Erinnerung setzen" : {
 
     },
     "Erinnerung um %@" : {
@@ -298,11 +524,28 @@
     "Erinnerungen" : {
 
     },
+    "Erinnerungen fragst du erst, wenn du die erste einrichtest." : {
+
+    },
+    "Erneut versuchen" : {
+
+    },
     "Ersatzverkehr" : {
 
     },
+    "Ersatzverkehr %@" : {
+
+    },
+    "Ersatzverkehr statt %@" : {
+
+    },
+    "Ersatzverkehr: Bus ab %@" : {
+
+    },
+    "Etwa " : {
+
+    },
     "Etwa %lld Minuten Fußweg" : {
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "variations" : {
@@ -327,10 +570,31 @@
     "Fahrplandaten" : {
 
     },
-    "Fällt aus" : {
+    "Fahrt" : {
+
+    },
+    "Fahrt geplant" : {
+
+    },
+    "Favorit" : {
+
+    },
+    "Favorit hinzufügen" : {
 
     },
     "Favoriten" : {
+
+    },
+    "Fernzug" : {
+
+    },
+    "Fertig" : {
+
+    },
+    "Flugzeug" : {
+
+    },
+    "Früher losgehen" : {
 
     },
     "Fußweg" : {
@@ -339,20 +603,87 @@
     "Fußwege" : {
 
     },
+    "Fußwege mit deinem Tempo" : {
+
+    },
+    "Fähre" : {
+
+    },
+    "Fällt aus" : {
+
+    },
+    "Fällt aus." : {
+
+    },
+    "Ganze Route" : {
+
+    },
+    "Gehweg" : {
+
+    },
     "Gehzeiten berechnet Apple Karten auf dem Gerät. Die Karte stammt von Apple." : {
 
     },
-    "gleich schnell" : {
+    "Genauigkeit ± %lld m" : {
+
+    },
+    "Geradeaus" : {
+
+    },
+    "Gilt für neue Erinnerungen, bestehende übernehmen den Wert bei der nächsten Neuberechnung. Bei 0 Min. verschiebt „Später erinnern“ nichts mehr, außer du gehst früher los. Umstiege bewertet die App davon unabhängig." : {
 
     },
     "Gleis %@" : {
 
     },
+    "Gleis %@ statt %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Gleis %1$@ statt %2$@"
+          }
+        }
+      }
+    },
+    "Gleis %@, nicht Gleis %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Gleis %1$@, nicht Gleis %2$@"
+          }
+        }
+      }
+    },
+    "Gleis %@." : {
+
+    },
+    "Gut angekommen" : {
+
+    },
+    "Haltestelle oder Adresse" : {
+
+    },
+    "Haltestelle „%@“ beim Fahrplan-Server suchen" : {
+
+    },
+    "Haltestellen in der Nähe" : {
+
+    },
     "Heute aktiv" : {
 
     },
+    "Hinzufügen" : {
+
+    },
+    "Im %@" : {
+
+    },
+    "Im Kreisverkehr" : {
+
+    },
     "In %lld Minuten losgehen" : {
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "variations" : {
@@ -374,16 +705,62 @@
         }
       }
     },
+    "In %lld m %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "In %1$lld m %2$@"
+          }
+        }
+      }
+    },
+    "In der Nähe" : {
+
+    },
     "Jetzt" : {
 
     },
     "Jetzt los" : {
 
     },
+    "Jetzt losgehen." : {
+
+    },
+    "Karte" : {
+
+    },
+    "Karte folgt wieder deiner Position" : {
+
+    },
     "Karten- und Wegdaten" : {
 
     },
+    "Keine Erinnerungen" : {
+
+    },
+    "Keine Nahverkehrs-Verbindung ab %@." : {
+
+    },
+    "Keine Nahverkehrs-Verbindung mit Ankunft bis %@." : {
+
+    },
     "Keine Verbindung gefunden" : {
+
+    },
+    "Knapp: %@" : {
+
+    },
+    "Knapp: Alternativen vergleichen" : {
+
+    },
+    "Leicht links" : {
+
+    },
+    "Leicht rechts" : {
+
+    },
+    "Links abbiegen" : {
 
     },
     "Los in %@" : {
@@ -392,13 +769,31 @@
     "Los in 10 Min." : {
 
     },
+    "Losgehen" : {
+
+    },
     "Losgehen %@" : {
+
+    },
+    "Losgehen in %@" : {
+
+    },
+    "Löschen" : {
 
     },
     "Mein Standort" : {
 
     },
+    "Meldung des Betreibers: %@" : {
+
+    },
     "Meldungen des Betreibers" : {
+
+    },
+    "Mitteilungen sind aus. Erlaube sie in den iOS-Einstellungen." : {
+
+    },
+    "Nach" : {
 
     },
     "Nach %@" : {
@@ -407,28 +802,83 @@
     "Nach dem Einfügen den Schlüssel aus der Zwischenablage des anderen Geräts entfernen." : {
 
     },
+    "Nahverkehr" : {
+
+    },
+    "Nahverkehr und Regio" : {
+
+    },
+    "Neu suchen" : {
+
+    },
+    "Nicht gefragt" : {
+
+    },
+    "Noch" : {
+
+    },
+    "Noch %lld m zu %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Noch %1$lld m zu %2$@"
+          }
+        }
+      }
+    },
     "Nächste Station" : {
 
     },
-    "Nahverkehr" : {
+    "Nächste Verbindung" : {
+
+    },
+    "Nächster Halt aussteigen" : {
 
     },
     "Offene Fahrplan- und Echtzeitdaten über Transitous (MOTIS 2), u. a. DELFI." : {
 
     },
-    "Öffnet die Planung" : {
+    "Ohne Schlüssel kann die App keine Haltestellen und Verbindungen abrufen." : {
 
     },
-    "Ohne Schlüssel kann die App keine Haltestellen und Verbindungen abrufen." : {
+    "Ohne Standort" : {
+
+    },
+    "Ohne Standort fortfahren" : {
 
     },
     "Platzhalter für die Leg-Bar" : {
 
     },
-    "pünktlich" : {
+    "Puffer" : {
 
     },
-    "reicht nicht" : {
+    "Puffer %@" : {
+
+    },
+    "Puffer %lld Min." : {
+
+    },
+    "Quellen und Lizenzen" : {
+
+    },
+    "Rechnet sofort neu." : {
+
+    },
+    "Rechts abbiegen" : {
+
+    },
+    "Rechtzeitig los" : {
+
+    },
+    "Regio" : {
+
+    },
+    "Regionalzug" : {
+
+    },
+    "Reicht nicht" : {
 
     },
     "Restfahrt" : {
@@ -437,10 +887,97 @@
     "Richtung %@" : {
 
     },
+    "Rufbus" : {
+
+    },
     "Rückgängig" : {
 
     },
-    "statt %@" : {
+    "S-Bahn" : {
+
+    },
+    "SEV %@" : {
+
+    },
+    "Scharf links" : {
+
+    },
+    "Scharf rechts" : {
+
+    },
+    "Schlüssel" : {
+
+    },
+    "Schlüssel eintragen" : {
+
+    },
+    "Schlüssel ersetzen" : {
+
+    },
+    "Schlüssel fehlt" : {
+
+    },
+    "Schlüssel gespeichert" : {
+
+    },
+    "Schlüssel löschen" : {
+
+    },
+    "Schlüssel löschen?" : {
+
+    },
+    "Seilbahn" : {
+
+    },
+    "Sendet den Text, nicht deinen Standort." : {
+
+    },
+    "Speichern" : {
+
+    },
+    "Später eintragen" : {
+
+    },
+    "Später erinnern (5 Min.)" : {
+
+    },
+    "Später suchen" : {
+
+    },
+    "Standort" : {
+
+    },
+    "Standort erlauben" : {
+
+    },
+    "Standseilbahn" : {
+
+    },
+    "Start" : {
+
+    },
+    "Start und Ziel liegen nah beieinander. Zu Fuß bist du am schnellsten." : {
+
+    },
+    "Start und Ziel tauschen" : {
+
+    },
+    "Start wählen" : {
+
+    },
+    "Starten" : {
+
+    },
+    "Straßenbahn" : {
+
+    },
+    "Straßenbahn, Bus, U- und S-Bahn und Regionalzüge mit Echtzeit, wo verfügbar." : {
+
+    },
+    "Strecke" : {
+
+    },
+    "Stufenfrei reisen" : {
 
     },
     "Sucht Verbindungen ab deinem Standort" : {
@@ -452,16 +989,291 @@
     "Tippe in einer Verbindung auf Erinnern." : {
 
     },
+    "Tram" : {
+
+    },
+    "Treppe" : {
+
+    },
+    "U-Bahn" : {
+
+    },
+    "Umstieg" : {
+
+    },
+    "Umstieg %@" : {
+
+    },
+    "Umstieg %@, Puffer %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Umstieg %1$@, Puffer %2$@"
+          }
+        }
+      }
+    },
+    "Umstieg in %@" : {
+
+    },
+    "Umstieg knapp" : {
+
+    },
+    "Umstieg knapp." : {
+
+    },
+    "Umstieg reicht nicht" : {
+
+    },
+    "Umstieg reicht nicht." : {
+
+    },
+    "Uni" : {
+
+    },
+    "Unterwegs" : {
+
+    },
     "VERKEHRSMITTEL" : {
 
     },
+    "Verbindung nicht mehr vorhanden" : {
+
+    },
+    "Verbindung prüfen" : {
+
+    },
+    "Verbindung um %@ fällt aus oder der Anschluss reicht nicht." : {
+
+    },
+    "Verbindungen" : {
+
+    },
+    "Verbindungen suchen" : {
+
+    },
+    "Verbindungen werden gesucht" : {
+
+    },
+    "Verbunden" : {
+
+    },
+    "Verkehrsmittel" : {
+
+    },
+    "Version" : {
+
+    },
+    "Verspätung" : {
+
+    },
+    "Von" : {
+
+    },
+    "Von %@ · %@ %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Von %1$@ · %2$@ %3$@"
+          }
+        }
+      }
+    },
+    "Vorwarnen" : {
+
+    },
+    "Warte auf Verbindung" : {
+
+    },
+    "Wechseln" : {
+
+    },
+    "Wegbeschreibung (%lld)" : {
+
+    },
     "Wege zu und zwischen den Fahrzeugen meiden Treppen und nutzen Aufzüge. Ob ein Fahrzeug selbst barrierefrei ist, steht nicht zuverlässig in den Daten." : {
+
+    },
+    "Weiter" : {
+
+    },
+    "Weiter mit %@" : {
+
+    },
+    "Weitere Favoriten" : {
+
+    },
+    "Wenden" : {
+
+    },
+    "Weniger Schritte" : {
 
     },
     "Wieder möglich in" : {
 
     },
     "Willkommen bei TransitPlanner" : {
+
+    },
+    "Wird geprüft" : {
+
+    },
+    "Wohin?" : {
+
+    },
+    "Zeigt andere Verbindungen, die Fahrt läuft weiter" : {
+
+    },
+    "Zeigt die Karte ohne Anweisung" : {
+
+    },
+    "Zeigt die Stelle auf der Karte" : {
+
+    },
+    "Zeigt die restliche Route auf der Karte" : {
+
+    },
+    "Zeigt wieder die aktuelle Anweisung" : {
+
+    },
+    "Zeit" : {
+
+    },
+    "Zentrieren" : {
+
+    },
+    "Ziel" : {
+
+    },
+    "Zu %@" : {
+
+    },
+    "Zu Fuß" : {
+
+    },
+    "Zu Fuß zu %@" : {
+
+    },
+    "Zu Fuß zum Gleis" : {
+
+    },
+    "Zu Fuß zum Ziel" : {
+
+    },
+    "Zu dieser Verbindung wechseln?" : {
+
+    },
+    "Zuhause" : {
+
+    },
+    "Zuhause festlegen" : {
+
+    },
+    "Zuletzt gesucht" : {
+
+    },
+    "Zum Losgehen selbst kommt immer eine Mitteilung." : {
+
+    },
+    "Zurück zur Fahrt" : {
+
+    },
+    "Zurück zur Planung" : {
+
+    },
+    "ab %@" : {
+
+    },
+    "ab Gleis %@" : {
+
+    },
+    "an %@" : {
+
+    },
+    "aussteigen in %@" : {
+
+    },
+    "bis %@" : {
+
+    },
+    "ca." : {
+
+    },
+    "ca. %@" : {
+
+    },
+    "ca. %lld m" : {
+
+    },
+    "direkt" : {
+
+    },
+    "geradeaus" : {
+
+    },
+    "gleich schnell" : {
+
+    },
+    "hoch" : {
+
+    },
+    "in den Kreisverkehr" : {
+
+    },
+    "knapp, Puffer %@" : {
+
+    },
+    "leer" : {
+
+    },
+    "leicht links" : {
+
+    },
+    "leicht rechts" : {
+
+    },
+    "links" : {
+
+    },
+    "noch %lld Halte" : {
+
+    },
+    "nächster Halt aussteigen" : {
+
+    },
+    "pünktlich" : {
+
+    },
+    "rechts" : {
+
+    },
+    "reicht nicht" : {
+
+    },
+    "runter" : {
+
+    },
+    "statt %@" : {
+
+    },
+    "wenden" : {
+
+    },
+    "© OpenStreetMap-Mitwirkende, verfügbar unter der Open Database License (ODbL)." : {
+
+    },
+    "± %lld m" : {
+
+    },
+    "Ändert Start, Ziel oder Zeit" : {
+
+    },
+    "Öffnet die Fahrtdetails" : {
+
+    },
+    "Öffnet die Planung" : {
 
     }
   },
