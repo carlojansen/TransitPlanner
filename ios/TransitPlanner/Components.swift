@@ -236,15 +236,6 @@ struct ContentCard<Content: View>: View {
     }
 }
 
-extension FormatStyle where Self == Date.FormatStyle {
-    /// Einheitliche Uhrzeit in UI und VoiceOver: zweistellige Stunde ("08:32"), 12-Std.-Gebietsschemata mit AM/PM.
-    static var clock: Date.FormatStyle { .dateTime.hour(.twoDigits(amPM: .abbreviated)).minute(.twoDigits) }
-}
-
-extension Date {
-    var clockText: String { formatted(.clock) }
-}
-
 /// Uhrzeit mit festen Ziffern und rollenden Zahlen.
 struct TimeText: View {
     let date: Date?
@@ -401,7 +392,7 @@ struct InlineBanner: View {
     nonisolated static func tone(for error: TransitError) -> Tone {
         switch error {
         case .missingToken, .unauthorized, .locationDenied, .locationUnavailable: .info
-        case .pinningFailed, .internal, .decodingFailed, .invalidRequest, .keychainFailure: .alert
+        case .pinningFailed, .internal, .decodingFailed, .invalidRequest, .keychainFailure, .storageUnavailable: .alert
         default: .warn
         }
     }

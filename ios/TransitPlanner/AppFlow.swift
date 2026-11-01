@@ -1,7 +1,6 @@
 import Foundation
 import MapKit
 import Observation
-import UserNotifications
 import TransitCore
 
 /// Welcher Endpunkt gerade gesucht wird.
@@ -69,6 +68,8 @@ enum FlowEvent: Sendable, Hashable {
     case planTapped
     case journeySelected(Int)
     case startNavigation(Int)
+    /// Tipp auf eine Erinnerung: die gespeicherte Verbindung steht als einzige in `routes`, aus jeder Phase.
+    case resumeTrip
     case arrived
     /// "Nächste Verbindung" aus der Navigation (Ausfall, Anschluss verpasst): neu ab "Mein Standort", jetzt.
     case replan
@@ -102,7 +103,7 @@ extension TransitError {
         case .refreshExpired, .notFound: [.newSearch]
         // rateLimited: Restzeit statt Knopf (kein Neuversuch-Haemmern); pinningFailed: keine Umgehung anbieten.
         case .rateLimited, .pinningFailed, .noConnections, .cancelled,
-             .invalidRequest, .internal, .decodingFailed, .keychainFailure: []
+             .invalidRequest, .internal, .decodingFailed, .keychainFailure, .storageUnavailable: []
         }
     }
 }
@@ -292,8 +293,8 @@ final class AppFlow {
     var showsSettings = false
     /// Index der Verbindung, fuer die das Erinnerungs-Sheet offen ist (D1).
     var reminderJourneyIndex: Int?
-    /// Zuletzt gesetzte Erinnerung, an ihre Verbindung gebunden (Anzeige nur in deren Fahrtdetails).
-    private(set) var reminder: (journey: Journey, at: Date)?
+    /// D2: Liste der Erinnerungen.
+    var showsReminders = false
     /// Einstellungen direkt auf "Dein Server" oeffnen (Banner-Aktion).
     var settingsOpensServer = false
 
@@ -301,6 +302,13 @@ final class AppFlow {
     /// Kleinere Standortsprünge gelten als GPS-Rauschen (Meter).
     nonisolated static let positionThreshold: Double = 3
 
+    /// Erinnerungen (Liste, Mitteilungen, Neuberechnung); beobachtet sich selbst.
+    @ObservationIgnored let reminders: ReminderCenter
+    /// Tipp auf eine Mitteilung, bevor die App bereit ist (erster Start noch nicht durchlaufen).
+    @ObservationIgnored private var pendingReminder: UUID?
+    /// Suche ueber "Nächste Verbindung": startet daraus eine andere Fahrt, darf deren Wecker nicht weiterlaufen.
+    @ObservationIgnored private var replacedReminder: UUID?
+    @ObservationIgnored private var reminderCheck: Task<Void, Never>?
     @ObservationIgnored private let deps: AppDependencies
     @ObservationIgnored private var work: Task<Void, Never>?
     @ObservationIgnored private var waitingTask: Task<Void, Never>?
@@ -315,6 +323,7 @@ final class AppFlow {
 
     init(_ deps: AppDependencies) {
         self.deps = deps
+        reminders = ReminderCenter(deps)
         pace = deps.loadPace()
         let choice = deps.loadOnboarding()
         locationAuthorization = deps.authorization()
@@ -370,10 +379,12 @@ final class AppFlow {
         if allowLocation { await refreshFix() }
         locationAuthorization = deps.authorization()
         onboarding = hasServerKey ? nil : .serverKey
+        openPendingReminder()
     }
 
     func finishServerKeyStep() {
         onboarding = nil
+        openPendingReminder()
     }
 
     /// Standort nachtraeglich erlauben (Banner im Adressmodus nach "Ohne Standort fortfahren").
@@ -387,6 +398,13 @@ final class AppFlow {
     /// Genauigkeit fuer den Status auffrischen (kein Netz, nur CoreLocation).
     func becameActive() {
         locationAuthorization = deps.authorization()
+        // Vor dem Standort-Guard: Erinnerungen funktionieren auch ohne Standort.
+        if reminderCheck == nil {
+            reminderCheck = Task {
+                await reminders.checkDue()
+                reminderCheck = nil
+            }
+        }
         guard locationAllowed, onboarding == nil else {
             lastAccuracy = nil
             return
@@ -399,6 +417,7 @@ final class AppFlow {
 
     /// Hintergrund: nichts Standortbezogenes behalten.
     func movedToBackground() {
+        reminders.scheduleBackgroundCheck()
         fixTask?.cancel()
         nearbyTask?.cancel()
         nearby = []
@@ -439,6 +458,7 @@ final class AppFlow {
         // Wechsel auf eine Alternative aus der Fahrt ("Alternativen"): neue Verbindung, Navigation startet neu.
         case (.navigation, .startNavigation(let i)): .navigation(i)
         case (.arrival, .back): .start
+        case (_, .resumeTrip): .navigation(0)
         default: nil
         }
     }
@@ -453,13 +473,15 @@ final class AppFlow {
         if new == .start { discardRoutes() }
         if new.isPlan, phase != new { resetSearch() }
         if new.isPlan, !old.isPlan { loadSuggestions() }
+        if new == .start || new.isPlan { replacedReminder = nil }
         // Start und Planen zeigen beide die Naehe; erst danach wird der Abruf abgebrochen.
         if !new.isPlan, new != .start { nearbyTask?.cancel() }
         if !new.isPlan { assigningRole = nil }
         movedBackward = event.isBackward
         phase = new
         if plans, new == .routeSelection { startPlanning() }
-        if case .navigation(let i) = new, event == .startNavigation(i) { beginNavigation(i) }
+        if case .navigation(let i) = new, event == .startNavigation(i) || event == .resumeTrip { beginNavigation(i) }
+        if case .startNavigation(let i) = event { retireReplacedReminder(journey(at: i)) }
         if new == .arrival {
             // Angekommen: Live-Standort sofort verwerfen (AGENT.md 3.1.2), die Zusammenfassung braucht ihn nicht.
             closeAlternatives()
@@ -473,7 +495,6 @@ final class AppFlow {
 
     /// Zurueck zum Start: Verbindungen enthalten (gerundete) Start-Koordinaten und werden nicht laenger gehalten.
     private func discardRoutes() {
-        clearReminder()
         overlayTask?.cancel()
         routes = nil
         calibrated = nil
@@ -706,7 +727,6 @@ final class AppFlow {
         let key = PlanKey(origin: origin, destination: destination, time: customTime, isArrivalTime: isArrivalTime, modes: modeFilter, accessibility: accessibility)
         // H3: bei gleicher Anfrage bleibt die letzte Antwort fuer den Offline-Fall in Reserve.
         let previous = key == lastPlanKey ? (routes, calibrated) : (nil, nil)
-        clearReminder()
         routes = nil
         calibrated = nil
         isStale = false
@@ -945,13 +965,13 @@ final class AppFlow {
               let token = navJourney?.refreshToken, let old = navJourney else { return }
         do {
             let fresh = try await deps.refresh(token)
-            guard case .navigation = phase, !Task.isCancelled else { return }
+            guard case .navigation = phase, !Task.isCancelled, navJourney?.isSameTrip(as: old) == true else { return }
             if Self.platformChanged(from: old, to: fresh) { navWarnings += 1 }
             navJourney = fresh
             navIsStale = false
             if banner?.isTransient == true { banner = nil }
         } catch {
-            guard case .navigation = phase, !Task.isCancelled else { return }
+            guard case .navigation = phase, !Task.isCancelled, navJourney?.isSameTrip(as: old) == true else { return }
             if error == .refreshExpired { navExpired = true } else { navIsStale = true }
             await show(error)
         }
@@ -987,7 +1007,10 @@ final class AppFlow {
         }
         customTime = nil
         isArrivalTime = false
+        // Laeuft eine Erinnerungsfahrt, gilt wie beim Hinweis: startet eine andere Fahrt, endet ihr Wecker.
+        let running = navJourney.flatMap(reminders.reminder(for:))?.id
         send(.replan)
+        replacedReminder = isPlanning ? running : nil
     }
 
     private func stopNavigationTasks() {
@@ -1085,22 +1108,96 @@ final class AppFlow {
         }
     }
 
-    /// Es gibt genau eine aktive Erinnerung: feste IDs, damit Verwerfen und Neusetzen die alten Mitteilungen wirklich entfernen.
-    nonisolated static let reminderIdentifiers = ["reminder.warn", "reminder.leave"]
+    // MARK: Erinnerungen
 
-    func clearReminder() {
-        reminder = nil
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: Self.reminderIdentifiers)
+    /// Scharfschalten fuer diese Verbindung; dieselbe Fahrt wird ersetzt, nicht verdoppelt.
+    func setReminder(forJourney index: Int, earlierMinutes: Int, warnMinutes: Int) async throws(TransitError) {
+        guard let calibrated = calibratedJourney(at: index), let attribution = routes?.attribution,
+              let request = reminderRequest(calibrated.journey) else { throw .internal }
+        try await reminders.set(calibrated, request: request, attribution: attribution,
+                                earlierMinutes: earlierMinutes, warnMinutes: warnMinutes)
+        retireReplacedReminder(calibrated.journey)
     }
 
-    func setReminder(at time: Date, forJourney index: Int) {
-        reminder = journey(at: index).map { ($0, time) }
+    /// Der Nutzer hat aus "Nächste Verbindung" eine andere Fahrt gewaehlt: der alte Wecker endet. Dieselbe Fahrt behaelt ihn.
+    private func retireReplacedReminder(_ chosen: Journey?) {
+        guard let id = replacedReminder, let chosen else { return }
+        replacedReminder = nil
+        if reminders.reminder(id: id)?.plan.calibrated.journey.isSameTrip(as: chosen) == false { reminders.purge(id) }
     }
 
-    /// Erinnerungszeit nur fuer die Verbindung, fuer die sie gesetzt wurde (Neusortierung nach Kalibrierung inklusive).
+    /// Erste Mitteilung der gespeicherten Erinnerung fuer diese Verbindung (Neusortierung und Echtzeit inklusive).
     func reminderTime(forJourney index: Int) -> Date? {
-        guard let reminder, journey(at: index) == reminder.journey else { return nil }
-        return reminder.at
+        journey(at: index).flatMap(reminders.reminder(for:))?.plan.nextAlarm(now: deps.now())
+    }
+
+    /// Was "Nächste Verbindung" spaeter braucht. Bei "Mein Standort" ist der Start der erste Halt der Fahrt, das Ziel der
+    /// Endpunkt der Verbindung. Der gerundete Startort liegt nur versiegelt in der Verbindung, bis die Erinnerung aufgeraeumt
+    /// wird (AGENT.md 3.1.2).
+    private func reminderRequest(_ journey: Journey) -> ManualTripRequest? {
+        func endpoint(_ place: Place?) -> TripEndpoint? {
+            guard let place else { return nil }
+            if let id = place.id { return .stop(id: id, label: place.name ?? id) }
+            return place.coordinate.map { .coordinate($0, label: place.name ?? String(localized: "Ziel")) }
+        }
+        let firstStop = journey.legs.first { !$0.isWalk }?.origin ?? journey.legs.first?.origin
+        guard let start = origin.place ?? endpoint(firstStop),
+              let end = destination?.place ?? endpoint(journey.legs.last?.destination) else { return nil }
+        return ManualTripRequest(origin: start, destination: end, targetTime: journey.departure ?? deps.now(),
+                                 modes: modeFilter.count == ModeFilter.allCases.count ? nil : ModeFilter.allCases.filter(modeFilter.contains),
+                                 accessibility: accessibility)
+    }
+
+    /// Tipp auf eine Mitteilung oder "Starten"; wartet, bis der erste Start durchlaufen ist.
+    func openReminder(_ id: UUID) {
+        pendingReminder = id
+        openPendingReminder()
+    }
+
+    /// Navigation der gespeicherten Fahrt, Start-Logik wie bei "Starten". Fehlt die Fahrt, startet die App normal.
+    private func openPendingReminder() {
+        guard onboarding == nil, let id = pendingReminder else { return }
+        pendingReminder = nil
+        replacedReminder = nil
+        guard let reminder = reminders.reminder(id: id), !reminder.plan.isOver(now: deps.now()) else { return }
+        let plan = reminder.plan
+        // Laeuft schon: Position und Fortschritt nicht zuruecksetzen.
+        if phase.isGuiding, navJourney?.isSameTrip(as: plan.calibrated.journey) == true { return }
+        let token = reminders.token(id)
+        showsSettings = false
+        showsReminders = false
+        reminderJourneyIndex = nil
+        closeAlternatives()
+        // Letzter Stand schon vor der ersten Bewertung (mit alten Zeiten waere die Bahn "weg", und der Zustand geht nie
+        // zurueck) und auch in der Liste nach "Beenden".
+        let journey = plan.navigationJourney.withRefreshToken(token)
+        routes = .single(journey, fetchedAt: deps.now(), attribution: plan.attribution)
+        calibrated = [plan.calibrated.replacingJourney(journey)]
+        attribution = plan.attribution
+        origin = .place(reminder.request.origin)
+        destination = .place(reminder.request.destination)
+        customTime = nil
+        lastPlanKey = nil
+        isStale = false
+        send(.resumeTrip)
+        // Die Mitteilung heisst "losgehen": auch mit "frueher losgehen" nicht in der Wartekarte landen.
+        if case .waitingToLeave(let vehicle) = navStep { navStep = .approachingFirstStop(vehicle: vehicle) }
+        navigationUpdate(position: nil, now: deps.now())
+        // In `navTasks`: endet diese Navigation, darf die Antwort keine andere ueberschreiben.
+        navTasks.append(Task { await refreshNavigation() })
+    }
+
+    /// Hinweis Kritisch: neu suchen, jetzt, gleiches Ziel. Die Erinnerung bleibt, bis eine andere Fahrt gestartet wird.
+    func nextConnection(for reminder: StoredReminder) {
+        guard !phase.isGuiding else { return }
+        showsReminders = false
+        origin = locationAllowed ? .currentLocation : .place(reminder.request.origin)
+        destination = .place(reminder.request.destination)
+        customTime = nil
+        isArrivalTime = false
+        if case .tripDetails = phase { send(.back) }
+        send(phase == .routeSelection ? .planTapped : .endpointChosen)
+        replacedReminder = isPlanning ? reminder.id : nil
     }
 
     func closeAlternatives() {
@@ -1230,6 +1327,10 @@ final class AppFlow {
 
     func waitForNearby() async {
         await nearbyTask?.value
+    }
+
+    func waitForReminderCheck() async {
+        await reminderCheck?.value
     }
     #endif
 }

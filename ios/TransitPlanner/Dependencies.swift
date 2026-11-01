@@ -1,3 +1,4 @@
+import BackgroundTasks
 import CoreLocation
 import Foundation
 import TransitCore
@@ -51,6 +52,11 @@ struct AppDependencies: Sendable {
     var nearby: @Sendable (GeoCoordinate) async throws(TransitError) -> LocationsResponse
     /// Favoriten und Verlauf (lokal, verschluesselt).
     var places: any PlaceStoring
+    /// Erinnerungen (lokal, verschluesselt) und ihre lokalen Mitteilungen.
+    var reminders: any ReminderStoring
+    var notifier: any ReminderNotifying
+    /// Naechsten Hintergrund-Lauf anmelden (BGAppRefreshTask); nil = keiner noetig.
+    var scheduleBackgroundCheck: @Sendable (Date?) -> Void
     var now: @Sendable () -> Date = { Date() }
     /// Entprellung der Suche (API.md: mindestens 300 ms).
     var debounce: Duration = .milliseconds(300)
@@ -58,6 +64,8 @@ struct AppDependencies: Sendable {
     var waitingHint: Duration = .seconds(3)
     /// Zeitgesteuerte Neubewertung der Navigation (Zustaende haengen auch an Abfahrtszeiten).
     var navigationTick: Duration = .seconds(5)
+    /// So lange bietet D2 "Rückgängig" an.
+    var undoWindow: Duration = .seconds(5)
 
     static let onboardingKey = "onboarding"
     static let paceKey = "walkingPace"
@@ -91,6 +99,11 @@ struct AppDependencies: Sendable {
         let api = TransitAPIClient()
         let location = CoreLocationService()
         let secrets = KeychainSecretStore()
+        // Ein Container fuer alles; faellt der Store aus, bleiben Orte fuer diese Sitzung im Speicher. Erinnerungen nicht:
+        // eine Mitteilung ohne gespeicherte Fahrt liefe ins Leere, also sperrt `ReminderCenter.set` das Scharfschalten.
+        let stored = try? TransitStore.makeContainer()
+        let container = stored ?? (try? TransitStore.makeContainer(inMemory: true))
+        let sealer = LocalSealer(secrets: secrets)
         return AppDependencies(
             search: SearchService(location: location, api: api),
             planner: HybridRouteCalculator(api: api),
@@ -111,7 +124,19 @@ struct AppDependencies: Sendable {
             refresh: { token throws(TransitError) in try await api.refresh(refreshToken: token, polylines: false, accessibility: .stored).journey },
             blockedUntil: { await api.blocked?.until },
             nearby: { coordinate throws(TransitError) in try await api.nearbyStops(around: coordinate) },
-            places: SwiftDataPlaces.live(secrets: secrets)
+            places: container.map { SwiftDataPlaces(container: $0, sealer: sealer) } ?? MemoryPlaces(),
+            reminders: stored.map { SwiftDataReminders(container: $0, sealer: sealer) } ?? MemoryReminders(isDurable: false),
+            notifier: SystemNotifier(),
+            scheduleBackgroundCheck: { date in
+                guard let date else {
+                    BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: ReminderCenter.backgroundTaskID)
+                    return
+                }
+                let request = BGAppRefreshTaskRequest(identifier: ReminderCenter.backgroundTaskID)
+                request.earliestBeginDate = date
+                // Schlaegt fehl im Simulator oder ohne Hintergrundaktualisierung; dann prueft die App beim Aktivwerden.
+                try? BGTaskScheduler.shared.submit(request)
+            }
         )
     }
 
@@ -175,7 +200,9 @@ extension AppDependencies {
                       places: MemoryPlaces = MemoryPlaces(),
                       debounce: Duration = .milliseconds(300),
                       waitingHint: Duration = .seconds(3),
-                      refresher: FakeRefresher = FakeRefresher()) -> AppDependencies {
+                      refresher: FakeRefresher = FakeRefresher(),
+                      reminders: MemoryReminders = MemoryReminders(),
+                      notifier: FakeNotifier = FakeNotifier()) -> AppDependencies {
         let stored = Mutex(onboarding)
         let storedPace = Mutex(pace)
         return AppDependencies(search: search, planner: planner, secrets: secrets, location: location,
@@ -191,8 +218,26 @@ extension AppDependencies {
                                    guard let nearby = FakeData.nearby else { throw .decodingFailed }
                                    return nearby
                                },
-                               places: places, debounce: debounce, waitingHint: waitingHint)
+                               places: places, reminders: reminders, notifier: notifier,
+                               scheduleBackgroundCheck: { _ in },
+                               debounce: debounce, waitingHint: waitingHint)
     }
+}
+
+/// Fake-Mitteilungen: merkt sich, was iOS gerade einplanen wuerde.
+final class FakeNotifier: ReminderNotifying {
+    let pending = Mutex<[String: ReminderAlert]>([:])
+    let granted: Bool
+
+    init(granted: Bool = true) { self.granted = granted }
+
+    var alerts: [ReminderAlert] { pending.withLock { $0.values.sorted { $0.fireAt < $1.fireAt } } }
+
+    func requestAuthorization() async -> Bool { granted }
+    func add(_ alerts: [ReminderAlert]) async throws(TransitError) {
+        pending.withLock { for alert in alerts { $0[alert.identifier] = alert } }
+    }
+    func remove(_ identifiers: [String]) { pending.withLock { for id in identifiers { $0[id] = nil } } }
 }
 
 /// Fake-Refresh: liefert die Verbindung mit gleichem Token aus den Fake-Daten oder einen vorgegebenen Stand/Fehler.

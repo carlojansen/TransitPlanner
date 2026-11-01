@@ -1,6 +1,5 @@
 import SwiftUI
 import TransitCore
-import UserNotifications
 
 /// D1 Erinnerung einrichten (DESIGN.md): oben das Ergebnis, darunter die Rechnung, "Früher losgehen" als Hauptelement,
 /// "Vorwarnen" getrennt davon. Mitteilungs-Erlaubnis erst beim Scharfschalten.
@@ -9,7 +8,8 @@ struct ReminderSheet: View {
     @Environment(\.dismiss) private var dismiss
     let index: Int
     @State private var earlierMinutes = 0
-    @State private var warnMinutes = 0
+    /// T-5 aus D3 als Standard.
+    @State private var warnMinutes = 5
     @State private var failure: String?
     /// Verbindung beim Oeffnen: aendert sich die Liste darunter (Neu laden, Kalibrierung), gilt der Index nicht mehr.
     @State private var openedToken: String?
@@ -24,7 +24,13 @@ struct ReminderSheet: View {
 
     /// Losgehen laut Rueckwaertsrechnung, um "frueher losgehen" verschoben.
     private var leaveAt: Date? { timeToLeave.map { $0.leaveAt.addingTimeInterval(-TimeInterval(earlierMinutes * 60)) } }
-    private var reminderAt: Date? { leaveAt.map { $0.addingTimeInterval(-TimeInterval(warnMinutes * 60)) } }
+    /// Wie `ReminderPlan.nextAlarm`: eine Vorwarnung in der Vergangenheit kommt nicht mehr, dann zaehlt das Losgehen.
+    private var reminderAt: Date? {
+        leaveAt.map { leave in
+            let warn = leave.addingTimeInterval(-TimeInterval(warnMinutes * 60))
+            return warn > flow.now ? warn : leave
+        }
+    }
 
     var body: some View {
         ScrollView {
@@ -35,6 +41,8 @@ struct ReminderSheet: View {
                 choice(title: "Vorwarnen", footer: "Zum Losgehen selbst kommt immer eine Mitteilung.", values: Self.warnChoices, selection: $warnMinutes, step: 5)
                 if let failure {
                     CardHint(text: failure, tone: .alert)
+                        .onAppear { AccessibilityNotification.Announcement(failure).post() }
+                        .id(failure)
                 }
             }
             .padding(.horizontal, 16)
@@ -57,7 +65,14 @@ struct ReminderSheet: View {
         .presentationDragIndicator(.visible)
         .sensoryFeedback(.selection, trigger: earlierMinutes)
         .sensoryFeedback(.selection, trigger: warnMinutes)
-        .onAppear { openedToken = flow.journey(at: index)?.refreshToken }
+        .onAppear {
+            openedToken = flow.journey(at: index)?.refreshToken
+            // Erneutes Oeffnen zeigt die gespeicherte Wahl, statt sie mit dem Standard zu ueberschreiben.
+            if let plan = flow.journey(at: index).flatMap(flow.reminders.reminder(for:))?.plan {
+                earlierMinutes = plan.earlierMinutes
+                warnMinutes = plan.warnMinutes
+            }
+        }
         .onChange(of: flow.journey(at: index)?.refreshToken) { _, token in
             if let openedToken, token != openedToken { dismiss() }
         }
@@ -121,6 +136,8 @@ struct ReminderSheet: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Stepper(value: selection, in: 0...60, step: step) {
                         Text("\(selection.wrappedValue) Min.").font(.body).monospacedDigit()
+                            .contentTransition(.numericText())
+                            .animation(Motion.micro, value: selection.wrappedValue)
                     }
                     HStack(spacing: 6) {
                         ForEach(values, id: \.self) { value in
@@ -149,38 +166,192 @@ struct ReminderSheet: View {
 
     /// Mitteilungs-Erlaubnis erst hier; lokale Mitteilungen, nichts geht an den Server.
     private func schedule() async {
-        guard let leaveAt, let reminderAt, let journey = flow.journey(at: index) else { return }
-        let center = UNUserNotificationCenter.current()
-        guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else {
+        guard let leaveAt else { return }
+        guard await flow.reminders.requestAuthorization() else {
             failure = String(localized: "Mitteilungen sind aus. Erlaube sie in den iOS-Einstellungen.")
             return
         }
-        let line = journey.legs.first { !$0.isWalk }
-        let body = [line?.badgeName, line?.origin.name, line?.departurePlatform.map { String(localized: "Gleis \($0)") }]
-            .compactMap { $0 }.joined(separator: " · ")
-        guard leaveAt > .now else {
+        guard leaveAt > flow.now else {
             failure = String(localized: "Der Zeitpunkt zum Losgehen ist schon vorbei.")
             return
         }
-        func request(_ title: String, at date: Date, id: String) -> UNNotificationRequest {
-            let content = UNMutableNotificationContent()
-            content.title = title
-            content.body = body
-            content.sound = .default
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, date.timeIntervalSinceNow), repeats: false)
-            return UNNotificationRequest(identifier: id, content: content, trigger: trigger)
-        }
-        do {
-            flow.clearReminder()
-            if warnMinutes > 0, reminderAt > .now {
-                try await center.add(request(String(localized: "Gleich losgehen: \(leaveAt.clockText)"), at: reminderAt, id: AppFlow.reminderIdentifiers[0]))
-            }
-            try await center.add(request(String(localized: "Jetzt losgehen"), at: leaveAt, id: AppFlow.reminderIdentifiers[1]))
-            flow.setReminder(at: reminderAt, forJourney: index)
+        do throws(TransitError) {
+            try await flow.setReminder(forJourney: index, earlierMinutes: earlierMinutes, warnMinutes: warnMinutes)
             dismiss()
         } catch {
-            failure = String(localized: "Erinnerung konnte nicht gesetzt werden.")
+            failure = error.errorDescription
         }
+    }
+}
+
+// MARK: - D2 Erinnerungen
+
+/// Liste ueber den Kartenknopf: "ca.", solange nicht neu berechnet; heute aktive mit Echtzeit-Delta; Loeschen per Wischen
+/// ohne Rueckfrage, mit Rueckgaengig im Banner.
+struct RemindersSheet: View {
+    @Environment(AppFlow.self) private var flow
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if flow.reminders.rows.isEmpty {
+                    ContentUnavailableView("Keine Erinnerungen", systemImage: "bell",
+                                           description: Text("Tippe in einer Verbindung auf Erinnern."))
+                } else {
+                    List(flow.reminders.rows) { reminder in
+                        ReminderRow(reminder: reminder)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button("Löschen", systemImage: "trash", role: .destructive) { flow.reminders.delete(reminder.id) }
+                            }
+                    }
+                    .scrollContentBackground(.hidden)
+                }
+            }
+            .navigationTitle(Text("Erinnerungen"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fertig") { dismiss() }
+                }
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    if let error = flow.reminders.failure {
+                        InlineBanner(error: error).id(error).transition(bannerTransition)
+                    }
+                    if flow.reminders.undo != nil { UndoBanner().transition(bannerTransition) }
+                }
+            }
+            .animation(Motion.standard, value: flow.reminders.undo != nil)
+            .animation(Motion.standard, value: flow.reminders.failure)
+        }
+        .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium, .large])
+        .presentationDragIndicator(.visible)
+        .onDisappear { flow.reminders.clearFailure() }
+    }
+
+    private var bannerTransition: AnyTransition {
+        reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity)
+    }
+}
+
+/// Listenzeile (DESIGN.md 4): Symbol in Modusfarbe, Titel, Untertitel, Zeit rechts; bei AX untereinander.
+private struct ReminderRow: View {
+    @Environment(AppFlow.self) private var flow
+    @Environment(\.dynamicTypeSize) private var typeSize
+    let reminder: StoredReminder
+
+    private var plan: ReminderPlan { reminder.plan }
+    private var vehicle: Leg? { plan.journey.legs.first { !$0.isWalk } }
+
+    private var detail: String {
+        guard let vehicle else { return String(localized: "Fußweg") }
+        return [vehicle.badgeName, vehicle.origin.name, vehicle.departurePlatform.map { String(localized: "Gleis \($0)") }]
+            .compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private var time: String {
+        let clock = plan.leaveAt.clockText
+        let text = plan.isEstimated ? String(localized: "ca. \(clock)") : clock
+        guard !Calendar.current.isDate(plan.leaveAt, inSameDayAs: flow.now) else { return text }
+        return plan.leaveAt.formatted(.dateTime.weekday(.abbreviated).day().month(.twoDigits)) + ", " + text
+    }
+
+    /// Echtzeit-Delta nur fuer heute aktive.
+    private var delay: Int? { plan.isActive(now: flow.now) ? plan.delayMinutes : nil }
+
+    private var spoken: String {
+        let change = delay.map { String(localized: "\($0) Minuten später") }
+        return [reminder.request.destination.label, String(localized: "Losgehen \(time)"), change, detail]
+            .compactMap { $0 }.joined(separator: ", ")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+                                                      : AnyLayout(HStackLayout(spacing: 12))
+            layout {
+                Image(systemName: vehicle?.displayMode.symbolName ?? "figure.walk")
+                    .foregroundStyle(vehicle?.displayMode.color ?? Color(.modeWalk))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(reminder.request.destination.label).font(.body)
+                    Text(detail).font(.footnote).foregroundStyle(.secondary)
+                }
+                if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
+                VStack(alignment: typeSize.isAccessibilitySize ? .leading : .trailing, spacing: 4) {
+                    Text(time)
+                        .font(.footnote).monospacedDigit()
+                        .contentTransition(.numericText(countsDown: true))
+                        .animation(Motion.micro, value: time)
+                    if let delay { DelayBadge(minutes: delay) }
+                }
+            }
+            .frame(minHeight: 44)
+            .contentShape(.rect)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(spoken))
+            if plan.status == .lost { LostReminderHint(reminder: reminder) }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// Hinweis Kritisch (C 4b): die Verbindung faellt weg. Der Wecker bleibt stehen, die Wahl trifft der Nutzer.
+struct LostReminderHint: View {
+    @Environment(AppFlow.self) private var flow
+    let reminder: StoredReminder
+
+    var body: some View {
+        let text = String(localized: "Verbindung um \(reminder.plan.scheduled.firstDeparture.clockText) fällt aus oder der Anschluss reicht nicht.")
+        VStack(alignment: .leading, spacing: 8) {
+            CardHint(text: text, symbol: "xmark.octagon.fill", tone: .alert)
+            // Rahmen im Label (sonst bleibt die Tippflaeche kleiner), borderless: in der Liste nicht die ganze Zeile.
+            Button { flow.nextConnection(for: reminder) } label: {
+                Label("Nächste Verbindung", systemImage: "arrow.triangle.branch")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(minHeight: 44)
+                    .contentShape(.rect)
+            }
+                .buttonStyle(.borderless)
+                .disabled(flow.blockedUntil != nil)
+                .accessibilityIdentifier("reminderNextConnection")
+        }
+        .onAppear { AccessibilityNotification.Announcement(text).post() }
+    }
+}
+
+/// Inline-Banner (Radius 14, Innenabstand 12) fuer die 5 Sekunden nach dem Loeschen.
+private struct UndoBanner: View {
+    @Environment(AppFlow.self) private var flow
+
+    var body: some View {
+        let message = String(localized: "Erinnerung gelöscht")
+        HStack(spacing: 12) {
+            Image(systemName: "bell.slash")
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(Tone.info.foreground)
+                .accessibilityHidden(true)
+            Text(message).font(.subheadline).foregroundStyle(.primary)
+            Spacer(minLength: 0)
+            Button { Task { await flow.reminders.undoDelete() } } label: {
+                Text("Rückgängig")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(minHeight: 44)
+                    .padding(.horizontal, 8)
+                    .contentShape(.rect)
+            }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("undoDelete")
+        }
+        .padding(12)
+        .background(Tone.info.tint, in: .rect(cornerRadius: 14, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+        .onAppear { AccessibilityNotification.Announcement(message).post() }
     }
 }
 
@@ -195,6 +366,15 @@ struct ReminderSheet: View {
 }
 #Preview("Erinnern, AX3", traits: .modifier(PreviewFlow.routes(PreviewData.long))) {
     PreviewSheetBackdrop { ReminderSheet(index: 0) }.dynamicTypeSize(.accessibility3)
+}
+#Preview("Erinnerungen", traits: .modifier(PreviewFlow.reminders)) {
+    PreviewSheetBackdrop { RemindersSheet() }
+}
+#Preview("Erinnerungen, AX3", traits: .modifier(PreviewFlow.reminders)) {
+    PreviewSheetBackdrop { RemindersSheet() }.dynamicTypeSize(.accessibility3)
+}
+#Preview("Erinnerungen, leer", traits: .modifier(PreviewFlow.start)) {
+    PreviewSheetBackdrop { RemindersSheet() }
 }
 /// Ohne Kalibrierung (Planung laeuft noch): kein Ergebnis, "Erinnerung setzen" deaktiviert.
 #Preview("Erinnern, ohne Rechnung", traits: .modifier(PreviewFlow.loading)) {

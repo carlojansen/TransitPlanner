@@ -295,6 +295,9 @@
     "Erinnerung um %@" : {
 
     },
+    "Erinnerungen" : {
+
+    },
     "Ersatzverkehr" : {
 
     },
@@ -343,6 +346,9 @@
 
     },
     "Gleis %@" : {
+
+    },
+    "Heute aktiv" : {
 
     },
     "In %lld Minuten losgehen" : {
@@ -431,6 +437,9 @@
     "Richtung %@" : {
 
     },
+    "Rückgängig" : {
+
+    },
     "statt %@" : {
 
     },
@@ -438,6 +447,9 @@
 
     },
     "Tippe einen Ort, eine Adresse oder eine Haltestelle." : {
+
+    },
+    "Tippe in einer Verbindung auf Erinnern." : {
 
     },
     "VERKEHRSMITTEL" : {

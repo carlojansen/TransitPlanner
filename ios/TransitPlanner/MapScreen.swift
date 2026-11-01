@@ -301,15 +301,31 @@ struct MapScreen: View {
     }
 }
 
-/// Kartenknoepfe oben rechts (Glass, 44 x 44, Abstand 8). Statistik (M5) und Erinnerungen (M4) kommen dazu,
-/// sobald sie etwas tun; bis dahin nur Standort.
+/// Kartenknoepfe oben rechts (Glass, 44 x 44, Abstand 8). Statistik (M5) kommt dazu, sobald sie etwas tut.
 private struct MapButtons: View {
+    @Environment(AppFlow.self) private var flow
     let scope: Namespace.ID
 
     var body: some View {
-        // Einzelner Knopf: kein GlassEffectContainer noetig; kommt mit Statistik/Erinnerungen zurueck.
-        MapUserLocationButton(scope: scope)
-            .frame(width: 44, height: 44)
+        let active = flow.reminders.activeToday
+        GlassEffectContainer(spacing: 8) {
+            VStack(spacing: 8) {
+                MapUserLocationButton(scope: scope)
+                    .frame(width: 44, height: 44)
+                // Badge nur, wenn heute eine Erinnerung aktiv ist (D2).
+                Button { flow.showsReminders = true } label: {
+                    // `.glass` legt 7 pt je Seite um das Label: 30 pt ergeben 44 pt (aussen wirkt ein Rahmen nicht auf die Tippflaeche).
+                    Image(systemName: active ? "bell.badge" : "bell")
+                        .font(.title3)
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .accessibilityLabel(Text("Erinnerungen"))
+                    .accessibilityValue(active ? Text("Heute aktiv") : Text(verbatim: ""))
+                    .accessibilityIdentifier("remindersButton")
+            }
+        }
     }
 }
 
@@ -367,13 +383,22 @@ struct SheetRoot: View {
         .onGeometryChange(for: SheetLevel.self) { SheetLevel(height: $0.size.height) } action: { sheetLevel = $0 }
         .animation(Motion.standard, value: flow.phase)
         .safeAreaInset(edge: .top, spacing: 0) {
-            if let error = flow.banner, error.showsBanner {
-                InlineBanner(error: error)
-                    .id(error) // neue Ansage fuer VoiceOver bei jedem Fehlerwechsel
-                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+            VStack(spacing: 0) {
+                if let error = flow.banner, error.showsBanner {
+                    InlineBanner(error: error)
+                        .id(error) // neue Ansage fuer VoiceOver bei jedem Fehlerwechsel
+                        .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+                }
+                if !flow.phase.isGuiding, let lost = flow.reminders.lost {
+                    LostReminderHint(reminder: lost)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                        .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+                }
             }
         }
         .animation(Motion.standard, value: flow.banner)
+        .animation(Motion.standard, value: flow.reminders.lost?.id)
         .presentationDetents(flow.phase.isGuiding ? navDetents : Self.detents, selection: $detent)
         // Unterwegs ist der mittlere Detent nicht im Satz; `upThrough: middle` dimmte dann die Karte und sperrte
         // jede Geste. Daher dort immer frei bedienbar.
@@ -401,6 +426,7 @@ struct SheetRoot: View {
         .sheet(isPresented: $flow.showsSettings, onDismiss: { flow.settingsOpensServer = false }) {
             SettingsSheet(opensServer: flow.settingsOpensServer)
         }
+        .sheet(isPresented: $flow.showsReminders) { RemindersSheet() }
         .sheet(isPresented: Binding(get: { flow.reminderJourneyIndex != nil }, set: { if !$0 { flow.reminderJourneyIndex = nil } })) {
             if let index = flow.reminderJourneyIndex { ReminderSheet(index: index) }
         }

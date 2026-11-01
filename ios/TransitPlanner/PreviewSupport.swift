@@ -149,7 +149,7 @@ enum PreviewData {
 /// Beispiel: `#Preview(traits: .modifier(PreviewFlow.routes(PreviewData.short))) { RouteSheet() }`
 struct PreviewFlow: PreviewModifier {
     enum Stage: Equatable {
-        case onboarding, start, plan(query: String), routes, details(Int), navigation(Int), alternatives(Int)
+        case onboarding, start, plan(query: String), routes, details(Int), navigation(Int), alternatives(Int), reminders
     }
 
     var stage: Stage
@@ -203,6 +203,10 @@ struct PreviewFlow: PreviewModifier {
             flow.query = query
             flow.submitSearch()
             await flow.waitForWork()
+        case .reminders:
+            flow.choose(PreviewData.destination(response))
+            await flow.waitForWork()
+            try? await flow.setReminder(forJourney: 0, earlierMinutes: 5, warnMinutes: 5)
         case .routes, .details, .navigation, .alternatives:
             flow.choose(PreviewData.destination(response))
             guard !loading else { return }
@@ -226,6 +230,8 @@ struct PreviewFlow: PreviewModifier {
     static var startEmpty: PreviewFlow { PreviewFlow(stage: .start, savedPlaces: false) }
     static var startNoLocation: PreviewFlow { PreviewFlow(stage: .start, location: .denied) }
     static func plan(query: String = "") -> PreviewFlow { PreviewFlow(stage: .plan(query: query)) }
+    /// D2 mit einer gespeicherten Erinnerung.
+    static var reminders: PreviewFlow { PreviewFlow(stage: .reminders, response: PreviewData.long) }
     static var loading: PreviewFlow { PreviewFlow(stage: .routes, loading: true) }
     static func routes(_ response: RoutesResponse?) -> PreviewFlow { PreviewFlow(stage: .routes, response: response) }
     /// Leere Ergebnisliste (H2).

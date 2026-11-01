@@ -42,14 +42,6 @@ final class SwiftDataPlaces: PlaceStoring {
         self.sealer = sealer
     }
 
-    /// Echter Speicher; faellt der Store aus, bleibt der Verlauf fuer diese Sitzung im Speicher.
-    static func live(secrets: any SecretStore) -> any PlaceStoring {
-        guard let container = (try? TransitStore.makeContainer()) ?? (try? TransitStore.makeContainer(inMemory: true)) else {
-            return MemoryPlaces()
-        }
-        return SwiftDataPlaces(container: container, sealer: LocalSealer(secrets: secrets))
-    }
-
     func favorites() -> [SavedPlace] {
         return favoriteRows().compactMap { row in
             open(row.sealedEndpoint).map { SavedPlace(id: row.id, endpoint: $0, isFavorite: true, role: row.role) }

@@ -13,6 +13,7 @@ settings:
     GCC_TREAT_WARNINGS_AS_ERRORS: YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     DEAD_CODE_STRIPPING: YES
+    DEVELOPMENT_TEAM: 2L3NSWH76D
 packages:
   TransitCore:
     path: TransitCore
@@ -24,6 +25,10 @@ targets:
       - path: TransitPlanner
     dependencies:
       - package: TransitCore
+    entitlements:
+      path: TransitPlanner/TransitPlanner.entitlements
+      properties:
+        com.apple.developer.usernotifications.time-sensitive: true
     info:
       path: TransitPlanner/Info.plist
       properties:
@@ -35,6 +40,9 @@ targets:
           UIApplicationSupportsMultipleScenes: false
         ITSAppUsesNonExemptEncryption: false
         NSLocationWhenInUseUsageDescription: "Dein Standort wird nur auf dem Gerät verwendet, um Haltestellen in der Nähe und Fußwege zu berechnen. Ans Fahrplan-Backend geht nur eine gerundete Koordinate."
+        # Neuberechnung der Erinnerungen ca. 30 Min. vor dem Losgehen (BGAppRefreshTask, ReminderCenter.backgroundTaskID).
+        UIBackgroundModes: [fetch]
+        BGTaskSchedulerPermittedIdentifiers: [de.carlojansen.transitplanner.reminder-refresh]
         # ATS: Standard (kein NSAllowsArbitraryLoads). TLS 1.3 und Pinning erzwingt TransitCore.
     settings:
       base:

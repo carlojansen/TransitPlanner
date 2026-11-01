@@ -204,24 +204,6 @@ private func iso(_ time: String) -> Date {
         #expect(f.navJourney == nil && f.navPosition == nil)
     }
 
-    @Test func reminderBelongsToItsJourneyAndResetsOnNewPlanning() async throws {
-        let f = AppFlow(.fakes(planner: FakeRoutePlanner(), onboarding: .withLocation, debounce: .milliseconds(10)))
-        f.send(.editEndpoint(.destination))
-        f.choose(Self.stop)
-        await f.waitForWork()
-        #expect(try #require(f.routes).journeys.count > 1)
-        let at = iso("06:10:00")
-        f.setReminder(at: at, forJourney: 0)
-        #expect(f.reminderTime(forJourney: 0) == at)
-        #expect(f.reminderTime(forJourney: 1) == nil)
-        f.send(.back)
-        f.send(.planTapped)
-        await f.waitForWork()
-        #expect(f.phase == .routeSelection)
-        #expect(f.routes != nil)
-        #expect(f.reminderTime(forJourney: 0) == nil)
-    }
-
     @Test func endingNavigationDropsLiveLocation() async {
         let clock = Clock()
         let f = await navigatingFlow(clock: clock)

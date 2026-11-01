@@ -25,6 +25,12 @@ import TransitCore
         Row(from: .start, event: .reset, to: nil),
         Row(from: .start, event: .journeySelected(0), to: nil),
         Row(from: .start, event: .startNavigation(0), to: nil),
+        // Tipp auf eine Erinnerung: aus jeder Phase in die gespeicherte Fahrt
+        Row(from: .start, event: .resumeTrip, to: .navigation(0)),
+        Row(from: .plan(nil), event: .resumeTrip, to: .navigation(0)),
+        Row(from: .tripDetails(2), event: .resumeTrip, to: .navigation(0)),
+        Row(from: .navigation(1), event: .resumeTrip, to: .navigation(0)),
+        Row(from: .arrival, event: .resumeTrip, to: .navigation(0)),
         // Start (B1, 27.10.): Favorit, Verlauf oder Naehe sucht sofort
         Row(from: .start, event: .endpointChosen, to: .routeSelection),
         // Nur waehrend der Rate-Limit-Sperre: Tipp im Start zeigt Planen mit Restzeit
