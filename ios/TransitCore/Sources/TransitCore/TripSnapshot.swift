@@ -48,6 +48,8 @@ public struct TripSnapshot: Codable, Sendable, Hashable {
         public let delayMinutes: Int?
         public let status: ReminderPlan.Status
         public let isEstimated: Bool
+        /// Wie `Journey.cancelled`; fehlt in aelteren Dateien.
+        public let cancelled: Bool?
         public let rides: [Ride]
 
         init(_ plan: ReminderPlan) {
@@ -58,6 +60,7 @@ public struct TripSnapshot: Codable, Sendable, Hashable {
             delayMinutes = plan.delayMinutes
             status = plan.status
             isEstimated = plan.isEstimated
+            cancelled = plan.journey.cancelled
             rides = plan.journey.legs.filter { !$0.isWalk }.map(Ride.init)
         }
     }
@@ -112,7 +115,8 @@ public enum TripSnapshotFile {
         } catch {
             throw .storageUnavailable
         }
-        // Klartext nicht ins Backup; die App schreibt die Datei beim Start neu. `.atomic` setzt das Attribut zurueck.
+        // Klartext nicht ins Backup. `.atomic` setzt das Attribut zurueck, also nach jedem Schreiben. Fehlt die Datei nach
+        // einer Wiederherstellung, legt der Abgleich beim Start sie an, weil sich der Inhalt dann unterscheidet.
         var target = url
         var values = URLResourceValues()
         values.isExcludedFromBackup = true

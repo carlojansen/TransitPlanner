@@ -14,20 +14,35 @@ public extension TripSnapshot {
 
     /// Vorberechnet: ein Eintrag je Wechsel, auch ohne Reload (`.after` ist nur ein fruehester Zeitpunkt). Zu nahe Wechsel
     /// warten auf den Mindestabstand; was sie dabei ueberholen, steckt im Stand des spaeteren Eintrags. Eine Fahrt verschwindet
-    /// also hoechstens `minimumEntryGap` zu spaet, nie gar nicht.
+    /// also hoechstens `minimumEntryGap` zu spaet, nie gar nicht. Der Abstand gilt nicht zum Eintrag `now`, sonst stuende
+    /// kurz vor dem Losgehen "Los in 0:00" statt "Jetzt losgehen".
     func timeline(now: Date) -> [TimelineStep] {
-        let changes = trips.flatMap { [$0.leaveAt.addingTimeInterval(-Self.countdownLead), $0.leaveAt, $0.firstDeparture, $0.arrival] }
-        var dates = [now]
-        for change in changes.sorted() {
-            guard let last = dates.last, change > last else { continue }
-            dates.append(max(change, last.addingTimeInterval(Self.minimumEntryGap)))
+        let changes = trips.flatMap {
+            [$0.leaveAt.addingTimeInterval(-Self.countdownLead), $0.leaveAt, $0.firstDeparture, $0.arrival] + $0.rides.compactMap(\.arrival)
         }
-        return dates.map { date in TimelineStep(date: date, trip: trips.first { $0.arrival > date }) }
+        var dates: [Date] = []
+        for change in changes.sorted() where change > dates.last ?? now {
+            dates.append(dates.last.map { max(change, $0.addingTimeInterval(Self.minimumEntryGap)) } ?? change)
+        }
+        return ([now] + dates).map { TimelineStep(date: $0, trip: trip(at: $0)) }
+    }
+
+    /// `trips` ist nach Losgehen sortiert (`ReminderCenter.rows`), das fruehere gewinnt. Ist es schon abgefahren, geht eine
+    /// Fahrt vor, deren Losgehen ansteht: unterwegs zaehlt der naechste Aufbruch mehr als die laufende Fahrt.
+    func trip(at date: Date) -> Trip? {
+        let open = trips.filter { $0.endsAt > date }
+        return open.first { [.soon, .leaveNow].contains($0.phase(at: date)) } ?? open.first
     }
 }
 
 public extension TripSnapshot.Trip {
     enum Phase: Sendable, Hashable { case later, soon, leaveNow, riding }
+
+    /// Ab hier zeigt das Widget die Fahrt nicht mehr. Weggefallen endet sie bei der Abfahrt wie `ReminderCenter.lost`.
+    var endsAt: Date { status == .lost ? min(firstDeparture, arrival) : arrival }
+
+    /// Wie `ReminderText.lostTitle`.
+    var isCancelled: Bool { cancelled == true || rides.contains(where: \.cancelled) }
 
     func phase(at date: Date) -> Phase {
         if date >= firstDeparture { return .riding }
@@ -35,25 +50,33 @@ public extension TripSnapshot.Trip {
         return date >= leaveAt.addingTimeInterval(-TripSnapshot.countdownLead) ? .soon : .later
     }
 
-    /// Das Fahrzeug, um das es gerade geht: unterwegs das aktuelle, davor das erste.
-    func ride(at date: Date) -> TripSnapshot.Ride? {
-        rides.first { ($0.arrival ?? .distantFuture) > date } ?? rides.last
+    /// Fahrzeuge ab dem aktuellen; angekommene fallen weg.
+    func remainingRides(at date: Date) -> ArraySlice<TripSnapshot.Ride> {
+        rides.drop { ($0.arrival ?? .distantFuture) <= date }
     }
 
-    /// Wie `ReminderText.lostTitle`; nil, solange die Verbindung steht.
+    /// Das Fahrzeug, um das es gerade geht: unterwegs das aktuelle, davor das erste.
+    func ride(at date: Date) -> TripSnapshot.Ride? { remainingRides(at: date).first ?? rides.last }
+
+    /// nil, solange die Verbindung steht.
     var lostText: String? {
         guard status == .lost else { return nil }
-        return rides.contains(where: \.cancelled) ? String(localized: "Verbindung fällt aus", bundle: .module)
+        return isCancelled ? String(localized: "Verbindung fällt aus", bundle: .module)
             : String(localized: "Anschluss reicht nicht mehr", bundle: .module)
     }
 
     /// Die Verspaetung gilt der ersten Abfahrt, unterwegs zaehlt die Ankunft.
     func visibleDelay(at date: Date) -> Int? { phase(at: date) == .riding ? nil : delayMinutes }
 
-    /// "08:32", an einem anderen Tag "Mo., 08:32"; "ca.", solange nicht neu berechnet.
+    /// "08:32", an einem anderen Tag "Mo., 08:32", ab 7 Tagen "8. Nov., 08:32"; "ca.", solange nicht neu berechnet.
     func leaveText(at date: Date) -> String {
-        let time = Calendar.current.isDate(leaveAt, inSameDayAs: date) ? leaveAt.clockText
-            : leaveAt.formatted(.clock.weekday(.abbreviated))
+        let time = if Calendar.current.isDate(leaveAt, inSameDayAs: date) {
+            leaveAt.clockText
+        } else if leaveAt.timeIntervalSince(date) >= 7 * 24 * 3600 {
+            leaveAt.formatted(.clock.day().month(.abbreviated))
+        } else {
+            leaveAt.formatted(.clock.weekday(.abbreviated))
+        }
         return isEstimated ? String(localized: "ca. \(time)", bundle: .module) : time
     }
 

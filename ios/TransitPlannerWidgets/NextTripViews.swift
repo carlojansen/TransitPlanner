@@ -64,11 +64,11 @@ struct EmptyTripView: View {
                 Image(systemName: "bell")
                     .font(.title2)
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.labelSecondary))
                     .accessibilityHidden(true)
                 Text("Keine Erinnerungen")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(.labelSecondary))
                     .multilineTextAlignment(.center)
                     .minimumScaleFactor(0.6)
             }
@@ -115,7 +115,7 @@ struct TripHead: View {
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 if let eyebrow = TripValue.eyebrow(trip, at: entry.date) {
-                    Text(eyebrow).font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.6)
+                    Text(eyebrow).font(.caption).foregroundStyle(Color(.labelSecondary)).lineLimit(1).minimumScaleFactor(0.6)
                 }
                 TripValue(entry: entry, trip: trip)
                     .font(.title2.weight(.semibold))
@@ -196,7 +196,7 @@ struct SmallTripView: View {
                 }
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color(.labelSecondary))
             .minimumScaleFactor(0.6)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -210,6 +210,7 @@ struct MediumTripView: View {
 
     var body: some View {
         let limit = typeSize.isAccessibilitySize ? 2 : 3
+        let rides = trip.remainingRides(at: entry.date)
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 TripHead(entry: entry, trip: trip).layoutPriority(1)
@@ -218,7 +219,7 @@ struct MediumTripView: View {
                 if let stop = trip.rides.last?.to {
                     Text("nach \(stop)")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.labelSecondary))
                         .lineLimit(2)
                         .minimumScaleFactor(0.6)
                         .privacySensitive()
@@ -226,13 +227,13 @@ struct MediumTripView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(trip.rides.prefix(limit).enumerated()), id: \.offset) { _, ride in
+                ForEach(Array(rides.prefix(limit).enumerated()), id: \.offset) { _, ride in
                     RideRow(ride: ride)
                 }
-                if trip.rides.count > limit {
-                    Text("und \(trip.rides.count - limit) weitere")
+                if rides.count > limit {
+                    Text("und \(rides.count - limit) weitere")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(.labelSecondary))
                         .minimumScaleFactor(0.6)
                 }
             }
@@ -256,7 +257,7 @@ struct RideRow: View {
                 }
             }
             if let stop = ride.from {
-                Text(stop).font(.caption2).foregroundStyle(.secondary).privacySensitive()
+                Text(stop).font(.caption2).foregroundStyle(Color(.labelSecondary)).privacySensitive()
             }
         }
         .font(.caption)
@@ -289,9 +290,10 @@ struct RectangularTripView: View {
             .widgetAccentable()
             Text([ride?.badgeText, ride?.departure?.clockText, large ? nil : ride?.platformText].compactMap { $0 }.joined(separator: " · "))
                 .monospacedDigit()
+                .contentTransition(.numericText())
             // Drei Zeilen sind fest: die Verspaetung geht vor, bei AX steht das Gleis statt des Halts.
             if let delay {
-                Text("\(delay) Min. später")
+                Text("\(delay) Min. später").monospacedDigit().contentTransition(.numericText())
             } else if large, let platform = ride?.platformText {
                 Text(platform)
             } else if !large, let stop = ride?.from {
@@ -318,6 +320,7 @@ struct CircularTripView: View {
                     .font(.caption.weight(.semibold))
                     .fontDesign(.rounded)
                     .monospacedDigit()
+                    .contentTransition(.numericText(countsDown: true))
                     .multilineTextAlignment(.center)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
@@ -333,7 +336,7 @@ struct CircularTripView: View {
 
     @ViewBuilder private var value: some View {
         if trip.status == .lost {
-            Text(trip.rides.contains(where: \.cancelled) ? "Ausfall" : "Anschluss")
+            Text(trip.isCancelled ? "Ausfall" : "Anschluss")
         } else if trip.phase(at: entry.date) == .leaveNow {
             Text("Los")
         } else if trip.phase(at: entry.date) == .later {
