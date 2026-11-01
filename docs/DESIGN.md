@@ -278,7 +278,7 @@ der Karte; bei bequemem Puffer entfällt die Zeile). Liste aller noch kommenden 
 - Oben im Sheet (`safeAreaInset(edge: .top)`), Text aus `TransitError.errorDescription`. Nie Alerts. VoiceOver: `AccessibilityNotification.Announcement`.
 - Bleibt, solange der Zustand gilt (Offline, Rate-Limit); verschwindet erst bei Erfolg. Motion.standard, bei Reduce Motion nur Überblenden.
 - Rate-Limit: Restzeit aus Retry-After (`Text(timerInterval:)`), Suchen und Starten so lange deaktiviert, kein Auto-Retry.
-- Zuordnung: offline/upstream* → Offline/Server; missingToken/unauthorized → Token (öffnet A2); locationDenied → Standort; refreshExpired/notFound → Abgelaufen; pinningFailed → Sicherheit (keine Details, keine Umgehung); removedLongDistance → Ausgeblendet; cancelled → nichts.
+- Zuordnung: offline/upstream* → Offline/Server; missingToken/unauthorized → Token (öffnet A2); locationDenied → Standort; refreshExpired/notFound → Abgelaufen; pinningFailed → Sicherheit (keine Details, keine Umgehung); storageUnavailable → Speicher (Erinnerungen, keine Aktion); removedLongDistance → Ausgeblendet; cancelled → nichts.
 - Tint-Fläche + Symbol in status/warn, accent/blue oder status/alert; Bedeutung steht immer auch im Text.
 
 **H2 Keine Verbindung**
