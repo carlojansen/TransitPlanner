@@ -21,7 +21,7 @@
         }
       }
     },
-    "ab %@" : {
+    "%lld Minuten verspätet" : {
 
     },
     "Abfahrt" : {
@@ -29,6 +29,9 @@
     },
     "Abgebrochen." : {
       "extractionState" : "manual"
+    },
+    "Ankunft %@" : {
+
     },
     "Anschluss reicht nicht mehr" : {
 
@@ -76,7 +79,7 @@
     "Keine Verbindung gefunden." : {
       "extractionState" : "manual"
     },
-    "nach %@" : {
+    "Losgehen %@" : {
 
     },
     "Sichere Verbindung zum Server nicht möglich." : {
@@ -115,6 +118,15 @@
     },
     "Zugangsdaten konnten nicht gelesen werden." : {
       "extractionState" : "manual"
+    },
+    "ab %@" : {
+
+    },
+    "ca. %@" : {
+
+    },
+    "nach %@" : {
+
     }
   },
   "version" : "1.0"

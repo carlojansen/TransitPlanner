@@ -77,14 +77,6 @@ public struct TripSnapshot: Codable, Sendable, Hashable {
 
     /// Haengt nicht von der Uhr ab: gleicher Stand, gleicher Inhalt.
     public init(plans: [ReminderPlan]) { self.init(trips: plans.map(Trip.init)) }
-
-    /// Die App raeumt nur auf, wenn sie laeuft; Widgets filtern selbst.
-    public func upcoming(now: Date) -> [Trip] { trips.filter { $0.arrival >= now } }
-
-    /// Naechstes Lesen der Datei: wenn eine Fahrt endet, spaetestens nach `rereadInterval`.
-    public func nextReload(now: Date) -> Date {
-        min(now.addingTimeInterval(Self.rereadInterval), upcoming(now: now).map(\.arrival).min() ?? .distantFuture)
-    }
 }
 
 /// JSON im App-Group-Container statt UserDefaults: nur Dateien tragen den Dateischutz aus AGENT.md 3.3.1.

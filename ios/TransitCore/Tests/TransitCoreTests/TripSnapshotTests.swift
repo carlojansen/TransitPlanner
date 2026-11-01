@@ -93,23 +93,96 @@ import Testing
         #expect(throws: TransitError.storageUnavailable) { try TripSnapshotFile.write(.empty, to: unreachable) }
     }
 
-    @Test func endedTripsDropOutAndReloadFollows() throws {
-        let snapshot = TripSnapshot(plans: [try helper.plan()])
-        let arrival = try #require(snapshot.trips.first?.arrival)
-        #expect(snapshot.upcoming(now: arrival).count == 1)
-        #expect(snapshot.upcoming(now: arrival.addingTimeInterval(1)).isEmpty)
-        #expect(snapshot.nextReload(now: arrival.addingTimeInterval(-60)) == arrival)
-        let far = arrival.addingTimeInterval(-7200)
-        #expect(snapshot.nextReload(now: far) == far.addingTimeInterval(TripSnapshot.rereadInterval))
-        #expect(TripSnapshot.empty.nextReload(now: far) == far.addingTimeInterval(TripSnapshot.rereadInterval))
+    func snapshot(_ plans: ReminderPlan...) -> TripSnapshot { TripSnapshot(plans: plans) }
+
+    @Test func emptySnapshotHasOneEmptyEntry() {
+        #expect(TripSnapshot.empty.timeline(now: helper.at("05:00:00")) == [.init(date: helper.at("05:00:00"), trip: nil)])
     }
 
-    @Test func fileStaysOutOfBackupsAfterEveryWrite() throws {
-        let url = try tempFile()
-        try TripSnapshotFile.write(.empty, to: url)
-        try TripSnapshotFile.write(.empty, to: url)
-        let values = try URL(filePath: url.path).resourceValues(forKeys: [.isExcludedFromBackupKey])
-        #expect(values.isExcludedFromBackup == true)
+    /// Countdown-Beginn, Losgehen, Abfahrt, Ankunft; Fixture: Losgehen 06:02, Abfahrt 06:08, Ankunft der Fahrt spaeter.
+    @Test func timelineFollowsTheTripAndDropsItAtArrival() throws {
+        let plan = try helper.plan()
+        let trip = try #require(snapshot(plan).trips.first)
+        let start = helper.at("04:00:00")
+        let steps = snapshot(plan).timeline(now: start)
+        #expect(steps.map(\.date) == [start, trip.leaveAt.addingTimeInterval(-TripSnapshot.countdownLead), trip.leaveAt,
+                                      trip.firstDeparture, trip.arrival])
+        #expect(steps.dropLast().allSatisfy { $0.trip == trip })
+        #expect(steps.last?.trip == nil)
+    }
+
+    @Test func tripsOverAtStartAreGone() throws {
+        let snapshot = snapshot(try helper.plan())
+        let arrival = try #require(snapshot.trips.first?.arrival)
+        #expect(snapshot.timeline(now: arrival) == [.init(date: arrival, trip: nil)])
+        #expect(snapshot.timeline(now: arrival.addingTimeInterval(1)).count == 1)
+    }
+
+    /// Dicht liegende Aenderungen: nie unter dem Mindestabstand, die Ankunft geht trotzdem nicht verloren.
+    @Test(arguments: stride(from: 0, to: 3600, by: 97).map(TimeInterval.init))
+    func entriesKeepTheirDistanceAndOrder(offset: TimeInterval) throws {
+        let early = try helper.plan()
+        let late = try helper.plan(earlier: 2)
+        let snapshot = snapshot(late, early)
+        let now = helper.at("05:00:00").addingTimeInterval(offset)
+        let steps = snapshot.timeline(now: now)
+        for (a, b) in zip(steps, steps.dropFirst()) {
+            #expect(b.date.timeIntervalSince(a.date) >= TripSnapshot.minimumEntryGap)
+        }
+        #expect(steps.first?.date == now)
+        #expect(steps.last?.trip == nil)
+    }
+
+    /// Zwei Fahrten, Losgehen 06:00 und 06:02, Abfahrt je 06:08: Wechsel innerhalb des Abstands stecken im spaeteren Eintrag.
+    @Test func nearChangesWaitAndMerge() throws {
+        let snapshot = snapshot(try helper.plan(earlier: 2), try helper.plan())
+        let steps = snapshot.timeline(now: helper.at("05:59:00"))
+        #expect(steps.prefix(3).map(\.date) == [helper.at("05:59:00"), helper.at("06:04:00"), helper.at("06:09:00")])
+    }
+
+    @Test func phasesFollowTheClock() throws {
+        let trip = try #require(snapshot(try helper.plan()).trips.first)
+        #expect(trip.phase(at: trip.leaveAt.addingTimeInterval(-TripSnapshot.countdownLead - 1)) == .later)
+        #expect(trip.phase(at: trip.leaveAt.addingTimeInterval(-TripSnapshot.countdownLead)) == .soon)
+        #expect(trip.phase(at: trip.leaveAt) == .leaveNow)
+        #expect(trip.phase(at: trip.firstDeparture) == .riding)
+    }
+
+    @Test func spokenTextUsesClockAndHidesStopsWhenRedacted() throws {
+        let trip = try #require(snapshot(try helper.plan()).trips.first)
+        let before = helper.at("05:00:00")
+        let time = trip.leaveAt.clockText
+        let full = trip.spoken(at: before, includeStops: true)
+        #expect(full.hasPrefix("Losgehen ca. \(time)"))
+        #expect(full.contains("STR 704") && full.contains("Gleis 2 statt 1") && full.contains("Duesseldorf Hbf"))
+        let hidden = trip.spoken(at: before, includeStops: false)
+        #expect(hidden.contains("STR 704") && !hidden.contains("Duesseldorf Hbf") && !hidden.contains("Koeln Hbf"))
+        #expect(trip.spoken(at: trip.leaveAt, includeStops: true).hasPrefix("Jetzt losgehen"))
+        #expect(trip.spoken(at: trip.firstDeparture, includeStops: true).hasPrefix("Ankunft \(trip.arrival.clockText)"))
+    }
+
+    @Test func delayIsSaidInWordsUntilTheRide() throws {
+        var plan = try helper.plan()
+        _ = plan.apply(try helper.journey(), now: helper.at("05:40:00"))
+        let trip = try #require(snapshot(plan).trips.first)
+        #expect(trip.lostText == nil)
+        #expect(trip.spoken(at: helper.at("05:45:00"), includeStops: false).hasSuffix("2 Minuten verspätet"))
+        #expect(trip.visibleDelay(at: trip.firstDeparture) == nil)
+    }
+
+    @Test func lostConnectionIsSaidInWordsFirst() throws {
+        var cancelled = try helper.plan()
+        _ = cancelled.apply(try helper.journey(replacing: [
+            ("\"cancelled\": false,\n      \"realtime\": true", "\"cancelled\": true,\n      \"realtime\": true"),
+            ("\"durationSeconds\": 900, \"realtime\": true, \"cancelled\": false", "\"durationSeconds\": 900, \"realtime\": true, \"cancelled\": true"),
+        ]), now: helper.at("05:40:00"))
+        let gone = try #require(snapshot(cancelled).trips.first)
+        #expect(gone.lostText == "Verbindung fällt aus")
+        #expect(gone.spoken(at: helper.at("05:45:00"), includeStops: false).hasPrefix("Verbindung fällt aus"))
+
+        var missed = try helper.plan()
+        _ = missed.apply(try helper.journey(replacing: [("2026-10-24T06:18:00Z", "2026-10-24T06:40:00Z")]), now: helper.at("05:40:00"))
+        #expect(try #require(snapshot(missed).trips.first).lostText == "Anschluss reicht nicht mehr")
     }
 
     // Der Simulator kennt keinen Dateischutz; der Test greift nur auf einem echten Geraet.
