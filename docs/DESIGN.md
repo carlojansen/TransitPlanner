@@ -250,7 +250,13 @@ der Karte; bei bequemem Puffer entfällt die Zeile). Liste aller noch kommenden 
 ### E Systemweit (Meilenstein 4)
 - Live Activity ab T−15 bzw. mit aktiver Navigation; Update per refreshToken-Polling (60 s / 20 s vor Umstieg). Kopf: Anweisung + Echtzeit-Status; Mitte: Leg-Bar mit Live-Punkt; Fuß: Gleis/Steig + Refresh-Knopf (AppIntent), 44 pt.
 - Dynamic Island Compact: Symbol + Linie in Linienfarbe, rechts kontextabhängig ("Los in 4m" / "240m" / "Ank. 14:22"). Minimal: Minuten + Status-Ring. Expanded: Anweisung, Leg-Bar, Ziel-Gleis, Refresh.
-- Widgets: accessoryRectangular (nächste 2 Abfahrten + Gehzeit), accessoryCircular (Minuten bis Aufbruch), systemSmall (beste Verbindung zum Tagesziel), systemMedium (Abfahrtsmonitor). Daten aus der App Group, kein eigener Netzabruf mit Standort.
+- Widget "Nächste Fahrt" (Stand Etappe 4, ersetzt den ersten Entwurf mit Abfahrtsmonitor): alle Größen zeigen die nächste Erinnerung, Daten nur aus der App Group, kein Netz. Tipp öffnet die App (kein Deep Link).
+  - Zustände: mehr als 60 Min. vor dem Losgehen "Losgehen" + Uhrzeit (anderer Tag mit Wochentag, "ca.", solange nicht neu berechnet); danach "Los in" + laufender Timer; ab Losgehen "Jetzt losgehen"; ab Abfahrt "Ankunft" + Uhrzeit. Weggefallen: "Verbindung fällt aus" bzw. "Anschluss reicht nicht mehr" mit Warnsymbol, in status/alert. Verspätung als Text "3 Min. später" in status/warn, Gleiswechsel "Gleis 2 statt 1". Leer: Glocke, "Keine Erinnerungen".
+  - systemSmall: Linien-Badge, Eyebrow, Wert (Kennzahl-Stil title2, Rounded Semibold), Verspätung, Halt, Gleis.
+  - systemMedium: links wie Small mit Ziel-Haltestelle, rechts die Fahrzeuge (Badge, Abfahrt oder "fällt aus", Halt), höchstens 3, danach "und 1 weitere".
+  - accessoryRectangular: drei Zeilen: Zustand; Linie · Abfahrt · Gleis; Verspätung, sonst Halt. accessoryCircular: Symbol und Uhrzeit bzw. Timer, "Los", "Ausfall", "Anschluss".
+  - AX: Small ohne Halt und Gleis, Medium höchstens 2 Fahrzeuge, Badge ohne Symbol, die Zeit neben dem Badge wird nie gekürzt; Rectangular nennt das Gleis statt des Halts.
+  - Getönt/Akzent: Badge nur als Rand (`widgetAccentable`), weil Fläche und Schrift sonst gleich gefärbt würden. Halte und Ziel `privacySensitive`, VoiceOver lässt sie dann ebenfalls weg. Farben aus den Tokens in Abschnitt 1, im Widget derselbe Asset Catalog.
 
 ### F Auswertung (Meilenstein 5)
 - Über den Kartenknopf chart.bar.xaxis; eigenes Sheet .large mit Schließen-Knopf.
