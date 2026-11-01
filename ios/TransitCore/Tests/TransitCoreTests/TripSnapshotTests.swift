@@ -104,10 +104,19 @@ import Testing
         #expect(TripSnapshot.empty.nextReload(now: far) == far.addingTimeInterval(TripSnapshot.rereadInterval))
     }
 
+    @Test func fileStaysOutOfBackupsAfterEveryWrite() throws {
+        let url = try tempFile()
+        try TripSnapshotFile.write(.empty, to: url)
+        try TripSnapshotFile.write(.empty, to: url)
+        let values = try URL(filePath: url.path).resourceValues(forKeys: [.isExcludedFromBackupKey])
+        #expect(values.isExcludedFromBackup == true)
+    }
+
     // Der Simulator kennt keinen Dateischutz; der Test greift nur auf einem echten Geraet.
     #if os(iOS) && !targetEnvironment(simulator)
     @Test func fileIsProtectedUntilFirstUnlock() throws {
         let url = try tempFile()
+        try TripSnapshotFile.write(.empty, to: url)
         try TripSnapshotFile.write(.empty, to: url)
         let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
         #expect(attrs[.protectionKey] as? FileProtectionType == .completeUntilFirstUserAuthentication)

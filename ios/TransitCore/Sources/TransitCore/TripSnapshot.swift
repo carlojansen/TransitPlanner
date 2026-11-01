@@ -120,5 +120,10 @@ public enum TripSnapshotFile {
         } catch {
             throw .storageUnavailable
         }
+        // Klartext nicht ins Backup; die App schreibt die Datei beim Start neu. `.atomic` setzt das Attribut zurueck.
+        var target = url
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? target.setResourceValues(values)
     }
 }

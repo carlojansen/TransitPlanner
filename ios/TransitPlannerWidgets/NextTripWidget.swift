@@ -45,6 +45,7 @@ struct NextTripView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.6)
         }
         .containerBackground(.fill.tertiary, for: .widget)
     }
