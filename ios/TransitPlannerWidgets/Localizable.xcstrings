@@ -1,0 +1,135 @@
+{
+  "sourceLanguage" : "de",
+  "strings" : {
+    "%lld Min. später" : {
+
+    },
+    "Ankunft" : {
+
+    },
+    "Anschluss" : {
+
+    },
+    "Aufzug" : {
+
+    },
+    "Ausfall" : {
+
+    },
+    "Bus" : {
+
+    },
+    "Fernzug" : {
+
+    },
+    "Flugzeug" : {
+
+    },
+    "Fußweg" : {
+
+    },
+    "Fähre" : {
+
+    },
+    "Geradeaus" : {
+
+    },
+    "Im Kreisverkehr" : {
+
+    },
+    "Keine Erinnerungen" : {
+
+    },
+    "Leicht links" : {
+
+    },
+    "Leicht rechts" : {
+
+    },
+    "Links abbiegen" : {
+
+    },
+    "Los" : {
+
+    },
+    "Los in" : {
+
+    },
+    "Los in ca." : {
+
+    },
+    "Losgehen" : {
+
+    },
+    "Nächste Fahrt" : {
+
+    },
+    "Rechts abbiegen" : {
+
+    },
+    "Regio" : {
+
+    },
+    "Regionalzug" : {
+
+    },
+    "Rufbus" : {
+
+    },
+    "S-Bahn" : {
+
+    },
+    "SEV %@" : {
+
+    },
+    "Scharf links" : {
+
+    },
+    "Scharf rechts" : {
+
+    },
+    "Seilbahn" : {
+
+    },
+    "Standseilbahn" : {
+
+    },
+    "Straßenbahn" : {
+
+    },
+    "Tram" : {
+
+    },
+    "Treppe" : {
+
+    },
+    "U-Bahn" : {
+
+    },
+    "Verkehrsmittel" : {
+
+    },
+    "Weiter" : {
+
+    },
+    "Wenden" : {
+
+    },
+    "Zeigt die nächste Fahrt aus deinen Erinnerungen. Fahrplandaten: Transitous, OpenStreetMap." : {
+
+    },
+    "ab %@" : {
+
+    },
+    "fällt aus" : {
+
+    },
+    "nach %@" : {
+
+    },
+    "und %lld weitere" : {
+
+    }
+  },
+  "version" : "1.0"
+}

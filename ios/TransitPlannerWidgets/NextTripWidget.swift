@@ -7,47 +7,21 @@ struct TransitPlannerWidgets: WidgetBundle {
     var body: some Widget { NextTripWidget() }
 }
 
-struct NextTripEntry: TimelineEntry {
-    let date: Date
-    let hasTrip: Bool
-}
-
-/// Kein Netz, nur der Snapshot der App. Der Inhalt zeigt bewusst noch keine Fahrplandaten (Etappe 4).
+/// Kein Netz, nur der Snapshot der App; Reihenfolge und Abstand kommen aus `TripSnapshot.timeline`.
 struct NextTripProvider: TimelineProvider {
-    private func entry(_ snapshot: TripSnapshot, at date: Date) -> NextTripEntry {
-        NextTripEntry(date: date, hasTrip: !snapshot.upcoming(now: date).isEmpty)
-    }
+    private func read() -> TripSnapshot { TripSnapshotFile.read(TripSnapshotFile.sharedURL) }
 
-    func placeholder(in context: Context) -> NextTripEntry { NextTripEntry(date: Date(), hasTrip: false) }
+    func placeholder(in context: Context) -> NextTripEntry { NextTripEntry(date: Date(), trip: nil) }
 
     func getSnapshot(in context: Context, completion: @escaping (NextTripEntry) -> Void) {
-        completion(entry(TripSnapshotFile.read(TripSnapshotFile.sharedURL), at: Date()))
+        let now = Date()
+        completion(NextTripEntry(date: now, trip: read().timeline(now: now).first?.trip))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<NextTripEntry>) -> Void) {
         let now = Date()
-        let snapshot = TripSnapshotFile.read(TripSnapshotFile.sharedURL)
-        completion(Timeline(entries: [entry(snapshot, at: now)], policy: .after(snapshot.nextReload(now: now))))
-    }
-}
-
-struct NextTripView: View {
-    let entry: NextTripEntry
-
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: entry.hasTrip ? "bell.badge" : "bell")
-                .font(.title2)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            Text(entry.hasTrip ? "Erinnerung gesetzt" : "Keine Erinnerungen")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .minimumScaleFactor(0.6)
-        }
-        .containerBackground(.fill.tertiary, for: .widget)
+        let entries = read().timeline(now: now).map { NextTripEntry(date: $0.date, trip: $0.trip) }
+        completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(TripSnapshot.rereadInterval))))
     }
 }
 
@@ -57,7 +31,7 @@ struct NextTripWidget: Widget {
             NextTripView(entry: entry)
         }
         .configurationDisplayName("Nächste Fahrt")
-        .description("Zeigt, ob eine Erinnerung gesetzt ist.")
-        .supportedFamilies([.systemSmall])
+        .description("Zeigt die nächste Fahrt aus deinen Erinnerungen. Fahrplandaten: Transitous, OpenStreetMap.")
+        .supportedFamilies([.accessoryRectangular, .accessoryCircular, .systemSmall, .systemMedium])
     }
 }

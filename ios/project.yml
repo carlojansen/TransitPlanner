@@ -63,6 +63,9 @@ targets:
     platform: iOS
     sources:
       - path: TransitPlannerWidgets
+      # Dieselben Farb-Tokens und Modus-Symbole wie die App.
+      - path: TransitPlanner/Theme.swift
+      - path: TransitPlanner/Assets.xcassets
     dependencies:
       - package: TransitCore
     entitlements:
@@ -80,6 +83,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: de.carlojansen.transitplanner.widgets
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_STYLE: Automatic
