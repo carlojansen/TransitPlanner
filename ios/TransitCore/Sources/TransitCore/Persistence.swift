@@ -84,6 +84,8 @@ public final class RecentSearch {
     @Attribute(.unique) public var id: UUID
     public var sealedEndpoint: Data
     public var usedAt: Date
+    /// Zuletzt gewaehltes "Frueher losgehen" fuer diesen Ort (D1). Nur die Zahl: der Ort bleibt versiegelt. Optional fuer die leichte Migration.
+    public var earlierMinutes: Int?
 
     public init(id: UUID = UUID(), sealedEndpoint: Data, usedAt: Date = .now) {
         self.id = id

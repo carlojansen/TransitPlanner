@@ -1116,7 +1116,20 @@ final class AppFlow {
               let request = reminderRequest(calibrated.journey) else { throw .internal }
         try await reminders.set(calibrated, request: request, attribution: attribution,
                                 earlierMinutes: earlierMinutes, warnMinutes: warnMinutes)
+        deps.places.setEarlierMinutes(earlierMinutes, for: request.destination)
         retireReplacedReminder(calibrated.journey)
+    }
+
+    /// D1: die gespeicherte Erinnerung derselben Fahrt, sonst der zuletzt gewaehlte Wert fuer dieses Ziel. Passt der nicht
+    /// mehr vor das Losgehen, die groesste kleinere Schnellwahl, sonst 0.
+    func suggestedEarlierMinutes(forJourney index: Int) -> Int {
+        guard let journey = journey(at: index) else { return 0 }
+        if let plan = reminders.reminder(for: journey)?.plan { return plan.earlierMinutes }
+        let target = reminderRequest(journey)?.destination.routePoint
+        guard let remembered = deps.places.recents().first(where: { $0.endpoint.routePoint == target && $0.earlierMinutes != nil })?.earlierMinutes,
+              let leave = calibratedJourney(at: index).flatMap({ try? reminders.scheduler.timeToLeave(for: $0).leaveAt }) else { return 0 }
+        let fits = { (minutes: Int) in leave.addingTimeInterval(-TimeInterval(minutes * 60)) > self.deps.now() }
+        return fits(remembered) ? remembered : ReminderSheet.earlierChoices.last { $0 < remembered && fits($0) } ?? 0
     }
 
     /// Der Nutzer hat aus "Nächste Verbindung" eine andere Fahrt gewaehlt: der alte Wecker endet. Dieselbe Fahrt behaelt ihn.
@@ -1177,6 +1190,7 @@ final class AppFlow {
         origin = .place(reminder.request.origin)
         destination = .place(reminder.request.destination)
         customTime = nil
+        isArrivalTime = false
         lastPlanKey = nil
         isStale = false
         send(.resumeTrip)
@@ -1214,6 +1228,8 @@ final class AppFlow {
         attribution = response.attribution
         isStale = false
         closeAlternatives()
+        // Wie "Naechste Verbindung": startet eine andere Fahrt, endet der Wecker der laufenden.
+        replacedReminder = navJourney.flatMap(reminders.reminder(for:))?.id
         send(.startNavigation(index))
     }
 
@@ -1327,6 +1343,10 @@ final class AppFlow {
 
     func waitForNearby() async {
         await nearbyTask?.value
+    }
+
+    func waitForPeek() async {
+        await peekTask?.value
     }
 
     func waitForReminderCheck() async {

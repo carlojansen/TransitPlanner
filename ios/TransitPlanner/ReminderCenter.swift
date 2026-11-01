@@ -173,6 +173,12 @@ final class ReminderCenter {
     private(set) var undo: Undo?
     /// Fehler aus der Liste (Rueckgaengig), als Inline-Banner in D2.
     private(set) var failure: TransitError?
+    /// "Am Gleis sein vorher" (Einstellungen); neue Erinnerungen sofort, bestehende ab ihrer naechsten Neuberechnung.
+    var stationBufferMinutes = DepartureScheduler.storedBufferMinutes {
+        didSet { UserDefaults.standard.set(stationBufferMinutes, forKey: DepartureScheduler.bufferMinutesKey) }
+    }
+
+    var scheduler: DepartureScheduler { DepartureScheduler(stationBufferSeconds: stationBufferMinutes * 60) }
 
     @ObservationIgnored private let deps: AppDependencies
     @ObservationIgnored private var undoTask: Task<Void, Never>?
@@ -209,7 +215,7 @@ final class ReminderCenter {
              earlierMinutes: Int, warnMinutes: Int) async throws(TransitError) {
         guard deps.reminders.isDurable else { throw .storageUnavailable }
         let plan = try ReminderPlan(calibrated: calibrated.withRefreshToken(nil), earlierMinutes: earlierMinutes,
-                                    warnMinutes: warnMinutes, attribution: attribution)
+                                    warnMinutes: warnMinutes, attribution: attribution, scheduler: scheduler)
         let previous = reminder(for: calibrated.journey)
         let oldToken = previous.flatMap { token($0.id) }
         let reminder = StoredReminder(id: previous?.id ?? UUID(), request: request, plan: plan)
@@ -308,11 +314,20 @@ final class ReminderCenter {
         do throws(TransitError) {
             let fresh = try await deps.refresh(token)
             // Waehrend der Anfrage geloescht: nichts wiederbeleben.
-            guard var current = self.reminder(id: id) else { return }
-            let replace = current.plan.apply(fresh, now: deps.now())
+            guard let before = self.reminder(id: id) else { return }
+            var current = before
+            let replace = current.plan.apply(fresh, now: deps.now(), scheduler: scheduler)
             if let new = fresh.refreshToken, new != token { try deps.secrets.write(Data(new.utf8), for: .refreshToken(tripID: id)) }
             try store(current)
-            if replace { try await replaceAlerts(of: current) }
+            if replace {
+                do {
+                    try await replaceAlerts(of: current)
+                } catch {
+                    // Nicht uebernommen: der naechste Lauf sieht die Aenderung wieder und ersetzt erneut.
+                    if self.reminder(id: id)?.plan == current.plan { try? store(before) }
+                    throw error
+                }
+            }
         } catch .refreshExpired {
             guard var current = self.reminder(id: id) else { return }
             current.plan.markExpired()

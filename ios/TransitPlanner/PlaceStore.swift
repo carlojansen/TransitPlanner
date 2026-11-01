@@ -10,6 +10,8 @@ struct SavedPlace: Identifiable, Hashable, Sendable {
     let isFavorite: Bool
     /// Zuhause, Uni, Arbeit oder weiterer Favorit; im Verlauf immer `.other`.
     var role: FavoritePlace.Role = .other
+    /// Zuletzt gewaehltes "Frueher losgehen" fuer diesen Ort (D1), nur im Verlauf.
+    var earlierMinutes: Int?
 }
 
 /// Favoriten und Verlauf der Planen-Ansicht. Lokal und verschluesselt; Fehler beim Speichern bleiben still,
@@ -18,6 +20,9 @@ protocol PlaceStoring: Sendable {
     @MainActor func favorites() -> [SavedPlace]
     @MainActor func recents() -> [SavedPlace]
     @MainActor func remember(_ endpoint: TripEndpoint)
+    /// Merkt "Frueher losgehen" an einem Ort im Verlauf. Legt keine Zeile an: was nicht im Verlauf steht ("Mein Standort"), kommt auch so nicht hinein.
+    // ponytail: lebt mit dem Verlauf (10 Orte, "Suchverlauf löschen"); eigenes Modell, falls Werte laenger halten sollen.
+    @MainActor func setEarlierMinutes(_ minutes: Int, for endpoint: TripEndpoint)
     /// Je Rolle (ausser `.other`) ein Ort; derselbe Ort nie doppelt (eine neue Rolle ersetzt die alte).
     @MainActor func addFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role)
     @MainActor func removeFavorite(_ id: UUID)
@@ -54,7 +59,7 @@ final class SwiftDataPlaces: PlaceStoring {
     }
 
     func recents() -> [SavedPlace] {
-        recentRows().compactMap { row in open(row.sealedEndpoint).map { SavedPlace(id: row.id, endpoint: $0, isFavorite: false) } }
+        recentRows().compactMap { row in open(row.sealedEndpoint).map { SavedPlace(id: row.id, endpoint: $0, isFavorite: false, earlierMinutes: row.earlierMinutes) } }
     }
 
     func remember(_ endpoint: TripEndpoint) {
@@ -68,6 +73,11 @@ final class SwiftDataPlaces: PlaceStoring {
         }
         // Der gewaehlte Ort steht vorn; von den uebrigen bleiben so viele, dass es insgesamt `recentPlacesLimit` sind.
         for old in rows.filter({ $0 !== hit }).dropFirst(recentPlacesLimit - 1) { context.delete(old) }
+        try? context.save()
+    }
+
+    func setEarlierMinutes(_ minutes: Int, for endpoint: TripEndpoint) {
+        recentRows().filter { open($0.sealedEndpoint)?.routePoint == endpoint.routePoint }.forEach { $0.earlierMinutes = minutes }
         try? context.save()
     }
 
@@ -127,9 +137,16 @@ final class MemoryPlaces: PlaceStoring {
 
     func remember(_ endpoint: TripEndpoint) {
         state.withLock {
+            let kept = $0.recents.first { $0.endpoint == endpoint }?.earlierMinutes
             $0.recents.removeAll { $0.endpoint == endpoint }
-            $0.recents.insert(SavedPlace(id: UUID(), endpoint: endpoint, isFavorite: false), at: 0)
+            $0.recents.insert(SavedPlace(id: UUID(), endpoint: endpoint, isFavorite: false, earlierMinutes: kept), at: 0)
             $0.recents = Array($0.recents.prefix(recentPlacesLimit))
+        }
+    }
+
+    func setEarlierMinutes(_ minutes: Int, for endpoint: TripEndpoint) {
+        state.withLock { s in
+            for i in s.recents.indices where s.recents[i].endpoint.routePoint == endpoint.routePoint { s.recents[i].earlierMinutes = minutes }
         }
     }
 

@@ -7,19 +7,26 @@ struct ReminderSheet: View {
     @Environment(AppFlow.self) private var flow
     @Environment(\.dismiss) private var dismiss
     let index: Int
-    @State private var earlierMinutes = 0
-    /// T-5 aus D3 als Standard.
-    @State private var warnMinutes = 5
+    @State private var earlierMinutes: Int
+    @State private var warnMinutes: Int
     @State private var failure: String?
     /// Verbindung beim Oeffnen: aendert sich die Liste darunter (Neu laden, Kalibrierung), gilt der Index nicht mehr.
     @State private var openedToken: String?
 
-    private static let earlierChoices = [0, 5, 10, 15, 20]
+    static let earlierChoices = [0, 5, 10, 15, 20]
     private static let warnChoices = [0, 5, 10]
+
+    /// Startwerte von aussen statt in `onAppear`: eine Aenderung dort loeste beim Oeffnen die Haptik aus.
+    /// Ohne gespeicherte Erinnerung "Vorwarnen" T-5 aus D3.
+    init(index: Int, earlierMinutes: Int = 0, warnMinutes: Int? = nil) {
+        self.index = index
+        _earlierMinutes = State(initialValue: earlierMinutes)
+        _warnMinutes = State(initialValue: warnMinutes ?? 5)
+    }
 
     private var timeToLeave: TimeToLeave? {
         guard let calibrated = flow.calibratedJourney(at: index) else { return nil }
-        return try? DepartureScheduler().timeToLeave(for: calibrated)
+        return try? flow.reminders.scheduler.timeToLeave(for: calibrated)
     }
 
     /// Losgehen laut Rueckwaertsrechnung, um "frueher losgehen" verschoben.
@@ -67,11 +74,6 @@ struct ReminderSheet: View {
         .sensoryFeedback(.selection, trigger: warnMinutes)
         .onAppear {
             openedToken = flow.journey(at: index)?.refreshToken
-            // Erneutes Oeffnen zeigt die gespeicherte Wahl, statt sie mit dem Standard zu ueberschreiben.
-            if let plan = flow.journey(at: index).flatMap(flow.reminders.reminder(for:))?.plan {
-                earlierMinutes = plan.earlierMinutes
-                warnMinutes = plan.warnMinutes
-            }
         }
         .onChange(of: flow.journey(at: index)?.refreshToken) { _, token in
             if let openedToken, token != openedToken { dismiss() }

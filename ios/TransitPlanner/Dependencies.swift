@@ -555,3 +555,9 @@ extension Accessibility {
     /// Gespeicherte Einstellung (UserDefaults); ohne Eintrag aus.
     static var stored: Accessibility { UserDefaults.standard.string(forKey: key).flatMap(Accessibility.init(rawValue:)) ?? .none }
 }
+
+extension DepartureScheduler {
+    static let bufferMinutesKey = "stationBufferMinutes"
+    /// Gespeicherte Einstellung "Am Gleis sein vorher" (UserDefaults); ohne Eintrag 2 Min.
+    static var storedBufferMinutes: Int { UserDefaults.standard.object(forKey: bufferMinutesKey) as? Int ?? 2 }
+}

@@ -97,6 +97,130 @@ private func iso(_ time: String) -> Date {
         #expect(env.notifier.alerts.map(\.kind) == [.leave])
     }
 
+    /// D1: Merken nur bei Erfolg; die gespeicherte Erinnerung derselben Fahrt geht vor, sonst gilt der Wert des Ziels.
+    @Test func earlierMinutesAreRememberedPerDestination() async throws {
+        let env = Env()
+        let places = MemoryPlaces()
+        var deps = env.deps()
+        deps.places = places
+        env.clock.set("05:00:00")
+        func flow(to destination: TripEndpoint) async -> AppFlow {
+            let f = AppFlow(deps)
+            f.send(.editEndpoint(.destination))
+            f.choose(destination)
+            await f.waitForWork()
+            return f
+        }
+        let f = await flow(to: NavigationFlowTests.stop)
+        #expect(f.suggestedEarlierMinutes(forJourney: 0) == 0)
+
+        env.store.failing.withLock { $0 = true }
+        await #expect(throws: TransitError.storageUnavailable) { try await f.setReminder(forJourney: 0, earlierMinutes: 5, warnMinutes: 0) }
+        #expect(f.suggestedEarlierMinutes(forJourney: 0) == 0)
+        env.store.failing.withLock { $0 = false }
+
+        try await f.setReminder(forJourney: 0, earlierMinutes: 10, warnMinutes: 0)
+        try await f.setReminder(forJourney: 1, earlierMinutes: 20, warnMinutes: 0)
+        #expect(f.suggestedEarlierMinutes(forJourney: 0) == 10)
+        f.reminders.purge(try #require(f.reminders.rows.first { $0.plan.earlierMinutes == 10 }).id)
+        #expect(f.suggestedEarlierMinutes(forJourney: 0) == 20)
+
+        let other = await flow(to: .stop(id: "woanders", label: "Woanders"))
+        #expect(other.suggestedEarlierMinutes(forJourney: 0) == 0)
+    }
+
+    /// Review: der gemerkte Wert darf das Losgehen nicht in die Vergangenheit schieben. 15 Min. vor dem Losgehen passt 10 noch
+    /// (5 Min. Rest), 20 und 15 nicht; passt nichts, bleibt 0. Eine gespeicherte Erinnerung behaelt ihren Wert.
+    @Test func rememberedValueNeverMovesLeavingIntoThePast() async throws {
+        let env = Env()
+        let f = await planned(env)
+        try await f.setReminder(forJourney: 0, earlierMinutes: 20, warnMinutes: 0)
+        let row = try #require(f.reminders.rows.first)
+        let leave = row.plan.scheduled.leaveAt
+        func clock(_ minutesBefore: TimeInterval) { env.clock.value.withLock { $0 = leave.addingTimeInterval(-minutesBefore * 60) } }
+        clock(10)
+        #expect(f.suggestedEarlierMinutes(forJourney: 0) == 20) // Erinnerung derselben Fahrt
+        f.reminders.purge(row.id)
+
+        clock(40)
+        #expect(f.suggestedEarlierMinutes(forJourney: 0) == 20)
+        clock(15)
+        #expect(f.suggestedEarlierMinutes(forJourney: 0) == 10)
+        clock(5)
+        #expect(f.suggestedEarlierMinutes(forJourney: 0) == 0)
+    }
+
+    /// Review: ein Sprung aus der Mitteilung laesst keine alte Ankunftssuche stehen.
+    @Test func openingAReminderResetsArrivalTime() async throws {
+        let env = Env()
+        let (f, id) = try await armed(env)
+        f.isArrivalTime = true
+        f.openReminder(id)
+        #expect(!f.isArrivalTime)
+    }
+
+    /// Review: "Wechseln" in den Alternativen beendet den Wecker der laufenden Fahrt; dieselbe Fahrt behaelt ihn.
+    @Test func switchingToAnAlternativeRetiresTheOldReminder() async throws {
+        let env = Env()
+        let (f, id) = try await armed(env)
+        f.send(.startNavigation(0))
+        f.openAlternatives()
+        await f.waitForPeek()
+        f.chooseAlternative(0)
+        #expect(f.reminders.reminder(id: id) != nil)
+
+        f.openAlternatives()
+        await f.waitForPeek()
+        f.chooseAlternative(1)
+        #expect(f.reminders.reminder(id: id) == nil)
+        #expect(env.notifier.alerts.isEmpty)
+    }
+
+    /// Review: scheitert das Ersetzen der Mitteilungen, gilt die Verschiebung nicht als uebernommen; der naechste Lauf holt sie nach.
+    @Test func failedAlertReplacementIsRetriedByTheNextCheck() async throws {
+        let env = Env()
+        let n = StepNotifier()
+        let (f, id) = try await armedFlow(env, n, warn: 0)
+        let before = try #require(f.reminders.rows.first?.plan.leaveAt)
+        let identifier = ReminderAlert.identifier(id, .leave)
+        env.refresher.set(.success(try delayed(by: 300)))
+        n.failing.withLock { $0 = true }
+        env.clock.set("05:35:00")
+        await f.reminders.checkDue()
+        #expect(f.reminders.rows.first?.plan.leaveAt == before)
+        #expect(env.store.all().first?.plan.leaveAt == before)
+
+        n.failing.withLock { $0 = false }
+        env.clock.set("05:40:00")
+        await f.reminders.checkDue()
+        let moved = before.addingTimeInterval(300)
+        #expect(f.reminders.rows.first?.plan.leaveAt == moved)
+        #expect(n.pending.withLock { $0[identifier]?.fireAt } == moved)
+    }
+
+    /// Einstellung "Am Gleis sein vorher": gespeichert, in neuen Erinnerungen und beim Refresh bestehender.
+    @Test func stationBufferReachesNewAndExistingReminders() async throws {
+        let env = Env()
+        let (f, _) = try await armed(env)
+        let before = try #require(f.reminders.rows.first?.plan)
+        #expect(before.scheduled.bufferSeconds == 120)
+
+        f.reminders.stationBufferMinutes = 5
+        let stored = DepartureScheduler.storedBufferMinutes
+        UserDefaults.standard.removeObject(forKey: DepartureScheduler.bufferMinutesKey)
+        #expect(stored == 5)
+
+        env.clock.set("05:40:00")
+        await f.reminders.checkDue()
+        let after = try #require(f.reminders.rows.first?.plan)
+        #expect(after.scheduled.bufferSeconds == 300)
+        #expect(after.leaveAt == before.leaveAt.addingTimeInterval(-180))
+        #expect(env.notifier.alerts.first { $0.kind == .leave }?.fireAt == after.leaveAt)
+
+        try await f.setReminder(forJourney: 1, earlierMinutes: 0, warnMinutes: 0)
+        #expect(f.reminders.rows.allSatisfy { $0.plan.scheduled.bufferSeconds == 300 })
+    }
+
     @Test func storedRequestNeverContainsTheLiveLocation() async throws {
         let env = Env()
         let (f, _) = try await armed(env)

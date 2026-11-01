@@ -61,6 +61,16 @@ import Testing
         #expect(alerts.last?.fireAt == p.leaveAt)
     }
 
+    /// Bestehende Erinnerungen uebernehmen "Am Gleis sein vorher" beim Refresh; "frueher" bleibt, die Rueckwaertsrechnung nicht.
+    @Test func refreshAdoptsTheCurrentStationBuffer() throws {
+        var plan = try plan(earlier: 5)
+        #expect(plan.scheduled.bufferSeconds == 120)
+        #expect(plan.apply(try journey(), now: at("05:40:00"), scheduler: DepartureScheduler(stationBufferSeconds: 300)))
+        #expect(plan.scheduled.bufferSeconds == 300)
+        #expect(plan.scheduled.leaveAt == at("05:59:00"))
+        #expect(plan.leaveAt == at("05:54:00"))
+    }
+
     @Test func driftBelowThresholdNeverAccumulates() throws {
         var p = try plan()
         // 50 s nach Plan: kein Verschieben; der naechste Vergleich laeuft gegen den gestellten Wecker, nicht gegen 06:08:50.

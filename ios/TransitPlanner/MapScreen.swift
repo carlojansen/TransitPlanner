@@ -428,7 +428,11 @@ struct SheetRoot: View {
         }
         .sheet(isPresented: $flow.showsReminders) { RemindersSheet() }
         .sheet(isPresented: Binding(get: { flow.reminderJourneyIndex != nil }, set: { if !$0 { flow.reminderJourneyIndex = nil } })) {
-            if let index = flow.reminderJourneyIndex { ReminderSheet(index: index) }
+            if let index = flow.reminderJourneyIndex {
+                // Erneutes Oeffnen zeigt die gespeicherte Wahl.
+                ReminderSheet(index: index, earlierMinutes: flow.suggestedEarlierMinutes(forJourney: index),
+                              warnMinutes: flow.journey(at: index).flatMap(flow.reminders.reminder(for:))?.plan.warnMinutes)
+            }
         }
     }
 

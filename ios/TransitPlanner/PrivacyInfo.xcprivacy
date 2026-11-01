@@ -24,7 +24,7 @@
 			</array>
 		</dict>
 	</array>
-	<!-- Required-Reason-APIs: UserDefaults nur fuer den gemerkten ersten Start (A1, Standort ja/nein), nur innerhalb der App.
+	<!-- Required-Reason-APIs: UserDefaults nur fuer Einstellungen (erster Start, Gehtempo-Faktor, Stufenfrei, Stationspuffer), keine Orte, nur innerhalb der App.
 	     Keine Datei-Zeitstempel, kein Systemstart, kein Speicherplatz. -->
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>

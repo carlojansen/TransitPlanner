@@ -442,6 +442,23 @@ import TransitCore
         }
     }
 
+    /// "Frueher losgehen" haengt am Verlaufseintrag: uebersteht das Vorziehen, legt nichts neu an, geht mit dem Verlauf.
+    @Test func earlierMinutesLiveOnRecentPlaces() throws {
+        let container = try TransitStore.makeContainer(inMemory: true)
+        let stores: [any PlaceStoring] = [MemoryPlaces(), SwiftDataPlaces(container: container, sealer: LocalSealer(secrets: InMemorySecretStore()))]
+        for places in stores {
+            places.remember(Self.stopEndpoint)
+            places.remember(Self.addressEndpoint)
+            places.setEarlierMinutes(15, for: Self.stopEndpoint)
+            places.remember(Self.stopEndpoint)
+            places.setEarlierMinutes(0, for: .stop(id: "nicht-im-verlauf", label: "Fremd"))
+            #expect(places.recents().map(\.earlierMinutes) == [15, nil])
+            #expect(places.recents().count == 2)
+            places.clearRecents()
+            #expect(places.recents().isEmpty)
+        }
+    }
+
     @Test func nearbyLoadsOncePerStartAndAtMostEveryTwoMinutes() async {
         let calls = Mutex(0)
         let now = Mutex(Date())

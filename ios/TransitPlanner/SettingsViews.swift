@@ -216,7 +216,7 @@ struct SettingsSheet: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
-                // Gehtempo, Umstiegspuffer, Verkehrsmittel und Mitteilungen folgen, sobald sie etwas bewirken.
+                // Gehtempo, Verkehrsmittel und Mitteilungen folgen, sobald sie etwas bewirken.
                 Section {
                     Button { openSystemSettings() } label: {
                         SettingsRow(title: "Standort", value: locationValue, chevron: true)
@@ -233,6 +233,11 @@ struct SettingsSheet: View {
                     StepFreeToggle()
                 } footer: {
                     Text("Wege zu und zwischen den Fahrzeugen meiden Treppen und nutzen Aufzüge. Ob ein Fahrzeug selbst barrierefrei ist, steht nicht zuverlässig in den Daten.")
+                }
+                Section {
+                    StationBufferStepper()
+                } footer: {
+                    Text("Gilt für neue Erinnerungen, bestehende übernehmen den Wert bei der nächsten Neuberechnung. Bei 0 Min. verschiebt „Später erinnern“ nichts mehr, außer du gehst früher los. Umstiege bewertet die App davon unabhängig.")
                 }
                 Section {
                     NavigationLink(value: Route.sources) { SettingsRow(title: "Quellen und Lizenzen") }
@@ -340,5 +345,29 @@ struct StepFreeToggle: View {
         @Bindable var flow = flow
         Toggle("Stufenfrei reisen", isOn: Binding { flow.accessibility == .stepFree } set: { flow.accessibility = $0 ? .stepFree : .none })
             .accessibilityIdentifier("stepFreeToggle")
+    }
+}
+
+/// Am Gleis sein vorher: globaler Puffer vor dem ersten Fahrzeug, in D1 nur angezeigt.
+private struct StationBufferStepper: View {
+    @Environment(AppFlow.self) private var flow
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        @Bindable var reminders = flow.reminders
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout())
+        Stepper(value: $reminders.stationBufferMinutes, in: 0...15) {
+            layout {
+                Text("Am Gleis sein vorher")
+                if !typeSize.isAccessibilitySize { Spacer() }
+                Text("\(reminders.stationBufferMinutes) Min.")
+                    .foregroundStyle(Color(.labelSecondary)).monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(Motion.micro, value: reminders.stationBufferMinutes)
+            }
+        }
+        .frame(minHeight: 44)
+        .accessibilityValue(Text("\(reminders.stationBufferMinutes) Minuten"))
+        .accessibilityIdentifier("stationBufferStepper")
     }
 }

@@ -272,7 +272,7 @@ public struct Journey: Codable, Sendable, Hashable {
         var copy = self
         copy.hasPolylines = original.hasPolylines
         copy.legs = legs.map { leg in
-            guard let source = original.legs.first(where: { $0.index == leg.index }) else { return leg }
+            guard let source = original.legs.first(where: { $0.index == leg.index && $0.isWalk == leg.isWalk }) else { return leg }
             var merged = leg
             merged.polyline = leg.polyline ?? source.polyline
             if leg.steps.isEmpty { merged.steps = source.steps }
