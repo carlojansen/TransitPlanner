@@ -23,6 +23,7 @@ targets:
     platform: iOS
     sources:
       - path: TransitPlanner
+      - path: Shared
     dependencies:
       - package: TransitCore
       - target: TransitPlannerWidgets
@@ -42,9 +43,11 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         ITSAppUsesNonExemptEncryption: false
-        NSLocationWhenInUseUsageDescription: "Dein Standort wird nur auf dem Gerät verwendet, um Haltestellen in der Nähe und Fußwege zu berechnen. Ans Fahrplan-Backend geht nur eine gerundete Koordinate."
+        NSLocationWhenInUseUsageDescription: "Dein Standort wird nur auf dem Gerät verwendet, um Haltestellen in der Nähe und Fußwege zu berechnen, während einer Fahrt auch bei gesperrtem iPhone. Ans Fahrplan-Backend geht nur eine gerundete Koordinate."
         # Neuberechnung der Erinnerungen ca. 30 Min. vor dem Losgehen (BGAppRefreshTask, ReminderCenter.backgroundTaskID).
-        UIBackgroundModes: [fetch]
+        # location: Navigation bei gesperrtem Geraet, nur mit CLBackgroundActivitySession ab der Gehphase.
+        UIBackgroundModes: [fetch, location]
+        NSSupportsLiveActivities: true
         BGTaskSchedulerPermittedIdentifiers: [de.carlojansen.transitplanner.reminder-refresh]
         # ATS: Standard (kein NSAllowsArbitraryLoads). TLS 1.3 und Pinning erzwingt TransitCore.
     settings:
@@ -63,6 +66,7 @@ targets:
     platform: iOS
     sources:
       - path: TransitPlannerWidgets
+      - path: Shared
       # Dieselben Farb-Tokens und Modus-Symbole wie die App.
       - path: TransitPlanner/Theme.swift
       - path: TransitPlanner/Assets.xcassets

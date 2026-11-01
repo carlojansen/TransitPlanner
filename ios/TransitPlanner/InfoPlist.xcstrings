@@ -31,7 +31,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dein Standort wird nur auf dem Gerät verwendet, um Haltestellen in der Nähe und Fußwege zu berechnen. Ans Fahrplan-Backend geht nur eine gerundete Koordinate."
+            "value" : "Dein Standort wird nur auf dem Gerät verwendet, um Haltestellen in der Nähe und Fußwege zu berechnen, während einer Fahrt auch bei gesperrtem iPhone. Ans Fahrplan-Backend geht nur eine gerundete Koordinate."
           }
         }
       }

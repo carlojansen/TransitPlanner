@@ -279,6 +279,7 @@ final class AppFlow {
     /// Letzter Roh-Fix mit Empfangszeit (Uhr `deps.now`) und Genauigkeit fuer "verpasst"; nur im RAM, nie beobachtet.
     @ObservationIgnored private var navFix: LocationFix?
     @ObservationIgnored private var navTasks: [Task<Void, Never>] = []
+    @ObservationIgnored private var endBackgroundLocation: (@MainActor @Sendable () -> Void)?
     @ObservationIgnored private var positionTask: Task<Void, Never>?
     /// Fahrzeuge, fuer die die Puffer-/Anschluss-Haptik schon kam (einmal je Fahrzeug).
     @ObservationIgnored private var warnedVehicles: Set<Int> = []
@@ -334,6 +335,7 @@ final class AppFlow {
             banner = error
         }
         onboarding = choice == nil ? .welcome : nil
+        reminders.onChange = { [weak self] in self?.syncActivities() }
     }
 
     var locationAllowed: Bool { locationAuthorization == .allowed }
@@ -398,6 +400,8 @@ final class AppFlow {
     /// Genauigkeit fuer den Status auffrischen (kein Netz, nur CoreLocation).
     func becameActive() {
         locationAuthorization = deps.authorization()
+        // Rueckfall fuer den geplanten Start und Aufraeumen verwaister Activities; starten geht nur im Vordergrund.
+        syncActivities()
         // Vor dem Standort-Guard: Erinnerungen funktionieren auch ohne Standort.
         if reminderCheck == nil {
             reminderCheck = Task {
@@ -491,6 +495,7 @@ final class AppFlow {
         }
         if old.isGuiding, !new.isGuiding { endNavigation() }
         updateOverlay()
+        syncActivities()
     }
 
     /// Zurueck zum Start: Verbindungen enthalten (gerundete) Start-Koordinaten und werden nicht laenger gehalten.
@@ -872,8 +877,11 @@ final class AppFlow {
     /// GPS erst ab der Schwelle: im Wartezustand (evtl. Stunden) kein Standortabruf, die Engine braucht ihn dort nicht.
     /// Ohne Erlaubnis kein Stream: liveUpdates wuerde bei .notDetermined den System-Dialog ausloesen. Dann nur nach Zeit.
     private func startPositionsIfNeeded(_ step: NavigationStep) {
-        guard positionTask == nil, locationAllowed else { return }
+        guard locationAllowed else { return }
         if case .waitingToLeave = step { return }
+        // Wiederholt sich je Update: faellt die Gehphase in den Hintergrund, klappt es beim naechsten Mal im Vordergrund.
+        if endBackgroundLocation == nil { endBackgroundLocation = deps.beginBackgroundLocation() }
+        guard positionTask == nil else { return }
         let positions = deps.positions
         positionTask = Task {
             for await fix in positions() {
@@ -933,6 +941,35 @@ final class AppFlow {
             navWarnings += 1
         }
         if step == .arrived { send(.arrived) }
+        syncActivities()
+    }
+
+    /// Soll-Stand aus Navigation und naechster Erinnerung; Aufraeumen, Ersetzen und Doppelschutz stecken in `TripActivityPlanner`.
+    func syncActivities() {
+        let now = deps.now()
+        var desired: [TripActivityDesire] = []
+        var navKey: String?
+        if phase.isGuiding, let journey = navJourney, let step = navStep {
+            let reminder = reminders.reminder(for: journey)
+            let key = reminder?.id.uuidString ?? TripActivityPlanner.navigationKey
+            navKey = key
+            var broken = false
+            if case .onBoardTransit(let v) = step {
+                broken = NavigationEngine.brokenConnection(after: v, journey: journey, walks: navWalks, now: now, pace: pace) != nil
+            }
+            let state = TripActivityState(journey: journey, step: step, leaveAt: reminder?.plan.leaveAt, broken: broken, now: now)
+            desired.append(TripActivityPlanner.navigation(key: key, state: state, now: now))
+        }
+        let others = reminders.rows.map { (key: $0.id.uuidString, plan: $0.plan) }.filter { $0.key != navKey }
+        if let next = TripActivityPlanner.nextReminder(others, now: now) { desired.append(next) }
+        let activities = deps.activities
+        activities.apply(TripActivityPlanner.actions(running: activities.running(), desired: desired, canStart: activities.canStart))
+    }
+
+    /// Knopf in der Live Activity: gedrosselt wie jeder andere Refresh.
+    func refreshFromActivity() async {
+        if case .navigation = phase { await refreshNavigation() } else { await reminders.checkDue() }
+        syncActivities()
     }
 
     /// Misst den Weg vom letzten Ausstieg bis zur Ankunft am Ziel gegen die Apple-Maps-Schaetzung (ohne Faktor).
@@ -1018,6 +1055,8 @@ final class AppFlow {
         navTasks = []
         positionTask?.cancel()
         positionTask = nil
+        endBackgroundLocation?()
+        endBackgroundLocation = nil
     }
 
     /// Ende der Navigation: Standort und Stand verwerfen (AGENT.md 3.1.2).

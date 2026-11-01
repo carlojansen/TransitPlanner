@@ -4,7 +4,10 @@ import WidgetKit
 
 @main
 struct TransitPlannerWidgets: WidgetBundle {
-    var body: some Widget { NextTripWidget() }
+    @WidgetBundleBuilder var body: some Widget {
+        NextTripWidget()
+        TripLiveActivity()
+    }
 }
 
 /// Kein Netz, nur der Snapshot der App; Reihenfolge und Abstand kommen aus `TripSnapshot.timeline`.

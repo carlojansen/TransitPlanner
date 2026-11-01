@@ -170,7 +170,10 @@ final class ReminderCenter {
 
     /// Einzige Stelle fuer Widgets: jede Aenderung laeuft hier durch (`store`, `purge`).
     private(set) var rows: [StoredReminder] {
-        didSet { publishSnapshot() }
+        didSet {
+            publishSnapshot()
+            onChange?()
+        }
     }
     /// Geloeschte Erinnerung samt Token, nur im RAM und nur fuer `deps.undoWindow`.
     private(set) var undo: Undo?
@@ -183,6 +186,8 @@ final class ReminderCenter {
 
     var scheduler: DepartureScheduler { DepartureScheduler(stationBufferSeconds: stationBufferMinutes * 60) }
 
+    /// Live Activity: `AppFlow` kennt auch die Navigation und gleicht beides ab.
+    @ObservationIgnored var onChange: (@MainActor () -> Void)?
     @ObservationIgnored private let deps: AppDependencies
     @ObservationIgnored private var undoTask: Task<Void, Never>?
     @ObservationIgnored private var checking = false

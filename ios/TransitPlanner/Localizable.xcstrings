@@ -573,6 +573,12 @@
     "Fahrt" : {
 
     },
+    "Fahrt aktualisieren" : {
+
+    },
+    "Fahrt beginnt bald" : {
+
+    },
     "Fahrt geplant" : {
 
     },
@@ -714,6 +720,9 @@
           }
         }
       }
+    },
+    "In 15 Min. losgehen" : {
+
     },
     "In der Nähe" : {
 

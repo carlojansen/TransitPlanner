@@ -2,6 +2,7 @@ import BackgroundTasks
 import CoreLocation
 import Foundation
 import TransitCore
+import UIKit
 import WidgetKit
 
 /// Schmale App-Protokolle ueber den TransitCore-Diensten (RESEARCH-M3 Befund 0.4): Previews und UI-Tests faken hier,
@@ -61,6 +62,10 @@ struct AppDependencies: Sendable {
     /// Stand fuer Widgets (App Group); Tests und Fakes bleiben ohne echten Container.
     var loadSnapshot: @Sendable () -> TripSnapshot = { .empty }
     var saveSnapshot: @Sendable (TripSnapshot) -> Void = { _ in }
+    /// Live Activity hinter einem Protokoll; ohne Eintrag passiert nichts (Tests, Previews).
+    var activities: any TripActivityControlling = NoTripActivities()
+    /// Haelt die Standort-Updates bei gesperrtem Geraet; nil, wenn es gerade nicht geht. Rueckgabe beendet die Session.
+    var beginBackgroundLocation: @MainActor @Sendable () -> (@MainActor @Sendable () -> Void)? = { nil }
     var now: @Sendable () -> Date = { Date() }
     /// Entprellung der Suche (API.md: mindestens 300 ms).
     var debounce: Duration = .milliseconds(300)
@@ -74,7 +79,7 @@ struct AppDependencies: Sendable {
     static let onboardingKey = "onboarding"
     static let paceKey = "walkingPace"
 
-    /// CLLocationUpdate.liveUpdates mit CLServiceSession (when-in-use). Kein Hintergrund-Modus: endet mit der App im Hintergrund.
+    /// CLLocationUpdate.liveUpdates mit CLServiceSession (when-in-use). Im Hintergrund nur mit `beginBackgroundLocation`.
     static func livePositions() -> AsyncStream<LocationFix> {
         AsyncStream { continuation in
             let task = Task {
@@ -146,6 +151,13 @@ struct AppDependencies: Sendable {
             saveSnapshot: { snapshot in
                 guard (try? TripSnapshotFile.write(snapshot, to: TripSnapshotFile.sharedURL)) != nil else { return }
                 WidgetCenter.shared.reloadAllTimelines()
+            },
+            activities: SystemTripActivities(),
+            // Darf nur im Vordergrund angelegt werden; die Positionen bleiben im RAM wie vorne.
+            beginBackgroundLocation: {
+                guard UIApplication.shared.applicationState == .active else { return nil }
+                let session = CLBackgroundActivitySession()
+                return { session.invalidate() }
             }
         )
     }
@@ -231,6 +243,31 @@ extension AppDependencies {
                                places: places, reminders: reminders, notifier: notifier,
                                scheduleBackgroundCheck: { _ in },
                                debounce: debounce, waitingHint: waitingHint)
+    }
+}
+
+/// Fake-Activities ohne ActivityKit: fuehrt die Aktionen auf einer Liste aus und merkt sie sich.
+final class FakeTripActivities: TripActivityControlling {
+    let list = Mutex<[TripActivityRunning]>([])
+    let log = Mutex<[TripActivityAction]>([])
+    let enabled = Mutex(true)
+
+    var canStart: Bool { enabled.withLock { $0 } }
+    func running() -> [TripActivityRunning] { list.withLock { $0 } }
+
+    func apply(_ actions: [TripActivityAction]) {
+        log.withLock { $0 += actions }
+        list.withLock { list in
+            for action in actions {
+                switch action {
+                case .end(let key): list.removeAll { $0.key == key }
+                case .start(let wish):
+                    list.append(TripActivityRunning(key: wish.key, state: wish.state, startAt: wish.startAt, isPending: wish.startAt != nil))
+                case .update(let wish):
+                    list = list.map { $0.key == wish.key ? TripActivityRunning(key: $0.key, state: wish.state, startAt: $0.startAt, isPending: $0.isPending) : $0 }
+                }
+            }
+        }
     }
 }
 

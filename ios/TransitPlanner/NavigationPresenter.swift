@@ -429,8 +429,8 @@ enum NavigationPresenter {
     private static func exitText(_ leg: Leg, now: Date, row: Bool) -> String {
         let stops = NavigationEngine.stopsUntilExit(leg: leg, now: now)
         if stops > 1 { return row ? String(localized: "noch \(stops) Halte") : String(localized: "Aussteigen in \(stops) Halten") }
-        if let arrival = leg.arrival ?? leg.plannedArrival, arrival.timeIntervalSince(now) > NavigationEngine.exitLead {
-            let left = DurationLabel.short(minutes: minutes(until: arrival, now))
+        if !NavigationEngine.exitsNext(leg: leg, now: now) {
+            let left = DurationLabel.short(minutes: minutes(until: leg.arrival ?? leg.plannedArrival, now))
             return row ? String(localized: "aussteigen in \(left)") : String(localized: "Aussteigen in \(left)")
         }
         return row ? String(localized: "nächster Halt aussteigen") : String(localized: "Nächster Halt aussteigen")

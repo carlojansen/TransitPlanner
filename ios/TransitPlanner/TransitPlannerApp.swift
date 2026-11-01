@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         center.setNotificationCategories([SystemNotifier.category])
+        TripRefreshHandler.run = { [flow] in await flow.refreshFromActivity() }
         return true
     }
 

@@ -24,6 +24,9 @@ private func iso(_ time: String) -> Date {
         let checks = Mutex<[Date?]>([])
         /// Geschriebene Snapshots; der letzte ist "die Datei".
         let snapshots = Mutex<[TripSnapshot]>([])
+        let activities = FakeTripActivities()
+        let backgroundSessions = Mutex(0)
+        let endedSessions = Mutex(0)
 
         func deps(onboarding: OnboardingChoice? = .withLocation, blockedUntil: Date? = nil) -> AppDependencies {
             var deps = AppDependencies.fakes(secrets: secrets, onboarding: onboarding, blockedUntil: blockedUntil,
@@ -33,6 +36,11 @@ private func iso(_ time: String) -> Date {
             deps.scheduleBackgroundCheck = { date in self.checks.withLock { $0.append(date) } }
             deps.loadSnapshot = { self.snapshots.withLock { $0.last ?? .empty } }
             deps.saveSnapshot = { snapshot in self.snapshots.withLock { $0.append(snapshot) } }
+            deps.activities = activities
+            deps.beginBackgroundLocation = {
+                self.backgroundSessions.withLock { $0 += 1 }
+                return { self.endedSessions.withLock { $0 += 1 } }
+            }
             return deps
         }
     }
@@ -391,6 +399,111 @@ private func iso(_ time: String) -> Date {
         let env = Env()
         _ = ReminderCenter(env.deps())
         #expect(env.snapshots.withLock { $0.isEmpty })
+    }
+
+    // MARK: Live Activity
+
+    @Test func reminderPlansOneActivityAtT15AndDeleteEndsIt() async throws {
+        let env = Env()
+        let (f, id) = try await armed(env, warn: 5)
+        let plan = try #require(f.reminders.rows.first?.plan)
+        let running = env.activities.running()
+        #expect(running.map(\.key) == [id.uuidString])
+        #expect(running.first?.startAt == plan.leaveAt.addingTimeInterval(-TripActivityPlanner.startLead))
+        f.syncActivities()
+        #expect(env.activities.log.withLock { $0.count } == 1) // gleicher Stand: nichts Neues
+
+        f.reminders.delete(id)
+        #expect(env.activities.running().isEmpty)
+        await f.reminders.undoDelete()
+        #expect(env.activities.running().map(\.key) == [id.uuidString])
+    }
+
+    @Test func changedReminderReplacesThePlannedActivity() async throws {
+        let env = Env()
+        let (f, id) = try await armed(env)
+        try await f.setReminder(forJourney: 0, earlierMinutes: 10, warnMinutes: 0)
+        #expect(env.activities.running().count == 1)
+        let plan = try #require(f.reminders.reminder(id: id)?.plan)
+        #expect(env.activities.running().first?.startAt == plan.leaveAt.addingTimeInterval(-TripActivityPlanner.startLead))
+    }
+
+    @Test func navigationKeepsTheSameActivityAndAbortEndsIt() async throws {
+        let env = Env()
+        let (f, id) = try await armed(env)
+        env.clock.set("05:58:00")
+        f.openReminder(id)
+        #expect(env.activities.running().map(\.key) == [id.uuidString])
+        #expect(env.activities.running().first?.state.phase == .walk)
+        #expect(env.activities.running().first?.startAt == nil) // Rueckfall: laeuft jetzt, nicht geplant
+        f.send(.back)
+        #expect(env.activities.running().first?.state.phase == .leave) // Erinnerung steht weiter, dieselbe Activity
+        env.clock.set("06:43:00")
+        await f.reminders.checkDue()
+        #expect(env.activities.running().isEmpty)
+    }
+
+    @Test func navigationWithoutReminderHasItsOwnKeyAndEnds() async throws {
+        let env = Env()
+        let f = await planned(env)
+        env.clock.set("05:58:00")
+        f.send(.startNavigation(0))
+        #expect(env.activities.running().map(\.key) == [TripActivityPlanner.navigationKey])
+        f.send(.back)
+        #expect(env.activities.running().isEmpty)
+    }
+
+    @Test func orphanEndsWhenTheAppBecomesActive() async throws {
+        let env = Env()
+        let f = await planned(env)
+        let state = try #require(f.reminders.rows.isEmpty ? TripActivityState(plan: try reminderPlan(f)) : nil)
+        env.activities.list.withLock { $0 = [TripActivityRunning(key: "alt", state: state, startAt: nil, isPending: false)] }
+        f.becameActive()
+        #expect(env.activities.running().isEmpty)
+        #expect(env.activities.log.withLock { $0 } == [.end(key: "alt")])
+    }
+
+    private func reminderPlan(_ f: AppFlow) throws -> ReminderPlan {
+        let calibrated = try #require(f.calibratedJourney(at: 0))
+        return try ReminderPlan(calibrated: calibrated, earlierMinutes: 0, warnMinutes: 0, attribution: try #require(f.routes?.attribution))
+    }
+
+    /// Abgeschaltet oder im Hintergrund: still, kein Banner, und die Erinnerung gilt trotzdem.
+    @Test func disabledActivitiesStayQuiet() async throws {
+        let env = Env()
+        env.activities.enabled.withLock { $0 = false }
+        let (f, _) = try await armed(env)
+        #expect(env.activities.running().isEmpty && f.banner == nil)
+        #expect(f.reminders.rows.count == 1 && !env.notifier.alerts.isEmpty)
+    }
+
+    @Test func backgroundLocationOnlyFromTheWalkAndEndsWithTheTrip() async throws {
+        let env = Env()
+        let f = await planned(env)
+        f.send(.startNavigation(0))
+        #expect(env.backgroundSessions.withLock { $0 } == 0) // Wartezustand 05:00, weit vor dem Losgehen
+        env.clock.set("05:58:00")
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        #expect(env.backgroundSessions.withLock { $0 } == 1)
+        f.send(.back)
+        #expect(env.endedSessions.withLock { $0 } == 1)
+    }
+
+    @Test func noBackgroundSessionWithoutLocationPermission() async throws {
+        let env = Env()
+        var deps = env.deps()
+        let location = FakeLocation(status: .denied)
+        deps.location = location
+        deps.authorization = { location.status }
+        env.clock.set("05:00:00")
+        let f = AppFlow(deps)
+        f.send(.editEndpoint(.destination))
+        f.choose(NavigationFlowTests.stop)
+        await f.waitForWork()
+        env.clock.set("05:58:00")
+        f.send(.startNavigation(0))
+        #expect(env.backgroundSessions.withLock { $0 } == 0)
     }
 
     @Test func delayMovesAlarmAndKeepsChoices() async throws {
