@@ -168,7 +168,10 @@ final class ReminderCenter {
         let token: Data?
     }
 
-    private(set) var rows: [StoredReminder]
+    /// Einzige Stelle fuer Widgets: jede Aenderung laeuft hier durch (`store`, `purge`).
+    private(set) var rows: [StoredReminder] {
+        didSet { publishSnapshot() }
+    }
     /// Geloeschte Erinnerung samt Token, nur im RAM und nur fuer `deps.undoWindow`.
     private(set) var undo: Undo?
     /// Fehler aus der Liste (Rueckgaengig), als Inline-Banner in D2.
@@ -191,6 +194,7 @@ final class ReminderCenter {
             deps.notifier.remove(ReminderAlert.identifiers(id))
         }
         rows = deps.reminders.all().sorted { $0.plan.leaveAt < $1.plan.leaveAt }
+        publishSnapshot()
     }
 
     var activeToday: Bool { rows.contains { $0.plan.isActive(now: deps.now()) } }
@@ -354,9 +358,14 @@ final class ReminderCenter {
 
     private func store(_ reminder: StoredReminder) throws(TransitError) {
         try deps.reminders.save(reminder)
-        rows.removeAll { $0.id == reminder.id }
-        rows.append(reminder)
-        rows.sort { $0.plan.leaveAt < $1.plan.leaveAt }
+        // In einem Zug: `didSet` soll keinen Zwischenstand veroeffentlichen.
+        rows = (rows.filter { $0.id != reminder.id } + [reminder]).sorted { $0.plan.leaveAt < $1.plan.leaveAt }
+    }
+
+    /// Vergleich mit der Datei, nicht mit dem letzten Aufruf: ein gescheitertes Schreiben holt der naechste Lauf nach.
+    private func publishSnapshot() {
+        let snapshot = TripSnapshot(plans: rows.map(\.plan))
+        if snapshot != deps.loadSnapshot() { deps.saveSnapshot(snapshot) }
     }
 
     /// Zeile, Keychain-Eintrag und Mitteilungen; ein Keychain-Fehler darf das Loeschen nicht aufhalten.

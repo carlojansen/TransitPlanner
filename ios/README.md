@@ -2,7 +2,8 @@
 
 - `project.yml` (XcodeGen) erzeugt `TransitPlanner.xcodeproj` (nicht eingecheckt, nie von Hand bearbeiten).
 - `TransitCore/` ist ein Swift Package ohne UI: API-Modelle, Netzwerk/Security, Location/Suche, Routing, Scheduling, SwiftData.
-- `TransitPlanner/` ist die App (UI ab Meilenstein 3). Widgets-Target folgt in Meilenstein 4.
+- `TransitPlanner/` ist die App.
+- `TransitPlannerWidgets/` ist die Widget-Extension; sie liest nur den Snapshot aus der App Group (`TripSnapshotFile`), kein Netz.
 
 ```bash
 cd ios && xcodegen generate

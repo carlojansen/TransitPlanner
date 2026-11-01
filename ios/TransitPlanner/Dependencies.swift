@@ -2,6 +2,7 @@ import BackgroundTasks
 import CoreLocation
 import Foundation
 import TransitCore
+import WidgetKit
 
 /// Schmale App-Protokolle ueber den TransitCore-Diensten (RESEARCH-M3 Befund 0.4): Previews und UI-Tests faken hier,
 /// der gepinnte Transport von `TransitAPIClient` bleibt intern.
@@ -57,6 +58,9 @@ struct AppDependencies: Sendable {
     var notifier: any ReminderNotifying
     /// Naechsten Hintergrund-Lauf anmelden (BGAppRefreshTask); nil = keiner noetig.
     var scheduleBackgroundCheck: @Sendable (Date?) -> Void
+    /// Stand fuer Widgets (App Group); Tests und Fakes bleiben ohne echten Container.
+    var loadSnapshot: @Sendable () -> TripSnapshot = { .empty }
+    var saveSnapshot: @Sendable (TripSnapshot) -> Void = { _ in }
     var now: @Sendable () -> Date = { Date() }
     /// Entprellung der Suche (API.md: mindestens 300 ms).
     var debounce: Duration = .milliseconds(300)
@@ -136,6 +140,12 @@ struct AppDependencies: Sendable {
                 request.earliestBeginDate = date
                 // Schlaegt fehl im Simulator oder ohne Hintergrundaktualisierung; dann prueft die App beim Aktivwerden.
                 try? BGTaskScheduler.shared.submit(request)
+            },
+            loadSnapshot: { TripSnapshotFile.read(TripSnapshotFile.sharedURL) },
+            // Scheitert das Schreiben (kein Container, Geraet nie entsperrt), bleibt der alte Stand; die App laeuft weiter.
+            saveSnapshot: { snapshot in
+                guard (try? TripSnapshotFile.write(snapshot, to: TripSnapshotFile.sharedURL)) != nil else { return }
+                WidgetCenter.shared.reloadAllTimelines()
             }
         )
     }

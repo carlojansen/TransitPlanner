@@ -11,6 +11,7 @@ build/
 # iOS: aus ios/project.yml generiert (xcodegen generate)
 ios/*.xcodeproj/
 ios/TransitPlanner/Info.plist
+ios/TransitPlannerWidgets/Info.plist
 .build/
 .swiftpm/
 

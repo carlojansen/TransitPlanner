@@ -22,6 +22,8 @@ private func iso(_ time: String) -> Date {
         let notifier = FakeNotifier()
         let refresher = FakeRefresher()
         let checks = Mutex<[Date?]>([])
+        /// Geschriebene Snapshots; der letzte ist "die Datei".
+        let snapshots = Mutex<[TripSnapshot]>([])
 
         func deps(onboarding: OnboardingChoice? = .withLocation, blockedUntil: Date? = nil) -> AppDependencies {
             var deps = AppDependencies.fakes(secrets: secrets, onboarding: onboarding, blockedUntil: blockedUntil,
@@ -29,6 +31,8 @@ private func iso(_ time: String) -> Date {
             deps.now = { self.clock.now }
             deps.undoWindow = .milliseconds(30)
             deps.scheduleBackgroundCheck = { date in self.checks.withLock { $0.append(date) } }
+            deps.loadSnapshot = { self.snapshots.withLock { $0.last ?? .empty } }
+            deps.saveSnapshot = { snapshot in self.snapshots.withLock { $0.append(snapshot) } }
             return deps
         }
     }
@@ -296,6 +300,63 @@ private func iso(_ time: String) -> Date {
         let blocked = AppFlow(env.deps(blockedUntil: iso("06:00:00")))
         await blocked.reminders.checkDue()
         #expect(env.refresher.callCount == 0)
+    }
+
+    @Test func snapshotFollowsSetDeleteAndUndo() async throws {
+        let env = Env()
+        let (f, id) = try await armed(env)
+        #expect(env.snapshots.withLock { $0.map(\.trips.count) } == [1])
+        f.reminders.delete(id)
+        await f.reminders.undoDelete()
+        #expect(env.snapshots.withLock { $0.map(\.trips.count) } == [1, 0, 1])
+        #expect(env.snapshots.withLock { $0.last } == TripSnapshot(plans: f.reminders.rows.map(\.plan)))
+    }
+
+    @Test func snapshotFollowsRefreshAndCleanup() async throws {
+        let env = Env()
+        let (f, _) = try await armed(env)
+        env.refresher.set(.success(try delayed(by: 300)))
+        env.clock.set("05:40:00")
+        await f.reminders.checkDue()
+        #expect(env.refresher.callCount == 1)
+        #expect(env.snapshots.withLock { $0.count } == 2)
+        #expect(env.snapshots.withLock { $0.last?.trips.first?.leaveAt } == f.reminders.rows.first?.plan.leaveAt)
+        env.clock.set("06:43:00")
+        await f.reminders.checkDue()
+        #expect(env.snapshots.withLock { $0.map(\.trips.count) } == [1, 1, 0])
+    }
+
+    /// Fehlversuch aendert die Zeile (`attemptedAt`), aber nichts, was Widgets sehen.
+    @Test func sameContentWritesNothing() async throws {
+        let env = Env()
+        let (f, _) = try await armed(env)
+        env.refresher.set(.failure(.offline))
+        env.clock.set("05:35:00")
+        await f.reminders.checkDue()
+        #expect(env.refresher.callCount == 1)
+        #expect(env.snapshots.withLock { $0.count } == 1)
+        _ = ReminderCenter(env.deps())
+        #expect(env.snapshots.withLock { $0.count } == 1)
+    }
+
+    /// Start gleicht ab: Datei fehlt (neu installiert) oder der letzte Schreibversuch ging verloren.
+    @Test func launchRepublishesAStaleFile() async throws {
+        let env = Env()
+        _ = try await armed(env)
+        env.snapshots.withLock { $0 = [] }
+        _ = ReminderCenter(env.deps())
+        #expect(env.snapshots.withLock { $0.map(\.trips.count) } == [1])
+    }
+
+    /// Greift die Signatur: ohne App Group im Host-Profil fehlt der Container.
+    @Test func appGroupContainerResolves() {
+        #expect(TripSnapshotFile.sharedURL != nil)
+    }
+
+    @Test func noRemindersNoFile() {
+        let env = Env()
+        _ = ReminderCenter(env.deps())
+        #expect(env.snapshots.withLock { $0.isEmpty })
     }
 
     @Test func delayMovesAlarmAndKeepsChoices() async throws {
