@@ -28,10 +28,12 @@ public extension TripSnapshot {
     }
 
     /// `trips` ist nach Losgehen sortiert (`ReminderCenter.rows`), das fruehere gewinnt. Ist es schon abgefahren, geht eine
-    /// Fahrt vor, deren Losgehen ansteht: unterwegs zaehlt der naechste Aufbruch mehr als die laufende Fahrt.
+    /// Fahrt vor, deren Losgehen ansteht: unterwegs zaehlt der naechste Aufbruch mehr als die laufende Fahrt. Dabei geht eine
+    /// intakte vor einer weggefallenen. Dieselbe Regel gilt fuer die Live Activity (`TripActivityPlanner.nextReminder`).
     func trip(at date: Date) -> Trip? {
         let open = trips.filter { $0.endsAt > date }
-        return open.first { [.soon, .leaveNow].contains($0.phase(at: date)) } ?? open.first
+        let due = open.filter { [.soon, .leaveNow].contains($0.phase(at: date)) }
+        return due.first { $0.status != .lost } ?? due.first ?? open.first
     }
 }
 

@@ -190,6 +190,16 @@ import Testing
         #expect(snapshot.timeline(now: helper.at("05:45:00")).contains { $0.date == lost.firstDeparture && $0.trip == snapshot.trips.last })
     }
 
+    /// Weggefallen mit frueherem Losgehen verdeckt keine intakte Fahrt, deren Losgehen ansteht.
+    @Test func intactTripGoesBeforeLostOneWhenDue() throws {
+        let lost = try cancelledPlan()
+        let intact = try plan(helper.journey(replacing: [("T06:", "T07:")]))
+        let both = snapshot(lost, intact)
+        #expect(both.trip(at: helper.at("06:07:00"))?.status == .scheduled) // beide stehen an
+        let far = snapshot(lost, try plan(helper.journey(replacing: [("T06:", "T09:")])))
+        #expect(far.trip(at: helper.at("05:45:00"))?.status == .lost) // die andere steht noch nicht an
+    }
+
     /// Frueheres Losgehen gewinnt; ist A abgefahren, geht B vor, sobald dessen Losgehen ansteht.
     @Test func overlappingTrips() throws {
         let a = try plan(helper.journey())

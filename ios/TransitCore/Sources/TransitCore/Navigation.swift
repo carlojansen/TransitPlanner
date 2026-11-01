@@ -131,6 +131,12 @@ public enum NavigationEngine {
         return .finalWalkToDestination
     }
 
+    /// "Nächster Halt aussteigen": ein Halt und hoechstens `exitLead` vor der Ankunft.
+    public static func exitsNext(leg: Leg, now: Date) -> Bool {
+        guard stopsUntilExit(leg: leg, now: now) <= 1 else { return false }
+        return (leg.arrival ?? leg.plannedArrival).map { $0.timeIntervalSince(now) <= exitLead } ?? true
+    }
+
     /// Beginn des ersten Abschnitts (inkl. Zugangsweg) nach Fahrplan/Echtzeit.
     public static func leaveTime(_ journey: Journey) -> Date? {
         journey.legs.first.flatMap { $0.departure ?? $0.plannedDeparture }

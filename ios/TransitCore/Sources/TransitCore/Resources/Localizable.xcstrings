@@ -24,16 +24,37 @@
     "%lld Minuten verspätet" : {
 
     },
+    "ab %@" : {
+
+    },
     "Abfahrt" : {
+
+    },
+    "Abfahrt in" : {
 
     },
     "Abgebrochen." : {
       "extractionState" : "manual"
     },
+    "Am Gleis" : {
+
+    },
+    "Am Halt" : {
+
+    },
+    "Angekommen" : {
+
+    },
     "Ankunft %@" : {
 
     },
+    "Ankunft in" : {
+
+    },
     "Anschluss reicht nicht mehr" : {
+
+    },
+    "ca. %@" : {
 
     },
     "Die Anfrage war ungültig." : {
@@ -67,6 +88,9 @@
     "Haltestelle nicht mehr bekannt. Bitte neu suchen." : {
       "extractionState" : "manual"
     },
+    "Im %@" : {
+
+    },
     "In %lld Min. losgehen" : {
 
     },
@@ -79,7 +103,19 @@
     "Keine Verbindung gefunden." : {
       "extractionState" : "manual"
     },
+    "Los in" : {
+
+    },
+    "Losgehen" : {
+
+    },
     "Losgehen %@" : {
+
+    },
+    "nach %@" : {
+
+    },
+    "Nächster Halt aussteigen" : {
 
     },
     "Sichere Verbindung zum Server nicht möglich." : {
@@ -91,10 +127,16 @@
     "Standortzugriff ist nicht erlaubt." : {
       "extractionState" : "manual"
     },
+    "Umstieg in %@" : {
+
+    },
     "Unerwartete Antwort vom Fahrplan-Server." : {
       "extractionState" : "manual"
     },
     "Verbindung fällt aus" : {
+
+    },
+    "Zeit %@" : {
 
     },
     "Zu Fuß nach %@, %@" : {
@@ -106,6 +148,9 @@
           }
         }
       }
+    },
+    "Zu Fuß zum Ziel" : {
+
     },
     "Zu Fuß, %@" : {
 
@@ -119,13 +164,10 @@
     "Zugangsdaten konnten nicht gelesen werden." : {
       "extractionState" : "manual"
     },
-    "ab %@" : {
+    "Zum Gleis" : {
 
     },
-    "ca. %@" : {
-
-    },
-    "nach %@" : {
+    "Zum Halt" : {
 
     }
   },
