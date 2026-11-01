@@ -20,6 +20,7 @@ public enum TransitError: String, LocalizedError, Codable, Sendable, CaseIterabl
     case decodingFailed = "CLIENT_DECODING_FAILED"
     case missingToken = "CLIENT_MISSING_TOKEN"
     case keychainFailure = "CLIENT_KEYCHAIN_FAILURE"
+    case storageUnavailable = "CLIENT_STORAGE_UNAVAILABLE"
     case locationDenied = "CLIENT_LOCATION_DENIED"
     case locationUnavailable = "CLIENT_LOCATION_UNAVAILABLE"
     case cancelled = "CLIENT_CANCELLED"
@@ -45,6 +46,7 @@ public enum TransitError: String, LocalizedError, Codable, Sendable, CaseIterabl
         case .offline: String(localized: "Keine Internetverbindung.", bundle: .module)
         case .pinningFailed: String(localized: "Sichere Verbindung zum Server nicht möglich.", bundle: .module)
         case .keychainFailure: String(localized: "Zugangsdaten konnten nicht gelesen werden.", bundle: .module)
+        case .storageUnavailable: String(localized: "Erinnerungen können gerade nicht gespeichert werden.", bundle: .module)
         case .locationDenied: String(localized: "Standortzugriff ist nicht erlaubt.", bundle: .module)
         case .locationUnavailable: String(localized: "Standort ist gerade nicht verfügbar.", bundle: .module)
         case .cancelled: String(localized: "Abgebrochen.", bundle: .module)

@@ -36,8 +36,8 @@ public struct MapKitWalkingDirections: WalkingDirectionsProviding {
 }
 
 /// Kalibrierte Gehzeit eines Fussweg-Abschnitts.
-public struct WalkEstimate: Sendable, Hashable {
-    public enum Source: Sendable, Hashable {
+public struct WalkEstimate: Codable, Sendable, Hashable {
+    public enum Source: Codable, Sendable, Hashable {
         /// MKDirections x WalkingPaceFactor
         case appleMaps
         /// MKDirections nicht verfuegbar oder Weg zu kurz: MOTIS-Dauer x WalkingPaceFactor
@@ -50,7 +50,7 @@ public struct WalkEstimate: Sendable, Hashable {
     public let source: Source
 }
 
-public struct TransferCheck: Sendable, Hashable {
+public struct TransferCheck: Codable, Sendable, Hashable {
     /// Index des Umstiegs-Fusswegs
     public let legIndex: Int
     /// Zeit, die nach dem kalibrierten Fussweg bis zur Abfahrt bleibt (negativ = nicht zu schaffen).
@@ -62,11 +62,20 @@ public struct TransferCheck: Sendable, Hashable {
     public static let minimumSlackSeconds = 120
 }
 
-public struct CalibratedJourney: Sendable, Hashable {
+public struct CalibratedJourney: Codable, Sendable, Hashable {
     public let journey: Journey
     /// Kalibrierte Gehzeiten je Fussweg-Abschnitt (Schluessel: Leg-Index).
     public let walks: [Int: WalkEstimate]
     public let transfers: [TransferCheck]
+
+    /// Neuer Stand vom Refresh: Gehzeiten bleiben (kein GPS, kein MKDirections im Hintergrund), Umstiege neu gerechnet.
+    public func replacingJourney(_ fresh: Journey) -> CalibratedJourney {
+        CalibratedJourney(journey: fresh, walks: walks, transfers: HybridRouteCalculator.transferChecks(fresh, walks: walks))
+    }
+
+    public func withRefreshToken(_ token: String?) -> CalibratedJourney {
+        CalibratedJourney(journey: journey.withRefreshToken(token), walks: walks, transfers: transfers)
+    }
 
     /// Summe der kalibrierten Fusswege vor dem ersten Fahrzeug.
     public var accessWalkSeconds: Int {

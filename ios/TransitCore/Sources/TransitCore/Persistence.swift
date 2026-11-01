@@ -130,6 +130,10 @@ public final class PlannedTrip {
     public var targetTime: Date
     public var reminderEnabled: Bool
     public var createdAt: Date
+    /// AES-GCM(ReminderPlan), nie mit refreshToken. nil = keine Erinnerung; optional fuer die leichte Migration.
+    /// Neue Felder in `ReminderPlan` und allem darin (Journey, Leg, ...) muessen optional sein oder tolerant dekodieren:
+    /// was nicht mehr dekodiert, gilt beim Start als unlesbar und wird samt Token entfernt.
+    public var sealedPlan: Data?
 
     public init(id: UUID = UUID(), sealedRequest: Data, targetTime: Date, reminderEnabled: Bool = false, createdAt: Date = .now) {
         self.id = id
@@ -143,8 +147,26 @@ public final class PlannedTrip {
         self.init(sealedRequest: try sealer.seal(request), targetTime: request.targetTime, reminderEnabled: reminderEnabled)
     }
 
+    /// Erinnerung; `targetTime` ist dann das Losgehen.
+    public convenience init(id: UUID, request: ManualTripRequest, plan: ReminderPlan, sealer: LocalSealer) throws(TransitError) {
+        self.init(id: id, sealedRequest: try sealer.seal(request), targetTime: plan.leaveAt, reminderEnabled: true)
+        try update(plan, request: request, sealer: sealer)
+    }
+
     public func request(using sealer: LocalSealer) throws(TransitError) -> ManualTripRequest {
         try sealer.open(ManualTripRequest.self, from: sealedRequest)
+    }
+
+    /// Einzige Schreibstelle fuer den Plan: Tokens fallen hier heraus, egal was der Aufrufer uebergibt.
+    public func update(_ plan: ReminderPlan, request: ManualTripRequest, sealer: LocalSealer) throws(TransitError) {
+        sealedRequest = try sealer.seal(request)
+        sealedPlan = try sealer.seal(plan.withoutTokens)
+        targetTime = plan.leaveAt
+    }
+
+    public func plan(using sealer: LocalSealer) throws(TransitError) -> ReminderPlan? {
+        guard let sealedPlan else { return nil }
+        return try sealer.open(ReminderPlan.self, from: sealedPlan)
     }
 }
 

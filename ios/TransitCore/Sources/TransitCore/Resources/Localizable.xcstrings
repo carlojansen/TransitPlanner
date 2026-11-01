@@ -1,51 +1,121 @@
 {
-  "sourceLanguage": "de",
-  "strings": {
-    "Die Anfrage war ungültig.": {
-      "extractionState": "manual"
+  "sourceLanguage" : "de",
+  "strings" : {
+    "%@ um %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ um %2$@"
+          }
+        }
+      }
     },
-    "Zugang zum Fahrplan-Server fehlt oder ist abgelaufen.": {
-      "extractionState": "manual"
+    "%@ um %@ statt %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ um %2$@ statt %3$@"
+          }
+        }
+      }
     },
-    "Haltestelle nicht mehr bekannt. Bitte neu suchen.": {
-      "extractionState": "manual"
+    "ab %@" : {
+
     },
-    "Keine Verbindung gefunden.": {
-      "extractionState": "manual"
+    "Abfahrt" : {
+
     },
-    "Die Verbindung ist nicht mehr aktuell. Bitte neu suchen.": {
-      "extractionState": "manual"
+    "Abgebrochen." : {
+      "extractionState" : "manual"
     },
-    "Zu viele Anfragen. Bitte kurz warten.": {
-      "extractionState": "manual"
+    "Anschluss reicht nicht mehr" : {
+
     },
-    "Fahrplandaten sind gerade nicht erreichbar.": {
-      "extractionState": "manual"
+    "Die Anfrage war ungültig." : {
+      "extractionState" : "manual"
     },
-    "Fahrplandaten antworten zu langsam.": {
-      "extractionState": "manual"
+    "Die Verbindung ist nicht mehr aktuell. Bitte neu suchen." : {
+      "extractionState" : "manual"
     },
-    "Unerwartete Antwort vom Fahrplan-Server.": {
-      "extractionState": "manual"
+    "Erinnerungen können gerade nicht gespeichert werden." : {
+
     },
-    "Keine Internetverbindung.": {
-      "extractionState": "manual"
+    "Fahrplandaten antworten zu langsam." : {
+      "extractionState" : "manual"
     },
-    "Sichere Verbindung zum Server nicht möglich.": {
-      "extractionState": "manual"
+    "Fahrplandaten sind gerade nicht erreichbar." : {
+      "extractionState" : "manual"
     },
-    "Zugangsdaten konnten nicht gelesen werden.": {
-      "extractionState": "manual"
+    "Gleis %@" : {
+
     },
-    "Standortzugriff ist nicht erlaubt.": {
-      "extractionState": "manual"
+    "Gleis %@ statt %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Gleis %1$@ statt %2$@"
+          }
+        }
+      }
     },
-    "Standort ist gerade nicht verfügbar.": {
-      "extractionState": "manual"
+    "Haltestelle nicht mehr bekannt. Bitte neu suchen." : {
+      "extractionState" : "manual"
     },
-    "Abgebrochen.": {
-      "extractionState": "manual"
+    "In %lld Min. losgehen" : {
+
+    },
+    "Jetzt losgehen" : {
+
+    },
+    "Keine Internetverbindung." : {
+      "extractionState" : "manual"
+    },
+    "Keine Verbindung gefunden." : {
+      "extractionState" : "manual"
+    },
+    "nach %@" : {
+
+    },
+    "Sichere Verbindung zum Server nicht möglich." : {
+      "extractionState" : "manual"
+    },
+    "Standort ist gerade nicht verfügbar." : {
+      "extractionState" : "manual"
+    },
+    "Standortzugriff ist nicht erlaubt." : {
+      "extractionState" : "manual"
+    },
+    "Unerwartete Antwort vom Fahrplan-Server." : {
+      "extractionState" : "manual"
+    },
+    "Verbindung fällt aus" : {
+
+    },
+    "Zu Fuß nach %@, %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Zu Fuß nach %1$@, %2$@"
+          }
+        }
+      }
+    },
+    "Zu Fuß, %@" : {
+
+    },
+    "Zu viele Anfragen. Bitte kurz warten." : {
+      "extractionState" : "manual"
+    },
+    "Zugang zum Fahrplan-Server fehlt oder ist abgelaufen." : {
+      "extractionState" : "manual"
+    },
+    "Zugangsdaten konnten nicht gelesen werden." : {
+      "extractionState" : "manual"
     }
   },
-  "version": "1.0"
+  "version" : "1.0"
 }

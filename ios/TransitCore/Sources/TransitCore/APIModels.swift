@@ -162,14 +162,14 @@ public struct Leg: Codable, Sendable, Hashable {
     public let durationSeconds: Int?
     public let realtime: Bool
     public let cancelled: Bool
-    public let polyline: Polyline?
+    public internal(set) var polyline: Polyline?
 
     // Fussweg
     public let isTransfer: Bool?
     public let distanceMeters: Int?
     public let durationSource: String?
     /// Wegbeschreibung (v0.3); leer bei Fahrzeugen, im Polling und wenn MOTIS keine liefert.
-    public let steps: [Step]
+    public internal(set) var steps: [Step]
 
     // Fahrzeug
     public let line: Line?
@@ -254,7 +254,8 @@ public struct Leg: Codable, Sendable, Hashable {
 }
 
 public struct Journey: Codable, Sendable, Hashable {
-    public let refreshToken: String?
+    /// Gehoert in die Keychain (AGENT.md 3.3.2); gespeicherte Verbindungen laufen durch `withRefreshToken(nil)`.
+    public internal(set) var refreshToken: String?
     public let departure: Date?
     public let arrival: Date?
     public let durationSeconds: Int?
@@ -262,9 +263,44 @@ public struct Journey: Codable, Sendable, Hashable {
     public let modes: [TransitMode]
     public let cancelled: Bool
     public let realtime: Bool
-    public let hasPolylines: Bool
-    public let legs: [Leg]
+    public internal(set) var hasPolylines: Bool
+    public internal(set) var legs: [Leg]
     public let remarks: [Remark]
+
+    /// Zeiten dieses Stands (Refresh liefert keine Geometrie), Polylines und Wegschritte aus dem Original.
+    public func withGeometry(of original: Journey) -> Journey {
+        var copy = self
+        copy.hasPolylines = original.hasPolylines
+        copy.legs = legs.map { leg in
+            guard let source = original.legs.first(where: { $0.index == leg.index }) else { return leg }
+            var merged = leg
+            merged.polyline = leg.polyline ?? source.polyline
+            if leg.steps.isEmpty { merged.steps = source.steps }
+            return merged
+        }
+        return copy
+    }
+
+    public func withRefreshToken(_ token: String?) -> Journey {
+        var copy = self
+        copy.refreshToken = token
+        return copy
+    }
+
+    /// Dieselbe Fahrt, auch wenn sich Echtzeit oder Token geaendert haben: Fahrzeuge mit Planabfahrt und Ausstieg, dazu das Ziel.
+    public func isSameTrip(as other: Journey) -> Bool { tripKey == other.tripKey }
+
+    private var tripKey: [String] {
+        // Name vor ID: die ID eines Halts kann am Gleis haengen und mit einem Gleiswechsel wechseln.
+        func key(_ place: Place?) -> String {
+            place?.name ?? place?.id ?? place?.coordinate.map { "\($0.latitude),\($0.longitude)" } ?? ""
+        }
+        let vehicles = legs.filter { !$0.isWalk }.map { leg in
+            "\(leg.tripId ?? leg.line?.name ?? leg.mode.rawValue) \((leg.plannedDeparture ?? leg.departure)?.timeIntervalSince1970 ?? 0) \(key(leg.destination))"
+        }
+        let start = vehicles.isEmpty ? ["walk \(departure?.timeIntervalSince1970 ?? 0)"] : vehicles
+        return start + [key(legs.last?.destination)]
+    }
 }
 
 public struct LocationsResponse: Codable, Sendable {
@@ -280,6 +316,12 @@ public struct RoutesResponse: Codable, Sendable {
     public let removedLongDistance: Int
     public let fetchedAt: Date
     public let attribution: Attribution
+
+    /// Antwort mit genau einer gespeicherten Verbindung (Sprung aus einer Erinnerung), ohne Paging.
+    public static func single(_ journey: Journey, fetchedAt: Date, attribution: Attribution) -> RoutesResponse {
+        RoutesResponse(journeys: [journey], earlierRef: nil, laterRef: nil, walkOnly: false, removedLongDistance: 0,
+                       fetchedAt: fetchedAt, attribution: attribution)
+    }
 }
 
 public struct RefreshResponse: Codable, Sendable {

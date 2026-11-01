@@ -9,7 +9,7 @@ public enum ReminderStage: Int, Sendable, CaseIterable, Comparable {
     public static func < (a: ReminderStage, b: ReminderStage) -> Bool { a.rawValue > b.rawValue }
 }
 
-public struct TimeToLeave: Sendable, Hashable {
+public struct TimeToLeave: Codable, Sendable, Hashable {
     /// Aufbruchszeit
     public let leaveAt: Date
     /// Abfahrt des ersten Fahrzeugs inkl. Echtzeit (bei reinem Fussweg: Start des Fusswegs)
@@ -32,7 +32,7 @@ public enum ScheduleUpdate: Sendable, Hashable {
     case unchanged(TimeToLeave)
     /// Wecker verschieben (positiv = spaeter, z. B. bei Verspaetung)
     case shifted(TimeToLeave, bySeconds: Int)
-    /// Ausfall oder Anschluss nicht zu schaffen: frueher/spaeter neu suchen (Meilenstein 4).
+    /// Ausfall oder Anschluss nicht zu schaffen: Wecker bleibt stehen, die App bietet "Nächste Verbindung" an.
     case connectionLost
 }
 
