@@ -71,6 +71,22 @@ import Testing
         #expect(plan.leaveAt == at("05:54:00"))
     }
 
+    /// Gleicher Index, aber aus dem Fussweg wurde ein Fahrzeug: dessen Geometrie gehoert nicht zum neuen Abschnitt.
+    @Test func geometryStaysWithItsLegKind() throws {
+        let original = try journey()
+        #expect(original.legs[0].polyline != nil && original.legs[0].isWalk)
+        var fresh = try journey(replacing: [("\"index\": 0, \"mode\": \"walk\"", "\"index\": 0, \"mode\": \"tram\"")])
+        fresh.legs = fresh.legs.map { leg in
+            var bare = leg
+            bare.polyline = nil
+            bare.steps = []
+            return bare
+        }
+        let merged = fresh.withGeometry(of: original)
+        #expect(merged.legs[0].polyline == nil && merged.legs[0].steps.isEmpty)
+        #expect(merged.legs[1].polyline == original.legs[1].polyline && merged.legs[1].polyline != nil)
+    }
+
     @Test func driftBelowThresholdNeverAccumulates() throws {
         var p = try plan()
         // 50 s nach Plan: kein Verschieben; der naechste Vergleich laeuft gegen den gestellten Wecker, nicht gegen 06:08:50.
@@ -305,6 +321,7 @@ import Testing
         #expect(plan.calibrated.journey.legs.count == 5)
         #expect(plan.scheduled.firstDeparture == Date.iso("2026-10-24T06:08:00Z"))
         #expect(plan.status == .scheduled && !plan.isEstimated)
+        #expect(plan.alertsPending == nil)
         #expect(plan.calibrated.walks[0]?.seconds == 240)
     }
 

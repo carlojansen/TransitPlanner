@@ -180,7 +180,7 @@ private func iso(_ time: String) -> Date {
         #expect(env.notifier.alerts.isEmpty)
     }
 
-    /// Review: scheitert das Ersetzen der Mitteilungen, gilt die Verschiebung nicht als uebernommen; der naechste Lauf holt sie nach.
+    /// Review: scheitert das Ersetzen der Mitteilungen, bleibt der neue Stand; der naechste Lauf ersetzt sie auch ohne neue Aenderung.
     @Test func failedAlertReplacementIsRetriedByTheNextCheck() async throws {
         let env = Env()
         let n = StepNotifier()
@@ -191,15 +191,49 @@ private func iso(_ time: String) -> Date {
         n.failing.withLock { $0 = true }
         env.clock.set("05:35:00")
         await f.reminders.checkDue()
-        #expect(f.reminders.rows.first?.plan.leaveAt == before)
-        #expect(env.store.all().first?.plan.leaveAt == before)
+        let moved = before.addingTimeInterval(300)
+        #expect(f.reminders.rows.first?.plan.leaveAt == moved)
+        #expect(f.reminders.rows.first?.plan.alertsPending == true)
+        #expect(env.store.all().first?.plan.alertsPending == true)
+        #expect(n.pending.withLock { $0[identifier]?.fireAt } == before)
 
         n.failing.withLock { $0 = false }
         env.clock.set("05:40:00")
         await f.reminders.checkDue()
-        let moved = before.addingTimeInterval(300)
         #expect(f.reminders.rows.first?.plan.leaveAt == moved)
+        #expect(f.reminders.rows.first?.plan.alertsPending == nil)
+        #expect(env.store.all().first?.plan.alertsPending == nil)
         #expect(n.pending.withLock { $0[identifier]?.fireAt } == moved)
+    }
+
+    /// Mitteilungen in iOS aus, die Bahn faellt aus: der Hinweis Kritisch kommt trotzdem, und Wiederholen schreibt keinen Snapshot.
+    @Test func failedAlertReplacementStillShowsLostConnection() async throws {
+        let env = Env()
+        let n = StepNotifier()
+        let (f, id) = try await armedFlow(env, n, warn: 0)
+        env.refresher.set(.success(try changed { $0["cancelled"] = true }))
+        n.failing.withLock { $0 = true }
+        env.clock.set("05:35:00")
+        await f.reminders.checkDue()
+        #expect(f.reminders.lost?.id == id)
+        #expect(f.reminders.rows.first?.plan.alertsPending == true)
+        let written = env.snapshots.withLock { $0.count }
+        #expect(env.snapshots.withLock { $0.last?.trips.first?.status } == .lost)
+
+        env.clock.set("05:40:00")
+        await f.reminders.checkDue()
+        env.clock.set("05:45:00")
+        await f.reminders.checkDue()
+        #expect(env.refresher.callCount == 3)
+        #expect(f.reminders.lost?.id == id)
+        #expect(env.snapshots.withLock { $0.count } == written)
+
+        n.failing.withLock { $0 = false }
+        env.clock.set("05:50:00")
+        await f.reminders.checkDue()
+        #expect(f.reminders.rows.first?.plan.alertsPending == nil)
+        #expect(n.pending.withLock { $0[ReminderAlert.identifier(id, .leave)]?.title } == "Verbindung fällt aus")
+        #expect(env.snapshots.withLock { $0.count } == written)
     }
 
     /// Einstellung "Am Gleis sein vorher": gespeichert, in neuen Erinnerungen und beim Refresh bestehender.

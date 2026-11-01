@@ -237,7 +237,7 @@ struct SettingsSheet: View {
                 Section {
                     StationBufferStepper()
                 } footer: {
-                    Text("Gilt für neue Erinnerungen, bestehende übernehmen den Wert bei der nächsten Neuberechnung. Bei 0 Min. verschiebt „Später erinnern“ nichts mehr, außer du gehst früher los. Umstiege bewertet die App davon unabhängig.")
+                    Text("Gilt für neue Erinnerungen, bestehende übernehmen den Wert bei der nächsten Neuberechnung. Bei 0 Min. entfällt „Später erinnern“ in der Losgehen-Mitteilung, außer du gehst früher los. Umstiege bewertet die App davon unabhängig.")
                 }
                 Section {
                     NavigationLink(value: Route.sources) { SettingsRow(title: "Quellen und Lizenzen") }

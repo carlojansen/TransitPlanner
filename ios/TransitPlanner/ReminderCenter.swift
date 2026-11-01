@@ -318,18 +318,17 @@ final class ReminderCenter {
         do throws(TransitError) {
             let fresh = try await deps.refresh(token)
             // Waehrend der Anfrage geloescht: nichts wiederbeleben.
-            guard let before = self.reminder(id: id) else { return }
-            var current = before
-            let replace = current.plan.apply(fresh, now: deps.now(), scheduler: scheduler)
+            guard var current = self.reminder(id: id) else { return }
+            let replace = current.plan.apply(fresh, now: deps.now(), scheduler: scheduler) || current.plan.alertsPending == true
+            current.plan.alertsPending = replace ? true : nil
             if let new = fresh.refreshToken, new != token { try deps.secrets.write(Data(new.utf8), for: .refreshToken(tripID: id)) }
             try store(current)
+            // Der neue Stand bleibt auch ohne Mitteilungen: der Hinweis in der App haengt daran.
             if replace {
-                do {
-                    try await replaceAlerts(of: current)
-                } catch {
-                    // Nicht uebernommen: der naechste Lauf sieht die Aenderung wieder und ersetzt erneut.
-                    if self.reminder(id: id)?.plan == current.plan { try? store(before) }
-                    throw error
+                try await replaceAlerts(of: current)
+                if var done = self.reminder(id: id), done.plan.alertsPending == true {
+                    done.plan.alertsPending = nil
+                    try store(done)
                 }
             }
         } catch .refreshExpired {

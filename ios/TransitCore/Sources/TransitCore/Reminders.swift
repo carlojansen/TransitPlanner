@@ -107,6 +107,8 @@ public struct ReminderPlan: Codable, Sendable, Hashable {
     /// Letzter Versuch, auch erfolglos; drosselt die Anfragen.
     public var attemptedAt: Date?
     public private(set) var status = Status.scheduled
+    /// Stand gespeichert, Mitteilungen noch nicht ersetzt (Fehler, Mitteilungen aus, Absturz dazwischen); der naechste Refresh holt es nach.
+    public var alertsPending: Bool?
 
     /// Erst so kurz vor dem Losgehen wird gefragt (SPEZIFIKATION 4.3); davor gibt es keine Anfragen an Transitous.
     public static let checkLead = NavigationEngine.leaveLead

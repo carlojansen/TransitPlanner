@@ -630,7 +630,7 @@
     "Geradeaus" : {
 
     },
-    "Gilt für neue Erinnerungen, bestehende übernehmen den Wert bei der nächsten Neuberechnung. Bei 0 Min. verschiebt „Später erinnern“ nichts mehr, außer du gehst früher los. Umstiege bewertet die App davon unabhängig." : {
+    "Gilt für neue Erinnerungen, bestehende übernehmen den Wert bei der nächsten Neuberechnung. Bei 0 Min. entfällt „Später erinnern“ in der Losgehen-Mitteilung, außer du gehst früher los. Umstiege bewertet die App davon unabhängig." : {
 
     },
     "Gleis %@" : {

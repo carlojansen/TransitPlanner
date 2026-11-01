@@ -70,6 +70,8 @@ struct TripDetailsSheet: View {
                                     systemImage: reminderTime == nil ? "bell" : "bell.fill") { flow.reminderJourneyIndex = index }
                         // Eigene Breite: der Starten-Knopf darf "Erinnern" nicht zu einer schmalen, hohen Kapsel quetschen.
                         .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: false)
+                        // Vor der Kalibrierung gaebe es keinen Vorschlag, D1 stuende auf 0.
+                        .disabled(flow.calibratedJourney(at: index) == nil)
                         .accessibilityIdentifier("remindButton")
                     PrimaryButton(title: "Starten", systemImage: "location.fill") { flow.send(.startNavigation(index)) }
                         .disabled(flow.blockedUntil != nil || journey.cancelled)
