@@ -24,10 +24,10 @@
     "%lld Minuten verspätet" : {
 
     },
-    "ab %@" : {
+    "Abfahrt" : {
 
     },
-    "Abfahrt" : {
+    "Abfahrt %@" : {
 
     },
     "Abfahrt in" : {
@@ -52,9 +52,6 @@
 
     },
     "Anschluss reicht nicht mehr" : {
-
-    },
-    "ca. %@" : {
 
     },
     "Die Anfrage war ungültig." : {
@@ -91,6 +88,9 @@
     "Im %@" : {
 
     },
+    "Im Fahrzeug" : {
+
+    },
     "In %lld Min. losgehen" : {
 
     },
@@ -112,20 +112,23 @@
     "Losgehen %@" : {
 
     },
-    "nach %@" : {
-
-    },
     "Nächster Halt aussteigen" : {
 
     },
     "Sichere Verbindung zum Server nicht möglich." : {
       "extractionState" : "manual"
     },
+    "Stand evtl. nicht aktuell" : {
+
+    },
     "Standort ist gerade nicht verfügbar." : {
       "extractionState" : "manual"
     },
     "Standortzugriff ist nicht erlaubt." : {
       "extractionState" : "manual"
+    },
+    "Umstieg" : {
+
     },
     "Umstieg in %@" : {
 
@@ -134,9 +137,6 @@
       "extractionState" : "manual"
     },
     "Verbindung fällt aus" : {
-
-    },
-    "Zeit %@" : {
 
     },
     "Zu Fuß nach %@, %@" : {
@@ -168,6 +168,15 @@
 
     },
     "Zum Halt" : {
+
+    },
+    "ab %@" : {
+
+    },
+    "ca. %@" : {
+
+    },
+    "nach %@" : {
 
     }
   },

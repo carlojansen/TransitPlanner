@@ -133,7 +133,7 @@ import Testing
         p.markExpired()
         #expect(p.isEstimated)
         #expect(!p.refreshDue(now: at("05:50:00")))
-        #expect(p.nextCheck(now: at("05:50:00")) == nil)
+        #expect(p.nextCheck(now: at("05:50:00")) == p.scheduled.firstDeparture) // nur noch das Ende der Activity
     }
 
     struct SnoozeRow: Sendable, CustomTestStringConvertible {
@@ -191,6 +191,8 @@ import Testing
         #expect(!p.refreshDue(now: at("05:34:59")))
         #expect(p.refreshDue(now: at("05:35:00")))
         #expect(p.nextCheck(now: at("05:31:00")) == at("05:35:00"))
+        p.attemptedAt = at("06:06:00")
+        #expect(p.nextCheck(now: at("06:06:30")) == p.scheduled.firstDeparture) // Drossel reicht ueber die Abfahrt hinaus
         #expect(!p.refreshDue(now: at("06:08:00"))) // abgefahren
         #expect(p.nextCheck(now: at("06:08:00")) == nil)
     }

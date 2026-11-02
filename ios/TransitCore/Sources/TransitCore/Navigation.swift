@@ -88,6 +88,10 @@ public enum NavigationEngine {
     public static let leaveLead: TimeInterval = 30 * 60
     /// "Naechster Halt aussteigen" erst so kurz vor der Ankunft (s); vorher die Restzeit.
     public static let exitLead: TimeInterval = 3 * 60
+    /// GPS und Polling laufen hoechstens so lange nach der Ankunft, auch wenn das Ziel nie erreicht wird (s).
+    public static let arrivalGrace: TimeInterval = 30 * 60
+    /// Verpasst und im Hintergrund: niemand sieht die Karte, GPS und Polling enden nach dieser Zeit (s).
+    public static let missedGrace: TimeInterval = 5 * 60
 
     /// Aktueller Zustand aus Zeit (Echtzeit-Abfahrten/Ankuenfte) und Position; nie hinter `previous` zurueck.
     /// ponytail: Einstieg/Ausstieg nach Fahrplanzeit statt Bewegung entlang der Polyline; bei Bedarf um Geschwindigkeit ergaenzen.
@@ -135,6 +139,12 @@ public enum NavigationEngine {
     public static func exitsNext(leg: Leg, now: Date) -> Bool {
         guard stopsUntilExit(leg: leg, now: now) <= 1 else { return false }
         return (leg.arrival ?? leg.plannedArrival).map { $0.timeIntervalSince(now) <= exitLead } ?? true
+    }
+
+    /// Harte Obergrenze fuer GPS, Hintergrund-Session und Polling. Eine spaet gestartete Fahrt bekommt die volle Nachfrist.
+    public static func trackingEnd(journey: Journey, startedAt: Date, missedInBackgroundSince missed: Date?) -> Date {
+        let end = max(journey.arrival ?? startedAt, startedAt).addingTimeInterval(arrivalGrace)
+        return missed.map { min(end, $0.addingTimeInterval(missedGrace)) } ?? end
     }
 
     /// Beginn des ersten Abschnitts (inkl. Zugangsweg) nach Fahrplan/Echtzeit.

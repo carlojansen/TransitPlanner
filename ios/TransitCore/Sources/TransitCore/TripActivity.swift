@@ -28,14 +28,14 @@ public struct TripActivityState: Codable, Hashable, Sendable {
     /// Vor der Navigation: die Erinnerung zaehlt zum Losgehen herunter.
     public init(plan: ReminderPlan) {
         let vehicles = plan.journey.legs.filter { !$0.isWalk }
+        problem = plan.status == .lost ? Self.problem(plan.journey, vehicle: nil, broken: true) : nil
         phase = .leave
-        target = plan.leaveAt
+        target = problem == nil ? plan.leaveAt : plan.scheduled.firstDeparture
         ride = vehicles.first.map(TripSnapshot.Ride.init)
         destination = Self.destination(vehicles)
         modes = vehicles.map(\.mode)
         current = 0
         delayMinutes = plan.delayMinutes
-        problem = plan.status == .lost ? Self.problem(plan.journey, vehicle: nil, broken: true) : nil
     }
 
     /// Unterwegs: `step` kommt aus `NavigationEngine.resolve`. `broken`: ein spaeterer Anschluss reicht nicht mehr.
@@ -46,10 +46,13 @@ public struct TripActivityState: Codable, Hashable, Sendable {
         if case .transferRouting = step {} else if vehicle == nil { vehicle = vehicles.last }
         let departure = vehicle?.departure ?? vehicle?.plannedDeparture
         let arrival = vehicle?.arrival ?? vehicle?.plannedArrival
+        var missed = broken
+        if case .missedDeparture = step { missed = true }
+        problem = Self.problem(journey, vehicle: vehicle, broken: missed)
         switch step {
         case .waitingToLeave:
             phase = .leave
-            target = leaveAt ?? NavigationEngine.leaveTime(journey)
+            target = problem == nil ? leaveAt ?? NavigationEngine.leaveTime(journey) : departure
         case .approachingFirstStop:
             phase = .walk
             target = departure
@@ -69,14 +72,14 @@ public struct TripActivityState: Codable, Hashable, Sendable {
             phase = .arrived
             target = nil
         }
-        ride = vehicle.map(TripSnapshot.Ride.init)
+        // Ausgestiegen: Gleis und Verspaetung des letzten Fahrzeugs gelten nicht mehr. `vehicle` bleibt fuer Leg-Bar und Ausfall.
+        let done = phase == .finalWalk || phase == .arrived
+        ride = done ? nil : vehicle.map(TripSnapshot.Ride.init)
         destination = Self.destination(vehicles)
         modes = vehicles.map(\.mode)
         current = vehicle.flatMap { v in vehicles.firstIndex { $0.index == v.index } } ?? max(0, vehicles.count - 1)
-        delayMinutes = vehicle?.departureDelaySeconds.flatMap { $0 >= 60 ? $0 / 60 : nil }
-        var missed = broken
-        if case .missedDeparture = step { missed = true }
-        problem = Self.problem(journey, vehicle: vehicle, broken: missed)
+        let delay = phase == .riding || phase == .exitNext ? vehicle?.arrivalDelaySeconds : vehicle?.departureDelaySeconds
+        delayMinutes = done ? nil : delay.flatMap { $0 >= 60 ? $0 / 60 : nil }
     }
 
     private static func destination(_ vehicles: [Leg]) -> String? {
@@ -95,14 +98,13 @@ public extension TripActivityState {
     /// Nach `staleDate` laeuft die Activity ohne App weiter: aus dem Countdown wird die Aufforderung.
     func title(stale: Bool) -> String {
         if let problem { return Self.text(problem) }
-        let line = ride?.line ?? ""
         switch phase {
         case .leave: return stale ? ReminderText.title(.leave, warnMinutes: 0) : String(localized: "Losgehen", bundle: .module)
         case .walk: return ride?.platform == nil ? String(localized: "Zum Halt", bundle: .module) : String(localized: "Zum Gleis", bundle: .module)
         case .platform: return ride?.platform == nil ? String(localized: "Am Halt", bundle: .module) : String(localized: "Am Gleis", bundle: .module)
-        case .riding: return String(localized: "Im \(line)", bundle: .module)
+        case .riding: return ride?.line.map { String(localized: "Im \($0)", bundle: .module) } ?? String(localized: "Im Fahrzeug", bundle: .module)
         case .exitNext: return String(localized: "Nächster Halt aussteigen", bundle: .module)
-        case .transfer: return String(localized: "Umstieg in \(line)", bundle: .module)
+        case .transfer: return ride?.line.map { String(localized: "Umstieg in \($0)", bundle: .module) } ?? String(localized: "Umstieg", bundle: .module)
         case .finalWalk: return String(localized: "Zu Fuß zum Ziel", bundle: .module)
         case .arrived: return String(localized: "Angekommen", bundle: .module)
         }
@@ -115,13 +117,17 @@ public extension TripActivityState {
         }
     }
 
+    /// Bei einem Problem gibt es bis zur Abfahrt nichts herunterzuzaehlen: dann steht die Uhrzeit da. Die Ankunft zaehlt weiter.
+    var countsDown: Bool { problem == nil || [.riding, .exitNext, .finalWalk].contains(phase) }
+
     /// Beschriftung des Countdowns.
     var targetLabel: String? {
         switch phase {
-        case .leave: String(localized: "Los in", bundle: .module)
-        case .walk, .platform, .transfer: String(localized: "Abfahrt in", bundle: .module)
-        case .riding, .exitNext, .finalWalk: String(localized: "Ankunft in", bundle: .module)
-        case .arrived: nil
+        case .leave, .walk, .platform, .transfer:
+            if !countsDown { return String(localized: "Abfahrt", bundle: .module) }
+            return phase == .leave ? String(localized: "Los in", bundle: .module) : String(localized: "Abfahrt in", bundle: .module)
+        case .riding, .exitNext, .finalWalk: return String(localized: "Ankunft in", bundle: .module)
+        case .arrived: return nil
         }
     }
 
@@ -134,19 +140,31 @@ public extension TripActivityState {
         }
     }
 
+    /// Absolut statt "in": gesprochen wird die Uhrzeit, nicht der laufende Countdown.
+    private var spokenTime: String? {
+        guard let clock = target?.clockText else { return nil }
+        switch phase {
+        case .leave where countsDown: return String(localized: "Losgehen \(clock)", bundle: .module)
+        case .leave, .walk, .platform, .transfer: return String(localized: "Abfahrt \(clock)", bundle: .module)
+        case .riding, .exitNext, .finalWalk: return String(localized: "Ankunft \(clock)", bundle: .module)
+        case .arrived: return nil
+        }
+    }
+
     /// VoiceOver; ohne Halte, solange der Sperrbildschirm redigiert ist.
     func spoken(stale: Bool, includeStops: Bool) -> String {
         var parts = [title(stale: stale)]
-        if let target { parts.append(String(localized: "Zeit \(target.clockText)", bundle: .module)) }
+        if let time = spokenTime { parts.append(time) }
         if phase != .riding, phase != .exitNext, phase != .transfer, let line = ride?.line { parts.append(line) }
         if includeStops, let stop { parts.append(stop) }
         if let platform = ride?.platformText, phase != .riding, phase != .exitNext { parts.append(platform) }
         if let delayMinutes { parts.append(String(localized: "\(delayMinutes) Minuten verspätet", bundle: .module)) }
+        if stale, phase != .leave { parts.append(String(localized: "Stand evtl. nicht aktuell", bundle: .module)) }
         return parts.joined(separator: ", ")
     }
 }
 
-/// Soll-Stand einer Activity. `key` ist die Erinnerung oder `navigationKey`, je Fahrt hoechstens eine.
+/// Soll-Stand einer Activity. `key` ist die Erinnerung oder eine eigene ID je Navigation, je Fahrt hoechstens eine.
 public struct TripActivityDesire: Sendable, Hashable {
     public let key: String
     public let state: TripActivityState
@@ -173,24 +191,33 @@ public struct TripActivityRunning: Sendable, Hashable {
 
 public enum TripActivityAction: Sendable, Hashable {
     case start(TripActivityDesire)
-    case update(TripActivityDesire)
+    /// `alert`: meldet sich auch bei gesperrtem Geraet.
+    case update(TripActivityDesire, alert: Bool = false)
+    /// Ankunft: endet mit Endstand, der noch `TripActivityPlanner.finishLinger` stehen bleibt.
+    case finish(TripActivityDesire)
     case end(key: String)
 }
 
 /// Eine Funktion fuer alles: Start, Ersetzen, Aufraeumen. Was nicht gewuenscht ist, endet; darum gibt es keine Waisen
 /// und keine zweite Activity je Fahrt.
 public enum TripActivityPlanner {
-    /// Fahrt ohne Erinnerung.
-    public static let navigationKey = "navigation"
     /// Geplanter Start vor dem Losgehen (SPEZIFIKATION 4.3).
     public static let startLead: TimeInterval = 15 * 60
     /// Spaeter als der Countdown plus das: die App laeuft nicht mehr, der Stand ist alt.
     public static let staleGrace: TimeInterval = 2 * 60
+    /// So lange bleibt "Angekommen" auf dem Sperrbildschirm.
+    public static let finishLinger: TimeInterval = 5 * 60
 
     private static func desire(_ key: String, _ state: TripActivityState, leaveAt: Date?, now: Date) -> TripActivityDesire {
         let start = leaveAt?.addingTimeInterval(-startLead)
+        let stale: Date? = switch state.phase {
         // Beim Losgehen schaltet die Anzeige ueber `isStale` auf "Jetzt losgehen", auch ohne App.
-        let stale = state.phase == .leave ? state.target : state.target?.addingTimeInterval(staleGrace)
+        case .leave: state.target
+        // Die Ankunft ist hier eine Schaetzung; laenger zu gehen macht den Stand nicht alt.
+        case .finalWalk: nil
+        // Ziel schon vorbei (verpasst): sonst waere die Activity sofort "nicht aktuell".
+        default: state.target?.addingTimeInterval(staleGrace).nonPast(now)
+        }
         return TripActivityDesire(key: key, state: state, startAt: start.flatMap { $0 > now ? $0 : nil }, staleDate: stale)
     }
 
@@ -209,29 +236,59 @@ public enum TripActivityPlanner {
     }
 
     public static func navigation(key: String, state: TripActivityState, now: Date) -> TripActivityDesire {
-        desire(key, state, leaveAt: state.phase == .leave ? state.target : nil, now: now)
+        desire(key, state, leaveAt: nil, now: now)
     }
 
-    /// Starten geht nur im Vordergrund (`canStart`); im Hintergrund bleibt eine geplante Activity lieber stehen, als dass sie
-    /// beendet und nicht neu angelegt werden kann.
-    public static func actions(running: [TripActivityRunning], desired: [TripActivityDesire], canStart: Bool) -> [TripActivityAction] {
+    /// Kaltstart ueber den Knopf: die Navigation ist mit dem Prozess weg, zurueck auf "Losgehen" waere falsch.
+    public static func stranded(_ running: [TripActivityRunning]) -> [TripActivityAction] {
+        running.filter { $0.state.phase != .leave }.map { .end(key: $0.key) }
+    }
+
+    /// Was zuletzt lief (`seen`: Key und geplanter Start, sonst `.distantPast`) und fehlt, ohne dass die App es beendet hat
+    /// (`end` nimmt den Key heraus). Fehlt ein Key vor seinem Start, hat ihn niemand gesehen, also auch niemand weggewischt:
+    /// das ist ein App-Update oder ein von iOS verworfener Plan, der naechste Vordergrund-Abgleich plant neu.
+    public static func dismissed(seen: [String: Date], live: Set<String>, now: Date) -> Set<String> {
+        Set(seen.filter { !live.contains($0.key) && $0.value <= now }.keys)
+    }
+
+    /// Haptik und Mitteilung nur bei dem, was man bei gesperrtem Geraet nicht verpassen darf (DESIGN 4c). Liegt der letzte
+    /// Zwischenhalt kurz vor dem Umstieg, entfaellt `.exitNext`, dann ist `.transfer` die Ansage.
+    private static func alerts(from old: TripActivityState, to new: TripActivityState) -> Bool {
+        (new.phase == .exitNext && old.phase != .exitNext) || (new.phase == .transfer && old.phase == .riding)
+            || (new.problem != nil && new.problem != old.problem)
+    }
+
+    /// Starten geht nur im Vordergrund (`canStart`); im Hintergrund bleibt eine geplante Activity stehen, ausser sie kaeme zu
+    /// spaet oder die Fahrt hat ein Problem. Eine spaetere Zeit korrigiert der naechste Vordergrund-Abgleich. `rejected`: weggewischt oder vom System beendet, fuer diese Fahrt kein neuer Start.
+    public static func actions(running: [TripActivityRunning], desired: [TripActivityDesire], canStart: Bool,
+                               rejected: Set<String> = []) -> [TripActivityAction] {
         var actions: [TripActivityAction] = []
         for activity in running where !desired.contains(where: { $0.key == activity.key }) {
             actions.append(.end(key: activity.key))
         }
         for wish in desired {
-            guard let activity = running.first(where: { $0.key == wish.key }) else {
-                if canStart { actions.append(.start(wish)) }
-                continue
-            }
-            if activity.isPending {
+            let activity = running.first { $0.key == wish.key }
+            if wish.state.phase == .arrived {
+                // Nie neu starten: nach `.finish` zaehlt die Activity nicht mehr als laufend.
+                if let activity { actions.append(activity.isPending ? .end(key: wish.key) : .finish(wish)) }
+            } else if let activity, activity.isPending {
                 // Geplantes laesst sich nicht aendern. Auch ein verstrichener Start landet hier: Rueckfall auf sofort.
-                guard canStart, activity.state != wish.state || activity.startAt != wish.startAt else { continue }
-                actions += [.end(key: wish.key), .start(wish)]
-            } else if activity.state != wish.state {
-                actions.append(.update(wish))
+                guard activity.state != wish.state || activity.startAt != wish.startAt else { continue }
+                if canStart {
+                    actions += [.end(key: wish.key), .start(wish)]
+                } else if wish.state.problem != nil || (wish.state.target ?? .distantPast) < (activity.state.target ?? .distantPast) {
+                    actions.append(.end(key: wish.key))
+                }
+            } else if let activity {
+                if activity.state != wish.state { actions.append(.update(wish, alert: alerts(from: activity.state, to: wish.state))) }
+            } else if canStart, !rejected.contains(wish.key) {
+                actions.append(.start(wish))
             }
         }
         return actions
     }
+}
+
+private extension Date {
+    func nonPast(_ now: Date) -> Date? { self > now ? self : nil }
 }

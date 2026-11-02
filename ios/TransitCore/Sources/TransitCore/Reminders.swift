@@ -165,10 +165,13 @@ public struct ReminderPlan: Codable, Sendable, Hashable {
         return attemptedAt.map { now.timeIntervalSince($0) >= Self.checkInterval } ?? true
     }
 
-    /// Fruehester Zeitpunkt fuer den naechsten Hintergrund-Lauf; nil = nichts mehr zu pruefen.
+    /// Fruehester Zeitpunkt fuer den naechsten Hintergrund-Lauf; nil = nichts mehr zu pruefen. Spaetestens zur Abfahrt,
+    /// auch nach 410: dort endet die Live Activity, ohne Netz.
     public func nextCheck(now: Date) -> Date? {
-        guard status != .expired, now < scheduled.firstDeparture else { return nil }
-        return max(now, leaveAt.addingTimeInterval(-Self.checkLead), attemptedAt?.addingTimeInterval(Self.checkInterval) ?? .distantPast)
+        guard now < scheduled.firstDeparture else { return nil }
+        guard status != .expired else { return scheduled.firstDeparture }
+        return min(scheduled.firstDeparture, max(now, leaveAt.addingTimeInterval(-Self.checkLead),
+                                                 attemptedAt?.addingTimeInterval(Self.checkInterval) ?? .distantPast))
     }
 
     /// Ausstehende Mitteilungen. Die Vorwarnung nur, wenn sie noch vor uns liegt; Losgehen schon vorbei, Bahn noch da: sofort.
