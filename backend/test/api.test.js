@@ -32,7 +32,7 @@ describe('Konfiguration', () => {
 	it('Routing-Parameter: Standardwerte, Override per Env, ungueltige Werte abgewiesen', () => {
 		const base = {USER_AGENT: UA, API_TOKEN: TOKEN};
 		const c = loadConfig(base);
-		expect([c.MAX_PRE_TRANSIT_SECONDS, c.MAX_POST_TRANSIT_SECONDS, c.ADDITIONAL_TRANSFER_MINUTES]).toEqual([1500, 1500, 0]);
+		expect([c.MAX_PRE_TRANSIT_SECONDS, c.MAX_POST_TRANSIT_SECONDS, c.ADDITIONAL_TRANSFER_MINUTES]).toEqual([900, 900, 0]);
 		expect(loadConfig({...base, MAX_PRE_TRANSIT_SECONDS: '1200', ADDITIONAL_TRANSFER_MINUTES: '3'}).MAX_PRE_TRANSIT_SECONDS).toBe(1200);
 		expect(() => loadConfig({...base, MAX_PRE_TRANSIT_SECONDS: '99999'})).toThrow(/MAX_PRE_TRANSIT_SECONDS/);
 		expect(() => loadConfig({...base, MAX_POST_TRANSIT_SECONDS: 'abc'})).toThrow(/MAX_POST_TRANSIT_SECONDS/);
@@ -42,7 +42,7 @@ describe('Konfiguration', () => {
 	it('Plan-Query enthaelt Fussweggrenzen und Umsteigezeit, Werte aus routing ueberschreibbar', async () => {
 		await request(app).post('/api/routes').set(auth).send({origin: {type: 'stop', id: 'de-DELFI_de:05111:18235'}, destination: {type: 'stop', id: 'de-DELFI_de:05315:11201'}}).expect(200);
 		let [, q] = client.calls.find((c) => c[0] === 'plan');
-		expect(q).toMatchObject({maxPreTransitTime: 1500, maxPostTransitTime: 1500, additionalTransferTime: 0});
+		expect(q).toMatchObject({maxPreTransitTime: 900, maxPostTransitTime: 900, additionalTransferTime: 0});
 		client = createFakeClient();
 		const svc = createTransitService({client, gate: createUpstreamGate({limit: 1000, intervalMs: 1000, maxQueue: 50, minRemainingMs: 0}), timeoutMs: 200, routing: {maxPreTransitSeconds: 1000, maxPostTransitSeconds: 1100, additionalTransferMinutes: 3}});
 		await svc.routes({origin: {type: 'stop', id: 'de-a'}, destination: {type: 'stop', id: 'de-b'}, isArrivalTime: false, results: 3, onlyNahverkehr: false});

@@ -150,8 +150,8 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 			detailedTransfers: true, // Fusswege mit Geometrie fuer die Karte
 			joinInterlinedLegs: true,
 			language: 'de',
-			maxPreTransitTime: routing.maxPreTransitSeconds ?? 1500,
-			maxPostTransitTime: routing.maxPostTransitSeconds ?? 1500,
+			maxPreTransitTime: routing.maxPreTransitSeconds ?? 900,
+			maxPostTransitTime: routing.maxPostTransitSeconds ?? 900,
 			additionalTransferTime: routing.additionalTransferMinutes ?? 0,
 		};
 		if (accessibility === 'stepFree') query.pedestrianProfile = 'WHEELCHAIR';

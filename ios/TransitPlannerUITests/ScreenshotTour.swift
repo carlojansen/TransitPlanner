@@ -4,7 +4,7 @@ import XCTest
 /// Laeuft nur mit SCREENSHOTS=1 (beim Aufruf per xcodebuild: TEST_RUNNER_SCREENSHOTS=1), sonst uebersprungen.
 /// Ziel: $SCREENSHOT_DIR (TEST_RUNNER_SCREENSHOT_DIR), Dateinamen wie `09-routes-light.png`.
 final class ScreenshotTour: XCTestCase {
-    static let defaultDir = "/private/tmp/claude-501/-Users-carlo-Dev-TransitPlanner/6e8b27d5-d678-4faf-9316-249e57655002/scratchpad/shots"
+    static let defaultDir = NSTemporaryDirectory() + "transitplanner-shots"
 
     private var dir = URL(filePath: ScreenshotTour.defaultDir)
 
