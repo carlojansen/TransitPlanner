@@ -1,7 +1,7 @@
 {
   "name": "transitplanner-backend",
   "version": "0.1.0",
-  "description": "Meilenstein 1: Zero-Knowledge Routing-Proxy fuer MOTIS (Transitous)",
+  "description": "Routing-Proxy fuer MOTIS (Transitous): nur Koordinaten, Haltestellen und Zeiten, keine Nutzerdaten",
   "main": "src/server.js",
   "directories": {
     "test": "test"
@@ -12,7 +12,7 @@
     "test": "vitest run",
     "smoke": "node --env-file-if-exists=.env scripts/smoke.js"
   },
-  "license": "UNLICENSED",
+  "license": "MIT",
   "dependencies": {
     "@mapbox/polyline": "^1.2.1",
     "@motis-project/motis-client": "2.11.1",

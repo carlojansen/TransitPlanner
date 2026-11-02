@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TransitPlanner: Datenschutz und Support</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--fg:#111;--mute:#555;--line:#ddd}
+@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--mute:#aaa;--line:#333}}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.55 -apple-system,system-ui,sans-serif}
+main{max-width:42rem;margin:0 auto;padding:2rem 16px 4rem}
+h1{font-size:1.8rem}h2{margin-top:2.2rem;font-size:1.25rem;border-top:1px solid var(--line);padding-top:1.2rem}
+a{color:inherit}.mute{color:var(--mute)}
+</style>
+</head>
+<body>
+<main>
+<h1>TransitPlanner</h1>
+<p>Routenplaner für Bus und Bahn in Deutschland. Kostenlos, ohne Werbung, ohne Konto, ohne Tracking, nicht kommerziell.
+Der Quellcode steht unter MIT-Lizenz auf <a href="https://github.com/carlojansen/TransitPlanner">GitHub</a>.</p>
+
+<h2 id="support">Support</h2>
+<p>Fehler und Wünsche bitte als <a href="https://github.com/carlojansen/TransitPlanner/issues">GitHub-Issue</a>
+oder per Mail an <a href="mailto:kontakt@transitplaner.de">kontakt@transitplaner.de</a>.</p>
+
+<h2 id="datenschutz">Datenschutzerklärung</h2>
+<p class="mute">Stand: 2. November 2026</p>
+
+<p><strong>Verantwortlich:</strong> Axiom Software Entwicklung, Inhaber Carlo Jansen (Anschrift siehe <a href="#impressum">Impressum</a>), erreichbar unter <a href="mailto:kontakt@transitplaner.de">kontakt@transitplaner.de</a>.</p>
+
+<h3>Was die App speichert</h3>
+<p>Es gibt kein Konto und keine Anmeldung. Orte, Erinnerungen und Einstellungen bleiben auf deinem Gerät.
+Der Server speichert sie nicht.</p>
+
+<h3>Was an den Server geht</h3>
+<p>Für die Suche übermittelt die App: Koordinaten (auf etwa 10 Meter gerundet) oder Haltestellen-Kennungen,
+Haltestellen-Suchtexte, Abfahrts- oder Ankunftszeit und Verkehrsmittel-Filter.
+Adressen, Kalendertitel und Geräte-Kennungen werden nicht übertragen.
+Das Server-Protokoll enthält weder IP-Adressen noch Suchinhalte, nur Zeit, Pfad und Statuscode.</p>
+
+<h3>Standort</h3>
+<p>Der Standort wird nur verwendet, solange die App geöffnet ist. Eine Ausnahme ist die Gehphase einer Fahrt,
+die du selbst gestartet hast: Dann nutzt die App den Standort im Hintergrund, um dich rechtzeitig zu erinnern.
+Der genaue Standort verlässt dein Gerät nicht, nur der gerundete Wert für die Suche.</p>
+
+<h3>Weitergabe an Dritte</h3>
+<p>Die Fahrplandaten stammen von <a href="https://transitous.org/">Transitous</a>, einem freien Dienst.
+Dorthin leitet der Server die Suchanfragen weiter, ohne deine IP-Adresse. Die Quellen der Daten findest du unter
+<a href="https://transitous.org/sources/">transitous.org/sources</a>. Kartendaten: © OpenStreetMap-Mitwirkende.
+Es gibt keine Werbung, keine Analyse-Dienste und keine Weitergabe zu Werbezwecken.</p>
+
+<h3>Deine Rechte</h3>
+<p>Da der Server keine personenbezogenen Daten speichert, kann er keine Auskunft zu dir geben.
+Du kannst alle lokalen Daten löschen, indem du die App löschst. Bei Fragen schreib an die Adresse oben;
+du kannst dich auch bei einer Datenschutz-Aufsichtsbehörde beschweren.</p>
+
+<h2 id="impressum">Impressum</h2>
+<p>Axiom Software Entwicklung<br>Inhaber: Carlo Jansen<br>Sittardstr. 56<br>41061 Mönchengladbach</p>
+<p>E-Mail: <a href="mailto:kontakt@transitplaner.de">kontakt@transitplaner.de</a></p>
+</main>
+</body>
+</html>
