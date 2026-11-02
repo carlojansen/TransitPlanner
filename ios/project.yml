@@ -10,6 +10,7 @@ settings:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
     SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+    SWIFT_EMIT_LOC_STRINGS: YES
     GCC_TREAT_WARNINGS_AS_ERRORS: YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     DEAD_CODE_STRIPPING: YES
@@ -43,7 +44,7 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         ITSAppUsesNonExemptEncryption: false
-        NSLocationWhenInUseUsageDescription: "Dein Standort wird nur auf dem Gerät verwendet, um Haltestellen in der Nähe und Fußwege zu berechnen, während einer Fahrt auch bei gesperrtem iPhone. Ans Fahrplan-Backend geht nur eine gerundete Koordinate."
+        NSLocationWhenInUseUsageDescription: "Dein Standort wird nur auf dem Gerät verwendet, um Haltestellen in der Nähe und Fußwege zu berechnen, während einer Fahrt auch im Hintergrund. Ans Fahrplan-Backend geht nur eine gerundete Koordinate."
         # Neuberechnung der Erinnerungen ca. 30 Min. vor dem Losgehen (BGAppRefreshTask, ReminderCenter.backgroundTaskID).
         # location: Navigation bei gesperrtem Geraet, nur mit CLBackgroundActivitySession ab der Gehphase.
         UIBackgroundModes: [fetch, location]
