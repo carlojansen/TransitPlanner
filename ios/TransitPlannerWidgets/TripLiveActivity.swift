@@ -26,9 +26,9 @@ struct ActivityCountdown: View {
     var body: some View {
         let now = Date()
         Group {
-            if let target = state.target, target > now, !stale {
+            if let target = state.target, target > now, !stale, state.countsDown {
                 Text(timerInterval: now...target, countsDown: true)
-            } else if state.phase == .leave {
+            } else if state.phase == .leave, state.problem == nil {
                 Text("Los")
             } else if let target = state.target {
                 Text(target, format: .clock)
@@ -68,13 +68,7 @@ struct ActivityDetails: View {
                 if let platform = state.ride?.platformText, state.phase != .riding, state.phase != .exitNext {
                     Text(platform).lineLimit(1)
                 }
-                if let delay = state.delayMinutes {
-                    Text("\(delay) Min. später")
-                        .foregroundStyle(Color(.statusWarn))
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                        .lineLimit(1)
-                }
+                if let delay = state.delayMinutes { DelayLabel(minutes: delay) }
             }
         }
         .font(.footnote)
@@ -138,7 +132,7 @@ struct ActivityLockView: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(state.spoken(stale: stale, includeStops: !redaction.contains(.privacy)))
-            ActivityRefreshButton()
+            if state.phase != .arrived { ActivityRefreshButton() }
         }
         .padding(16)
     }
@@ -170,7 +164,7 @@ struct TripLiveActivity: Widget {
                     Text(state.title(stale: stale))
                         .font(.headline)
                         .foregroundStyle(state.problem == nil ? Color.primary : Color(.statusAlert))
-                        .lineLimit(1)
+                        .lineLimit(state.problem == nil ? 1 : 2)
                         .minimumScaleFactor(0.6)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
@@ -182,7 +176,7 @@ struct TripLiveActivity: Widget {
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(state.spoken(stale: stale, includeStops: false))
                         Spacer(minLength: 0)
-                        ActivityRefreshButton()
+                        if state.phase != .arrived { ActivityRefreshButton() }
                     }
                 }
             } compactLeading: {
@@ -195,7 +189,7 @@ struct TripLiveActivity: Widget {
                 .frame(maxWidth: 72)
             } compactTrailing: {
                 ActivityCountdown(state: state, stale: stale)
-                    .font(.caption.weight(.semibold))
+                    .font(.caption.bold())
                     .fontDesign(.rounded)
                     .multilineTextAlignment(.trailing)
                     .frame(maxWidth: 48)
@@ -207,13 +201,16 @@ struct TripLiveActivity: Widget {
                         Image(systemName: state.symbol).foregroundStyle(state.tint)
                     } else {
                         ActivityCountdown(state: state, stale: stale)
-                            .font(.caption2.weight(.semibold))
+                            .font(.caption2.bold())
+                            .fontDesign(.rounded)
                             .multilineTextAlignment(.center)
                             .minimumScaleFactor(0.5)
                     }
                 }
                 .accessibilityLabel(state.spoken(stale: stale, includeStops: false))
             }
+            // Mit dem Standardrand schneidet die Island Badge und Leg-Bar an den runden Ecken ab (Geraet, 2.11.).
+            .contentMargins(.horizontal, 28, for: .expanded)
             .keylineTint(state.tint)
         }
     }

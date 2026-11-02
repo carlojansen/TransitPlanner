@@ -280,6 +280,18 @@ final class AppFlow {
     @ObservationIgnored private var navFix: LocationFix?
     @ObservationIgnored private var navTasks: [Task<Void, Never>] = []
     @ObservationIgnored private var endBackgroundLocation: (@MainActor @Sendable () -> Void)?
+    /// Einmal in `beginNavigation` bestimmt und bis `endNavigation` gehalten: die Erinnerung kann unterwegs wegfallen.
+    @ObservationIgnored private var navActivityKey: String?
+    @ObservationIgnored private var inBackground = false
+    /// Seit wann die Fahrt verpasst ist und niemand hinsieht (`NavigationEngine.missedGrace`).
+    @ObservationIgnored private var navMissedSince: Date?
+    /// Fahrzeuge, die laut Puffer nicht mehr reichen; eingerastet bis zum naechsten neuen Stand (DESIGN: einmal je Anschluss).
+    @ObservationIgnored private var navMissedVehicles: Set<Int> = []
+    @ObservationIgnored private var navRefreshing = false
+    @ObservationIgnored private var lastNavRefresh: Date?
+    /// Start gescheitert: Neuversuch erst beim naechsten Aktivwerden, nicht im Takt der Navigation.
+    @ObservationIgnored private var activityStartFailed = false
+    @ObservationIgnored private var departureSync: (at: Date, task: Task<Void, Never>)?
     @ObservationIgnored private var positionTask: Task<Void, Never>?
     /// Fahrzeuge, fuer die die Puffer-/Anschluss-Haptik schon kam (einmal je Fahrzeug).
     @ObservationIgnored private var warnedVehicles: Set<Int> = []
@@ -302,6 +314,8 @@ final class AppFlow {
     nonisolated static let maxQueryLength = 80
     /// Kleinere Standortsprünge gelten als GPS-Rauschen (Meter).
     nonisolated static let positionThreshold: Double = 3
+    /// Mindestabstand fuer "Aktualisieren" in der Live Activity (Limit 12/min, 429 sperrt auch die Routensuche).
+    nonisolated static let activityRefreshGap: TimeInterval = 30
 
     /// Erinnerungen (Liste, Mitteilungen, Neuberechnung); beobachtet sich selbst.
     @ObservationIgnored let reminders: ReminderCenter
@@ -400,6 +414,12 @@ final class AppFlow {
     /// Genauigkeit fuer den Status auffrischen (kein Netz, nur CoreLocation).
     func becameActive() {
         locationAuthorization = deps.authorization()
+        inBackground = false
+        activityStartFailed = false
+        if !locationAllowed {
+            endBackgroundLocation?()
+            endBackgroundLocation = nil
+        }
         // Rueckfall fuer den geplanten Start und Aufraeumen verwaister Activities; starten geht nur im Vordergrund.
         syncActivities()
         // Vor dem Standort-Guard: Erinnerungen funktionieren auch ohne Standort.
@@ -421,6 +441,7 @@ final class AppFlow {
 
     /// Hintergrund: nichts Standortbezogenes behalten.
     func movedToBackground() {
+        inBackground = true
         reminders.scheduleBackgroundCheck()
         fixTask?.cancel()
         nearbyTask?.cancel()
@@ -853,6 +874,10 @@ final class AppFlow {
         navExpired = false
         warnedVehicles = []
         navStartedAt = deps.now()
+        let key = reminders.reminder(for: journey)?.id.uuidString ?? UUID().uuidString
+        navActivityKey = key
+        navMissedVehicles = []
+        deps.activities.forgive(key)
         // Gleiswechsel schon beim Start: Hinweis und Haptik
         if journey.legs.contains(where: { $0.platformChanged == true }) { navWarnings += 1 }
         navigationUpdate(position: nil, now: deps.now())
@@ -929,6 +954,14 @@ final class AppFlow {
         if step != navStep || tight || minute(now) != minute(navNow) || moved { navNow = now }
         if navStep == .finalWalkToDestination, step == .arrived { recordFinalWalk(journey, now: now) }
         if step != navStep { navStep = step; navMapOnly = false }
+        if case .missedDeparture = step, inBackground { navMissedSince = navMissedSince ?? now } else { navMissedSince = nil }
+        // Obergrenze: ohne Treffer im Zielradius liefen GPS und Polling sonst unbegrenzt. Nur im Hintergrund: im Vordergrund
+        // darf die Navigation nicht ohne Hinweis verschwinden, etwa offline bei langer Verspaetung.
+        if inBackground, step != .arrived, let started = navStartedAt,
+           now >= NavigationEngine.trackingEnd(journey: journey, startedAt: started, missedInBackgroundSince: navMissedSince) {
+            send(.back)
+            return
+        }
         startPositionsIfNeeded(step)
         if let buffer = currentBuffer, buffer.needsWarning, let target = NavigationEngine.targetVehicle(step),
            warnedVehicles.insert(target).inserted {
@@ -948,27 +981,66 @@ final class AppFlow {
     func syncActivities() {
         let now = deps.now()
         var desired: [TripActivityDesire] = []
-        var navKey: String?
-        if phase.isGuiding, let journey = navJourney, let step = navStep {
-            let reminder = reminders.reminder(for: journey)
-            let key = reminder?.id.uuidString ?? TripActivityPlanner.navigationKey
-            navKey = key
-            var broken = false
-            if case .onBoardTransit(let v) = step {
-                broken = NavigationEngine.brokenConnection(after: v, journey: journey, walks: navWalks, now: now, pace: pace) != nil
-            }
-            let state = TripActivityState(journey: journey, step: step, leaveAt: reminder?.plan.leaveAt, broken: broken, now: now)
+        if phase.isGuiding, let journey = navJourney, let step = navStep, let key = navActivityKey {
+            let state = TripActivityState(journey: journey, step: step, leaveAt: reminders.reminder(for: journey)?.plan.leaveAt,
+                                          broken: connectionBroken(journey, step, now: now), now: now)
             desired.append(TripActivityPlanner.navigation(key: key, state: state, now: now))
         }
-        let others = reminders.rows.map { (key: $0.id.uuidString, plan: $0.plan) }.filter { $0.key != navKey }
+        let others = reminders.rows.map { (key: $0.id.uuidString, plan: $0.plan) }.filter { $0.key != navActivityKey }
         if let next = TripActivityPlanner.nextReminder(others, now: now) { desired.append(next) }
         let activities = deps.activities
-        activities.apply(TripActivityPlanner.actions(running: activities.running(), desired: desired, canStart: activities.canStart))
+        apply(TripActivityPlanner.actions(running: activities.running(), desired: desired,
+                                          canStart: activities.canStart && !activityStartFailed, rejected: activities.rejected()))
+        // Vordergrund: ab der Abfahrt endet die Activity auch ohne weiteres Ereignis (Hintergrund: `ReminderPlan.nextCheck`).
+        let departure = reminders.rows.map(\.plan.scheduled.firstDeparture).filter { $0 > now }.min()
+        guard departureSync?.at != departure else { return }
+        departureSync?.task.cancel()
+        departureSync = departure.map { date in
+            (date, Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(date.timeIntervalSince(now))) } catch { return }
+                self?.departureSync = nil
+                self?.syncActivities()
+            })
+        }
     }
 
-    /// Knopf in der Live Activity: gedrosselt wie jeder andere Refresh.
+    /// Rastet je Fahrzeug ein: GPS-Spruenge um Puffer 0 duerfen den Ausfall nicht wiederholt an- und abschalten. Nur mit
+    /// Position: ohne Fix rechnet `currentBuffer` mit dem ganzen Fussweg, das zaehlt nur bis zum ersten Fix.
+    /// Das Zielfahrzeug im Umstieg kennt nur `currentBuffer`: `brokenConnection` rechnet ohne Position mit dem ganzen Fussweg.
+    private func connectionBroken(_ journey: Journey, _ step: NavigationStep, now: Date) -> Bool {
+        var ahead = NavigationEngine.targetVehicle(step) ?? .max
+        var last: Int?
+        switch step {
+        case .onBoardTransit(let v):
+            last = v
+            ahead = v + 1
+        case .transferRouting(_, let to): last = to
+        case .waitingAtPlatform(let v): ahead = v + 1 // am Gleis: dieses Fahrzeug ist erreicht
+        default: break
+        }
+        let live = currentBuffer?.status == .missed
+        if live, navPosition != nil, let target = NavigationEngine.targetVehicle(step) { navMissedVehicles.insert(target) }
+        if let last, let broken = NavigationEngine.brokenConnection(after: last, journey: journey, walks: navWalks, now: now, pace: pace) {
+            navMissedVehicles.insert(broken)
+        }
+        return live || navMissedVehicles.contains { $0 >= ahead }
+    }
+
+    /// Scheitert ein Start, bleibt es still: die Mitteilungen sind der Rueckfall.
+    private func apply(_ actions: [TripActivityAction]) {
+        do throws(TransitError) { try deps.activities.apply(actions) } catch { activityStartFailed = true }
+    }
+
+    /// Knopf in der Live Activity. Unterwegs mit eigenem Mindestabstand, Erinnerungen drosselt `refreshDue`.
     func refreshFromActivity() async {
-        if case .navigation = phase { await refreshNavigation() } else { await reminders.checkDue() }
+        if case .navigation = phase {
+            let now = deps.now()
+            guard !navRefreshing, lastNavRefresh.map({ now.timeIntervalSince($0) >= Self.activityRefreshGap }) ?? true else { return }
+            await refreshNavigation()
+        } else {
+            if !phase.isGuiding { apply(TripActivityPlanner.stranded(deps.activities.running())) }
+            await reminders.checkDue()
+        }
         syncActivities()
     }
 
@@ -998,12 +1070,17 @@ final class AppFlow {
     /// POST /api/refresh (nur refreshToken). Fehler: letzter Stand bleibt, Echtzeit pausiert, Banner wie H1/H3.
     func refreshNavigation() async {
         // Retry-After (H1): kein Polling, bis die Sperre ablaeuft; der letzte Stand bleibt sichtbar.
-        guard case .navigation = phase, blockedUntil == nil,
+        // 410 ist endgueltig: weitere Anfragen koennen nur scheitern.
+        guard case .navigation = phase, blockedUntil == nil, !navExpired,
               let token = navJourney?.refreshToken, let old = navJourney else { return }
+        navRefreshing = true
+        lastNavRefresh = deps.now()
+        defer { navRefreshing = false }
         do {
             let fresh = try await deps.refresh(token)
             guard case .navigation = phase, !Task.isCancelled, navJourney?.isSameTrip(as: old) == true else { return }
             if Self.platformChanged(from: old, to: fresh) { navWarnings += 1 }
+            releaseMissedVehicles(from: old, to: fresh)
             navJourney = fresh
             navIsStale = false
             if banner?.isTransient == true { banner = nil }
@@ -1013,6 +1090,15 @@ final class AppFlow {
             await show(error)
         }
         navigationUpdate(position: nil, now: deps.now())
+    }
+
+    /// Eingerastet bleibt, was der neue Stand nicht verbessert; jeder Refresh aendert irgendetwas (Halte, Remarks, Polylines).
+    private func releaseMissedVehicles(from old: Journey, to fresh: Journey) {
+        let now = deps.now()
+        func seconds(_ journey: Journey, _ vehicle: Int) -> Int {
+            NavigationEngine.buffer(journey: journey, vehicle: vehicle, walks: navWalks, position: nil, now: now, pace: pace)?.seconds ?? .min
+        }
+        navMissedVehicles = navMissedVehicles.filter { seconds(fresh, $0) <= seconds(old, $0) }
     }
 
     nonisolated static func platformChanged(from old: Journey, to fresh: Journey) -> Bool {
@@ -1070,6 +1156,9 @@ final class AppFlow {
         navGeometry = nil
         navWalks = [:]
         navStartedAt = nil
+        navActivityKey = nil
+        navMissedVehicles = []
+        navMissedSince = nil
         navIsStale = false
         navExpired = false
         navFocus = nil

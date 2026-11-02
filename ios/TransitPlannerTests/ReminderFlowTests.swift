@@ -448,9 +448,430 @@ private func iso(_ time: String) -> Date {
         let f = await planned(env)
         env.clock.set("05:58:00")
         f.send(.startNavigation(0))
-        #expect(env.activities.running().map(\.key) == [TripActivityPlanner.navigationKey])
+        let key = try #require(env.activities.running().first?.key)
+        #expect(env.activities.running().count == 1 && UUID(uuidString: key) != nil)
         f.send(.back)
         #expect(env.activities.running().isEmpty)
+        // Eine weggewischte Fahrt sperrt die naechste nicht.
+        env.activities.dismissed.withLock { _ = $0.insert(key) }
+        f.send(.startNavigation(0))
+        #expect(env.activities.running().count == 1 && env.activities.running().first?.key != key)
+    }
+
+    @Test func navigationWhileWaitingStartsAtOnce() async throws {
+        let env = Env()
+        let f = await planned(env)
+        f.send(.startNavigation(0))
+        #expect(f.navStep == .waitingToLeave(vehicle: 1))
+        #expect(env.activities.running().first?.isPending == false)
+        #expect(env.activities.running().first?.state.phase == .leave)
+    }
+
+    // MARK: Obergrenze fuer GPS und Polling
+
+    func missed(_ env: Env) async -> AppFlow {
+        let f = await planned(env)
+        f.send(.startNavigation(0))
+        env.clock.set("05:58:00")
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        env.clock.set("06:09:00")
+        f.navigationUpdate(position: NavigationFlowTests.destination, accuracy: 5, now: env.clock.now)
+        return f
+    }
+
+    @Test func missedInTheBackgroundStopsTrackingAfterTheGrace() async throws {
+        let env = Env()
+        let f = await missed(env)
+        #expect(f.navStep == .missedDeparture(vehicle: 1))
+        f.movedToBackground()
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        env.clock.value.withLock { $0 = $0.addingTimeInterval(NavigationEngine.missedGrace - 1) }
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        #expect(f.navStep == .missedDeparture(vehicle: 1) && env.endedSessions.withLock { $0 } == 0)
+        env.clock.value.withLock { $0 = $0.addingTimeInterval(1) }
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        #expect(f.phase == .routeSelection && f.navStep == nil && f.navPosition == nil)
+        #expect(env.endedSessions.withLock { $0 } == 1)
+        #expect(env.activities.running().isEmpty)
+        await f.refreshNavigation()
+        #expect(env.refresher.callCount == 0)
+    }
+
+    /// Im Vordergrund entscheidet der Nutzer; zurueck in der App beginnt die Frist im Hintergrund neu.
+    @Test func missedInTheForegroundStaysOnScreen() async throws {
+        let env = Env()
+        let f = await missed(env)
+        f.movedToBackground()
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        env.clock.value.withLock { $0 = $0.addingTimeInterval(60) }
+        f.becameActive()
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        env.clock.value.withLock { $0 = $0.addingTimeInterval(NavigationEngine.missedGrace) }
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        #expect(f.navStep == .missedDeparture(vehicle: 1))
+        f.movedToBackground()
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        #expect(f.navStep == .missedDeparture(vehicle: 1))
+    }
+
+    @Test func destinationNeverReachedEndsTrackingAfterTheGrace() async throws {
+        let env = Env()
+        let f = await planned(env)
+        f.send(.startNavigation(0))
+        env.clock.set("05:58:00")
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        f.movedToBackground()
+        env.clock.set("06:43:00")
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        #expect(f.navStep == .finalWalkToDestination)
+        env.clock.set("07:11:59") // Ankunft 06:42 plus 30 Min.
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        #expect(f.navStep == .finalWalkToDestination && env.endedSessions.withLock { $0 } == 0)
+        env.clock.set("07:12:00")
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        #expect(f.phase == .routeSelection && env.endedSessions.withLock { $0 } == 1)
+        #expect(env.activities.running().isEmpty)
+    }
+
+    /// Im Vordergrund verschwindet die Navigation nie ohne Hinweis, auch nicht nach 410.
+    @Test func foregroundKeepsNavigationPastTheGrace() async throws {
+        let env = Env()
+        let f = await planned(env)
+        f.send(.startNavigation(0))
+        env.clock.set("05:58:00")
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        env.refresher.set(.failure(.refreshExpired))
+        await f.refreshNavigation()
+        env.clock.set("07:30:00")
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        #expect(f.phase == .navigation(0) && f.navExpired)
+        #expect(f.navStep == .finalWalkToDestination && env.endedSessions.withLock { $0 } == 0)
+    }
+
+    /// Ziel erst nach Ablauf der Nachfrist erreicht: das ist eine Ankunft, kein Abbruch.
+    @Test func reachingTheDestinationLateIsStillAnArrival() async throws {
+        let env = Env()
+        let f = await planned(env)
+        f.send(.startNavigation(0))
+        env.clock.set("05:58:00")
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        f.movedToBackground()
+        env.clock.set("07:30:00")
+        f.navigationUpdate(position: NavigationFlowTests.destination, now: env.clock.now)
+        #expect(f.phase == .arrival)
+    }
+
+    @Test func expiredTripStopsPolling() async throws {
+        let env = Env()
+        let f = await planned(env)
+        f.send(.startNavigation(0))
+        env.refresher.set(.failure(.refreshExpired))
+        await f.refreshNavigation()
+        #expect(f.navExpired && env.refresher.callCount == 1)
+        await f.refreshNavigation()
+        await f.refreshFromActivity()
+        #expect(env.refresher.callCount == 1)
+    }
+
+    // MARK: Live Activity: Ablehnen, Ende, Knopf
+
+    @Test func dismissedActivityDoesNotComeBack() async throws {
+        let env = Env()
+        let (f, id) = try await armed(env)
+        env.clock.set("05:50:00")
+        f.becameActive()
+        await f.waitForReminderCheck()
+        #expect(env.activities.running().first?.isPending == false)
+        env.activities.dismiss(id.uuidString)
+        let starts = env.activities.log.withLock { $0 }.count
+        f.syncActivities()
+        f.becameActive()
+        await f.waitForReminderCheck()
+        #expect(env.activities.running().isEmpty)
+        #expect(!env.activities.log.withLock { Array($0[starts...]) }.contains { if case .start = $0 { true } else { false } })
+
+        f.openReminder(id) // Bewusster Start hebt die Ablehnung auf
+        #expect(env.activities.running().map(\.key) == [id.uuidString])
+        env.activities.dismiss(id.uuidString) // Wegwischen waehrend der Navigation gilt wieder
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        #expect(env.activities.running().isEmpty)
+    }
+
+    /// Die Erinnerung wird nach der Ankunft aufgeraeumt: der Key bleibt, es entsteht keine zweite Activity.
+    @Test func arrivalEndsTheActivityAndPurgeKeepsTheKey() async throws {
+        let env = Env()
+        let (f, id) = try await armed(env)
+        env.clock.set("05:58:00")
+        f.openReminder(id)
+        env.clock.set("06:41:00")
+        f.navigationUpdate(position: NavigationFlowTests.destination, now: env.clock.now)
+        #expect(f.phase == .arrival)
+        #expect(env.activities.running().isEmpty)
+        let finished = env.activities.log.withLock { $0 }.compactMap { action -> TripActivityDesire? in
+            if case .finish(let wish) = action { wish } else { nil }
+        }
+        #expect(finished.map(\.key) == [id.uuidString] && finished.first?.state.phase == .arrived)
+
+        let before = env.activities.log.withLock { $0.count }
+        f.reminders.purge(id)
+        f.syncActivities()
+        #expect(env.activities.log.withLock { $0.count } == before)
+        #expect(env.activities.running().isEmpty)
+    }
+
+    /// Faellt die Erinnerung unterwegs weg, bleibt es dieselbe Activity.
+    @Test func purgeDuringNavigationKeepsTheActivity() async throws {
+        let env = Env()
+        let (f, id) = try await armed(env)
+        env.clock.set("05:58:00")
+        f.openReminder(id)
+        #expect(env.activities.running().map(\.key) == [id.uuidString])
+        env.activities.log.withLock { $0 = [] }
+        f.reminders.purge(id)
+        f.syncActivities()
+        #expect(env.activities.running().map(\.key) == [id.uuidString])
+        #expect(env.activities.log.withLock { $0 }.isEmpty)
+    }
+
+    @Test func missedBufferShowsAsProblem() async throws {
+        let env = Env()
+        let f = await planned(env)
+        f.send(.startNavigation(0))
+        env.clock.set("05:58:00")
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        #expect(env.activities.running().first?.state.problem == nil)
+        env.clock.set("06:07:30")
+        f.navigationUpdate(position: nil, now: env.clock.now)
+        #expect(f.currentBuffer?.status == .missed)
+        #expect(env.activities.running().first?.state.problem == .connection)
+    }
+
+    /// GPS-Spruenge um Puffer 0: der Ausfall meldet sich einmal und bleibt bis zum neuen Stand.
+    @Test func flippingBufferAlertsOnce() async throws {
+        let env = Env()
+        let f = await planned(env)
+        f.send(.startNavigation(0))
+        env.clock.set("06:05:00")
+        let far = GeoCoordinate(latitude: 51.2201, longitude: 6.7905), near = GeoCoordinate(latitude: 51.22003, longitude: 6.79241)
+        f.navigationUpdate(position: near, accuracy: 5, now: env.clock.now)
+        #expect(f.currentBuffer?.status != .missed)
+        #expect(env.activities.running().first?.state.problem == nil)
+        for position in [far, near, far, near, far, near] {
+            f.navigationUpdate(position: position, accuracy: 5, now: env.clock.now)
+        }
+        #expect(f.navStep == .approachingFirstStop(vehicle: 1))
+        #expect(f.currentBuffer?.status != .missed) // zuletzt reicht es wieder, die Meldung bleibt
+        #expect(env.activities.running().first?.state.problem == .connection)
+        let alerts = env.activities.log.withLock { $0 }.filter { if case .update(_, alert: true) = $0 { true } else { false } }
+        #expect(alerts.count == 1)
+
+        env.refresher.set(.success(try delayed(by: 300)))
+        await f.refreshNavigation()
+        #expect(env.activities.running().first?.state.problem == nil)
+    }
+
+    func flip(_ f: AppFlow, _ env: Env, times: Int = 3) {
+        let far = GeoCoordinate(latitude: 51.2201, longitude: 6.7905), near = GeoCoordinate(latitude: 51.22003, longitude: 6.79241)
+        for _ in 0..<times {
+            f.navigationUpdate(position: far, accuracy: 5, now: env.clock.now)
+            f.navigationUpdate(position: near, accuracy: 5, now: env.clock.now)
+        }
+    }
+
+    func alertCount(_ env: Env) -> Int {
+        env.activities.log.withLock { $0 }.filter { if case .update(_, alert: true) = $0 { true } else { false } }.count
+    }
+
+    /// Ein Refresh, der am Anschluss nichts verbessert, hebt das Einrasten nicht auf.
+    @Test func refreshWithoutBetterBufferKeepsTheSingleAlert() async throws {
+        let env = Env()
+        let f = await planned(env)
+        f.send(.startNavigation(0))
+        env.clock.set("06:05:00")
+        flip(f, env)
+        #expect(alertCount(env) == 1)
+        env.refresher.set(.success(try changed { $0["durationSeconds"] = 1 }))
+        await f.refreshNavigation()
+        flip(f, env)
+        env.refresher.set(.success(try changed { $0["durationSeconds"] = 2 }))
+        await f.refreshNavigation()
+        flip(f, env)
+        #expect(alertCount(env) == 1)
+        #expect(env.activities.running().first?.state.problem == .connection)
+    }
+
+    /// Ohne Fix rechnet der Puffer mit dem ganzen Fussweg: das darf den ersten echten Fix nicht ueberleben.
+    @Test func startWithoutFixDoesNotLatch() async throws {
+        let env = Env()
+        let f = await planned(env)
+        env.clock.set("06:06:00")
+        f.send(.startNavigation(0))
+        #expect(env.activities.running().first?.state.problem == .connection)
+        f.navigationUpdate(position: GeoCoordinate(latitude: 51.22003, longitude: 6.79241), accuracy: 5, now: env.clock.now)
+        #expect(f.navStep == .approachingFirstStop(vehicle: 1))
+        #expect(f.currentBuffer?.status != .missed)
+        #expect(env.activities.running().first?.state.problem == nil)
+    }
+
+    /// Am Gleis ist das Fahrzeug erreicht, auch wenn der Puffer vorher nicht reichte.
+    @Test func reachingThePlatformClearsTheMissedBuffer() async throws {
+        let env = Env()
+        let f = await planned(env)
+        f.send(.startNavigation(0))
+        env.clock.set("06:05:00")
+        flip(f, env, times: 1)
+        #expect(env.activities.running().first?.state.problem == .connection)
+        f.navigationUpdate(position: NavigationFlowTests.hbf, accuracy: 5, now: env.clock.now)
+        #expect(f.navStep == .waitingAtPlatform(vehicle: 1))
+        #expect(env.activities.running().first?.state.problem == nil)
+    }
+
+    /// Im Umstieg zaehlt auch ein spaeterer Anschluss. Deutz: Tram ab Hansaring faehrt vor der Ankunft plus Fussweg.
+    @Test func transferSeesALaterBrokenConnection() async throws {
+        let env = Env()
+        var deps = env.deps()
+        deps.planner = FakeRoutePlanner(response: FakeData.deutz())
+        env.clock.value.withLock { $0 = (try? Date.ISO8601FormatStyle().parse("2026-10-26T07:00:00Z")) ?? .distantPast }
+        let f = AppFlow(deps)
+        f.send(.editEndpoint(.destination))
+        f.choose(NavigationFlowTests.stop)
+        await f.waitForWork()
+        f.send(.startNavigation(0))
+        let journey = try #require(FakeData.deutz()?.journeys.first)
+        var object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(journey)) as? [String: Any])
+        var legs = try #require(object["legs"] as? [[String: Any]])
+        legs[4]["departure"] = try #require(legs[4]["departure"] as? Double) - 170
+        object["legs"] = legs
+        env.refresher.set(.success(try JSONDecoder().decode(Journey.self, from: JSONSerialization.data(withJSONObject: object))))
+        env.clock.value.withLock { $0 = (try? Date.ISO8601FormatStyle().parse("2026-10-26T07:31:00Z")) ?? .distantPast }
+        await f.refreshNavigation()
+        #expect(f.navStep == .transferRouting(from: 0, to: 2))
+        #expect(f.currentBuffer?.status != .missed)
+        #expect(env.activities.running().first?.state.problem == .connection)
+    }
+
+    @Test func activityButtonIsThrottledDuringNavigation() async throws {
+        let env = Env()
+        let f = await planned(env)
+        f.send(.startNavigation(0))
+        env.clock.set("05:58:00")
+        await f.refreshFromActivity()
+        #expect(env.refresher.callCount == 1)
+        env.clock.value.withLock { $0 = $0.addingTimeInterval(AppFlow.activityRefreshGap - 1) }
+        await f.refreshFromActivity()
+        #expect(env.refresher.callCount == 1)
+        env.clock.value.withLock { $0 = $0.addingTimeInterval(1) }
+        await f.refreshFromActivity()
+        #expect(env.refresher.callCount == 2)
+    }
+
+    @Test func activityButtonWaitsForARunningRefresh() async throws {
+        let env = Env()
+        let (gate, release) = AsyncStream<Void>.makeStream()
+        var deps = env.deps()
+        let calls = Mutex(0)
+        deps.refresh = { token throws(TransitError) in
+            calls.withLock { $0 += 1 }
+            for await _ in gate { break }
+            guard let journey = FakeData.routes?.journeys.first(where: { $0.refreshToken == token }) else { throw .internal }
+            return journey
+        }
+        env.clock.set("05:00:00")
+        let f = AppFlow(deps)
+        f.send(.editEndpoint(.destination))
+        f.choose(NavigationFlowTests.stop)
+        await f.waitForWork()
+        f.send(.startNavigation(0))
+        let running = Task { await f.refreshNavigation() }
+        for _ in 0..<50 where calls.withLock({ $0 }) == 0 { await Task.yield() }
+        env.clock.set("05:10:00") // Abstand reicht, die laufende Anfrage entscheidet
+        let button = Task { await f.refreshFromActivity() }
+        for _ in 0..<50 { await Task.yield() }
+        #expect(calls.withLock { $0 } == 1)
+        release.finish()
+        await running.value
+        await button.value
+    }
+
+    @Test func activityButtonChecksRemindersWithTheirOwnThrottle() async throws {
+        let env = Env()
+        let (f, _) = try await armed(env)
+        env.clock.set("05:40:00")
+        await f.refreshFromActivity()
+        await f.refreshFromActivity()
+        #expect(env.refresher.callCount == 1)
+        #expect(env.activities.running().first?.state.phase == .leave)
+    }
+
+    /// Prozess war weg: die Activity gehoert zu einer Navigation, die es nicht mehr gibt.
+    @Test func coldStartFromTheButtonEndsAStrandedActivity() async throws {
+        let env = Env()
+        let (first, id) = try await armed(env)
+        env.clock.set("05:58:00")
+        first.openReminder(id)
+        #expect(env.activities.running().first?.state.phase == .walk)
+        env.activities.log.withLock { $0 = [] }
+        env.activities.enabled.withLock { $0 = false } // Knopf: App im Hintergrund
+        let f = AppFlow(env.deps())
+        await f.refreshFromActivity()
+        #expect(env.activities.running().isEmpty)
+        #expect(env.activities.log.withLock { $0 } == [.end(key: id.uuidString)])
+    }
+
+    @Test func failedStartWaitsForTheNextActivation() async throws {
+        let env = Env()
+        env.activities.failing.withLock { $0 = true }
+        let (f, _) = try await armed(env)
+        func starts() -> Int { env.activities.log.withLock { $0.filter { if case .start = $0 { true } else { false } }.count } }
+        #expect(starts() == 1) // beim Scharfschalten
+        f.syncActivities()
+        f.syncActivities()
+        #expect(starts() == 1)
+        f.becameActive()
+        #expect(starts() == 2)
+        await f.waitForReminderCheck()
+    }
+
+    @Test func foregroundEndsTheActivityAtDeparture() async throws {
+        let env = Env()
+        let (_, _) = try await armed(env)
+        let departure = try #require(env.store.all().first?.plan.scheduled.firstDeparture)
+        env.clock.value.withLock { $0 = departure.addingTimeInterval(-0.05) }
+        let f = AppFlow(env.deps())
+        f.syncActivities()
+        #expect(env.activities.running().count == 1)
+        env.clock.value.withLock { $0 = departure }
+        for _ in 0..<200 where !env.activities.running().isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(env.activities.running().isEmpty)
+    }
+
+    @Test func backgroundRunAtDepartureEndsTheActivity() async throws {
+        let env = Env()
+        let (f, _) = try await armed(env)
+        let departure = try #require(f.reminders.rows.first?.plan.scheduled.firstDeparture)
+        await f.reminders.checkDue()
+        #expect(try #require(env.checks.withLock { $0.last } ?? nil) <= departure)
+        env.clock.value.withLock { $0 = departure }
+        await f.reminders.checkDue()
+        #expect(env.activities.running().isEmpty)
+    }
+
+    @Test func withdrawnPermissionEndsTheBackgroundSession() async throws {
+        let env = Env()
+        let allowed = Mutex(true)
+        var deps = env.deps()
+        deps.authorization = { allowed.withLock { $0 } ? .allowed : .denied }
+        env.clock.set("05:00:00")
+        let f = AppFlow(deps)
+        f.send(.editEndpoint(.destination))
+        f.choose(NavigationFlowTests.stop)
+        await f.waitForWork()
+        env.clock.set("05:58:00")
+        f.send(.startNavigation(0))
+        #expect(env.backgroundSessions.withLock { $0 } == 1)
+        allowed.withLock { $0 = false }
+        f.becameActive()
+        #expect(env.endedSessions.withLock { $0 } == 1)
     }
 
     @Test func orphanEndsWhenTheAppBecomesActive() async throws {

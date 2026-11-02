@@ -308,6 +308,8 @@ final class ReminderCenter {
             await check(id)
         }
         scheduleBackgroundCheck()
+        // Auch ohne Aenderung: ab der Abfahrt endet die Activity, das ist der Lauf aus `nextCheck`.
+        onChange?()
     }
 
     func scheduleBackgroundCheck() {

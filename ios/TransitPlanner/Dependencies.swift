@@ -44,7 +44,7 @@ struct AppDependencies: Sendable {
     /// Gelernter Gehzeit-Faktor (UserDefaults, JSON); nur der Faktor, keine Wege oder Orte.
     var loadPace: @Sendable () -> WalkingPaceFactor
     var savePace: @Sendable (WalkingPaceFactor) -> Void
-    /// Live-Standort fuer die Navigation (nur Vordergrund, when-in-use); Fixes bleiben im RAM.
+    /// Live-Standort fuer die Navigation (when-in-use, im Hintergrund mit `beginBackgroundLocation`); Fixes bleiben im RAM.
     var positions: @Sendable () -> AsyncStream<LocationFix>
     /// POST /api/refresh ohne Polylines (Polling braucht keine Geometrie, API.md).
     var refresh: @Sendable (String) async throws(TransitError) -> Journey
@@ -251,19 +251,33 @@ final class FakeTripActivities: TripActivityControlling {
     let list = Mutex<[TripActivityRunning]>([])
     let log = Mutex<[TripActivityAction]>([])
     let enabled = Mutex(true)
+    let dismissed = Mutex<Set<String>>([])
+    /// Jeder Start scheitert.
+    let failing = Mutex(false)
 
     var canStart: Bool { enabled.withLock { $0 } }
     func running() -> [TripActivityRunning] { list.withLock { $0 } }
+    func rejected() -> Set<String> { dismissed.withLock { $0 } }
+    func forgive(_ key: String) { dismissed.withLock { _ = $0.remove(key) } }
 
-    func apply(_ actions: [TripActivityAction]) {
+    /// Wie Wegwischen: die Activity ist weg, ohne dass die App sie beendet hat.
+    func dismiss(_ key: String) {
+        list.withLock { $0.removeAll { $0.key == key } }
+        dismissed.withLock { _ = $0.insert(key) }
+    }
+
+    func apply(_ actions: [TripActivityAction]) throws(TransitError) {
         log.withLock { $0 += actions }
+        let failing = failing.withLock { $0 }
+        if failing, actions.contains(where: { if case .start = $0 { true } else { false } }) { throw .internal }
         list.withLock { list in
             for action in actions {
                 switch action {
                 case .end(let key): list.removeAll { $0.key == key }
+                case .finish(let wish): list.removeAll { $0.key == wish.key }
                 case .start(let wish):
                     list.append(TripActivityRunning(key: wish.key, state: wish.state, startAt: wish.startAt, isPending: wish.startAt != nil))
-                case .update(let wish):
+                case .update(let wish, _):
                     list = list.map { $0.key == wish.key ? TripActivityRunning(key: $0.key, state: wish.state, startAt: $0.startAt, isPending: $0.isPending) : $0 }
                 }
             }
