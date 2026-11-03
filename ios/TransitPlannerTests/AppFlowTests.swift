@@ -549,7 +549,7 @@ import TransitCore
         await f.waitForWork()
         #expect(planner.callCount == 1) // Rate-Limit schonen
         #expect(f.calibrated != nil)
-        #expect(f.overlay?.id == firstOverlay)
+        #expect(f.overlay == nil) // Planen: alte Route verschwindet von der Karte
         #expect(f.destination == .place(Self.stopEndpoint)) // Eingaben bleiben
         f.send(.back)
         #expect(f.phase == .start)

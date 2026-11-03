@@ -345,6 +345,8 @@ struct PlanSheet: View {
                     if flow.searchText.count >= 2 { typed } else { suggestions }
                 }
                 .scrollContentBackground(.hidden)
+                // Abschnitte ohne Titel liessen sonst grosse Luecken zwischen Eingabe und Treffern.
+                .listSectionSpacing(.compact)
             }
         }
         .onChange(of: flow.query) {
@@ -858,15 +860,11 @@ struct RouteSheet: View {
             .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
         }
         if routes.journeys.count > 1 {
-            // Eine weisse Karte mit Zeilen und Trennern (Figma), ohne Abschnittstitel.
+            // Eine weisse Karte mit Zeilen und Trennern (Figma); Titel unter der Quellenangabe, damit die Alternativen
+            // nicht als Teil der Fussnote wirken.
             Section {
                 let rest = Array(routes.journeys.enumerated().dropFirst())
                 VStack(spacing: 0) {
-                    // Unsichtbarer Abschnittstitel fuer VoiceOver (Rotor "Ueberschriften"), sichtbar bleibt es ohne Titel.
-                    Color.clear.frame(height: 0)
-                        .accessibilityElement()
-                        .accessibilityLabel(Text(verbatim: "Weitere Verbindungen"))
-                        .accessibilityAddTraits(.isHeader)
                     ForEach(Array(rest.enumerated()), id: \.offset) { position, entry in
                         if position > 0 { Divider().padding(.leading, 16) }
                         Button { flow.send(.journeySelected(entry.offset)) } label: {
@@ -879,6 +877,9 @@ struct RouteSheet: View {
                 }
                 .background(Color(.surfaceCard), in: .rect(cornerRadius: 16, style: .continuous))
                 .opacity(flow.isStale ? 0.5 : 1)
+            } header: {
+                SectionTitle("Weitere Verbindungen")
+                    .accessibilityAddTraits(.isHeader)
             }
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))

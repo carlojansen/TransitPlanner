@@ -107,7 +107,7 @@ struct MapScreen: View {
             .mapControls { if !guiding { MapCompass(scope: mapScope) } }
             // Optisches Zentrum folgt dem Sheet, gedeckelt bei der Hoehe des mittleren Detents (sonst springt die Karte
             // bei .large). Ein kleinerer Deckel liess das Ende der Route hinter dem mittleren Sheet verschwinden.
-            .safeAreaPadding(.bottom, min(sheetHeight, MiddleDetent.cap(proxy.size.height)))
+            .safeAreaPadding(.bottom, mapBottomInset + 32) // 32 pt Luft: der Ziel-Pin liegt nie an der Sheet-Kante
             // Kopf-Steuerung oben (44 pt + 16 pt Rand) bzw. Jetzt-Karte + 16 pt Luft: die Route endet nie darunter.
             .safeAreaPadding(.top, (guiding ? nowCardHeight : 44 + 16) + 16)
             .animation(reduceMotion ? nil : Motion.standard, value: flow.navMapOnly)
@@ -162,6 +162,12 @@ struct MapScreen: View {
         .animation(Motion.standard, value: guiding)
         .mapScope(mapScope)
         .onChange(of: flow.overlay?.id) { moveCamera() }
+        // Sheet eingerastet (Polster 300 ms stabil): Route neu einpassen, damit sie zum aktuellen Detent passt.
+        // Hat der Nutzer die Karte bewegt, bleibt sie; unterwegs steuert die Navigation die Kamera.
+        .task(id: mapBottomInset) {
+            do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+            if !guiding, !camera.positionedByUser { fitOverlay() }
+        }
         // Kamera folgt Position (AppFlow meldet erst ab 3 m Bewegung) und Ziel-Halt, solange der Nutzer die Karte
         // nicht selbst verschoben, gezoomt oder gedreht hat.
         .onChange(of: flow.navPosition) { focusNavigation() }
@@ -236,6 +242,9 @@ struct MapScreen: View {
         setCamera(.rect(rect.insetBy(dx: -rect.width * 0.3 - 250, dy: -rect.height * 0.3 - 250)))
     }
 
+    /// Polster unten = sichtbare Sheet-Hoehe, gedeckelt beim mittleren Detent (DESIGN.md B1, Karte bei Routen).
+    private var mapBottomInset: CGFloat { min(sheetHeight, MiddleDetent.cap(containerHeight)) }
+
     private var compassVisible: Bool { min(heading, 360 - heading) > 0.5 }
     private var recenterVisible: Bool { camera.positionedByUser || followPaused }
 
@@ -297,7 +306,9 @@ struct MapScreen: View {
 
     private func fitOverlay() {
         guard let overlay = flow.overlay else { return }
-        setCamera(.rect(overlay.rect.insetBy(dx: -overlay.rect.width * 0.15 - 300, dy: -overlay.rect.height * 0.15 - 300)))
+        let rect = overlay.rect.insetBy(dx: -overlay.rect.width * 0.15 - 300, dy: -overlay.rect.height * 0.15 - 300)
+        // Gleicher Ausschnitt bei neuem Polster: eine unveraenderte Position wendet die Karte nicht neu an.
+        setCamera(camera == .rect(rect) ? .region(MKCoordinateRegion(rect)) : .rect(rect))
     }
 }
 

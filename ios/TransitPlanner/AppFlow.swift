@@ -52,9 +52,10 @@ enum Phase: Sendable, Hashable {
     /// Verbindung, die die Karte zeigt.
     var journeyIndex: Int? {
         switch self {
-        case .routeSelection, .plan: 0
+        case .routeSelection: 0
         case .tripDetails(let i), .navigation(let i): i
-        case .start, .arrival: nil
+        // Planen zeigt keine alte Route auf der Karte; die Ergebnisse bleiben fuer den Weg zurueck erhalten.
+        case .start, .plan, .arrival: nil
         }
     }
 }

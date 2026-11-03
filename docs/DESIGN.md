@@ -132,7 +132,8 @@ Zeiten, Minuten, Meter: immer `.monospacedDigit()` und `.contentTransition(.nume
 - Leg-Bar: Fußweg-Chip › Linien-Badge › Fußweg-Chip. Bei großer Schrift per ViewThatFits/AnyLayout vertikal.
 - Gleiswechsel (platformChanged) → `.sensoryFeedback(.warning)`.
 - "Starten": Leg-Bar morpht per matchedGeometryEffect innerhalb des Sheets; Elemente oben über der Karte blenden per `.move(edge: .top)` + `.opacity` ein (über die Sheet-Grenze geht matchedGeometryEffect nicht).
-- Alternativen darunter als Zeilen (Uhrzeiten, Badges, Status, Dauer), 46 pt hoch.
+- Alternativen darunter als Zeilen (Uhrzeiten, Badges, Status, Dauer), 46 pt hoch, mit sichtbarer Überschrift "Weitere Verbindungen" (Überarbeitung 3.11., Freigabe durch Carlo offen).
+- Im Planungsformular zeigt die Karte keine Route; die Ergebnisse bleiben für den Weg zurück erhalten. Nach dem Einrasten des Sheets wird die Route neu eingepasst (300 ms Debounce), sofern der Nutzer die Karte nicht bewegt hat.
 - VoiceOver Hero Card: "Beste Verbindung: In 7 Minuten losgehen. 6 Minuten Fußweg, dann RE 5 Richtung Koblenz, 3 Minuten verspätet. Gleis 7."
 - Quellenangabe Transitous + OSM sichtbar (Nutzungsregel).
 
