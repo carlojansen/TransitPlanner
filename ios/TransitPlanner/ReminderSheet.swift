@@ -148,7 +148,7 @@ struct ReminderSheet: View {
                                 Text("\(value)")
                                     .font(.footnote.weight(.semibold)).monospacedDigit()
                                     .foregroundStyle(on ? Color(.labelOnAccent) : Color.primary)
-                                    .frame(maxWidth: .infinity, minHeight: 34)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
                                     .background(on ? Color(.buttonFill) : Color(.fillTertiary), in: .capsule)
                                     .padding(.vertical, 5)
                                     .contentShape(.rect)

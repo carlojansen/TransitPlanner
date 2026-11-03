@@ -486,7 +486,7 @@ struct PlanSheet: View {
                         }
                         .foregroundStyle(on ? Color.primary : Color(.labelSecondary))
                         .padding(.horizontal, 8)
-                        .frame(minHeight: 32)
+                        .frame(minHeight: 44)
                         .background(on ? Color(.surfaceCard) : .clear, in: .capsule)
                         .overlay { if !on { Capsule().strokeBorder(.separator, lineWidth: 1) } }
                         .opacity(on ? 1 : 0.7)
@@ -722,6 +722,13 @@ struct RouteSheet: View {
 
     private var list: some View {
         List {
+            // Der Banner liegt hier in der Liste: ueber der Navigationsleiste verdeckte er "Zurueck zur Planung".
+            if let error = flow.banner, error.showsBanner {
+                InlineBanner(error: error)
+                    .id(error)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+            }
             if flow.banner == .noConnections {
                 ContentUnavailableView {
                     Label("Keine Verbindung gefunden", systemImage: "tram")
@@ -729,8 +736,10 @@ struct RouteSheet: View {
                     Text(noConnectionText)
                 } actions: {
                     Button("Später suchen") { flow.searchLater() }
+                        .frame(minHeight: 44)
                         .accessibilityIdentifier("searchLater")
                     Button("Andere Zeit wählen") { flow.send(.editOptions) }
+                        .frame(minHeight: 44)
                 }
                 .listRowBackground(Color.clear)
             } else if let routes = flow.routes {

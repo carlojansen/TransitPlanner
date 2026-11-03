@@ -384,7 +384,7 @@ struct SheetRoot: View {
         .animation(Motion.standard, value: flow.phase)
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
-                if let error = flow.banner, error.showsBanner {
+                if let error = flow.banner, error.showsBanner, flow.phase != .routeSelection {
                     InlineBanner(error: error)
                         .id(error) // neue Ansage fuer VoiceOver bei jedem Fehlerwechsel
                         .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
