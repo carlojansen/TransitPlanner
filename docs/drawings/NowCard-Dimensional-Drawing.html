@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Now Card · Dimensional Drawing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;600;700&display=swap">
+<style>
+:root{--paper:#ececec;--sheet:#ffffff;--ink:#111;--ink2:#444;--ink3:#7a7a7a;--fill:#f3f3f3;--fill2:#e6e6e6;--f:'Arimo','Helvetica Neue',Helvetica,Arial,sans-serif;color-scheme:light}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f)}
+.wrap{max-width:1760px;margin:0 auto;padding-block:24px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.scroll{overflow-x:auto;background:var(--sheet);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+svg{display:block;width:100%;min-width:1100px;height:auto}
+.tb{background:var(--sheet);border:1.2px solid var(--ink);border-radius:16px;overflow:hidden;display:grid;grid-template-columns:2.2fr 1fr 1fr 1fr;margin-bottom:24px}
+.tb>div{border-right:.8px solid var(--ink);border-bottom:.8px solid var(--ink);padding:10px 14px;min-width:0}
+.tb>div:nth-child(4),.tb>div:nth-child(7){border-right:0}
+.tb .big{grid-row:span 2;display:flex;flex-direction:column;justify-content:space-between;gap:12px}
+.tb h1{font-size:clamp(28px,4vw,44px);line-height:1;margin:4px 0 0;font-weight:400;letter-spacing:.1em;text-transform:uppercase}
+.lbl{text-transform:uppercase;letter-spacing:.06em;font-size:9.5px;color:var(--ink2)}
+.tb .v{font-size:13px;margin-top:2px;letter-spacing:.05em;text-transform:uppercase;font-variant-numeric:tabular-nums}
+.tb .big .v{font-size:11px;color:var(--ink2);line-height:1.6}
+.tb .notes{grid-column:1/-1;border-right:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:6px 24px;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;line-height:1.9}
+.tb .notes ol{margin:4px 0 0;padding-left:20px}
+.tb .nh{font-weight:700;font-size:13px;letter-spacing:.06em}
+.tb .nh span{font-weight:400;font-size:11.5px;margin-left:6px}
+.tb .figs{grid-column:1/-1;border-right:0;border-bottom:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px 18px}
+.tb .figs>div{border-left:.8px solid var(--ink);padding-left:14px}
+.tb .figs>div:first-child{border-left:0;padding-left:0}
+.tb .figs .v{font-size:18px;letter-spacing:.06em;text-transform:none;margin-top:4px}
+@media (max-width:640px){.tb{grid-template-columns:1fr 1fr}.tb .big{grid-column:1/-1;grid-row:auto}}
+.sheetwrap{margin-bottom:28px}
+.foot{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2);padding:10px 2px 0}
+.foot b{font-weight:700;color:var(--ink)}
+/* drawing */
+.border{fill:none;stroke:var(--ink);stroke-width:1.2}
+.obj{fill:var(--sheet);stroke:var(--ink);stroke-width:1.6;stroke-linejoin:round}
+.well{fill:var(--fill);stroke:var(--ink);stroke-width:1}
+.slot{fill:none;stroke:var(--ink2);stroke-width:.8;stroke-dasharray:4 3}
+.hug{fill:var(--fill2);stroke:var(--ink);stroke-width:1}
+.thin{fill:none;stroke:var(--ink);stroke-width:.8}
+.ph{fill:none;stroke:var(--ink3);stroke-width:.8;stroke-dasharray:14 3 3 3}
+.cl{fill:none;stroke:var(--ink3);stroke-width:.7;stroke-dasharray:16 3 2 3}
+.dl{stroke:var(--ink);stroke-width:.7;fill:none}
+.ext{stroke:var(--ink);stroke-width:.55;fill:none}
+.arrow{fill:var(--ink)}
+.hl{stroke:var(--ink2);stroke-width:.7}
+.hs{stroke:var(--ink);stroke-width:.8}
+.env{fill:none;stroke:var(--ink);stroke-width:.8;stroke-dasharray:10 3 2 3}
+.dt{font:400 11px var(--f);fill:var(--ink);paint-order:stroke;stroke:var(--sheet);stroke-width:4px;stroke-linejoin:round}
+.dts{font:400 9.5px var(--f);fill:var(--ink2);letter-spacing:.06em;text-transform:uppercase;paint-order:stroke;stroke:var(--sheet);stroke-width:3px}
+.sl{font:400 9px var(--f);fill:var(--ink2);letter-spacing:.08em;text-transform:uppercase}
+.nt{font:400 11.5px var(--f);fill:var(--ink);letter-spacing:.06em;text-transform:uppercase}
+.nth{font:700 13px var(--f);fill:var(--ink);letter-spacing:.06em}
+.vt{font:400 12px var(--f);fill:var(--ink);letter-spacing:.1em;text-transform:uppercase}
+.nb{fill:var(--sheet);stroke:var(--ink);stroke-width:.9}
+.nbt{font:400 9.5px var(--f);fill:var(--ink)}
+.lead{stroke:var(--ink);stroke-width:.7;fill:none}
+.dot{fill:var(--ink)}
+.th{font:400 10.5px var(--f);fill:var(--ink);letter-spacing:.05em;text-transform:uppercase}
+.tc{font:400 10.5px var(--f);fill:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="tb">
+    <div class="big">
+      <div><div class="lbl">UI component · dimensional drawing</div><h1>Now Card</h1></div>
+      <div class="v">Architecture only: slots, spacing, radii and layers. Content is out of scope.</div>
+    </div>
+    <div><div class="lbl">Dwg no.</div><div class="v">UI-NOWCARD-001</div></div>
+    <div><div class="lbl">Rev</div><div class="v">A · 2026-10-31</div></div>
+    <div><div class="lbl">Sheets</div><div class="v">1</div></div>
+    <div><div class="lbl">Units</div><div class="v">pt @ 1×</div></div>
+    <div><div class="lbl">Scale</div><div class="v">1:1 unless noted</div></div>
+    <div><div class="lbl">Source</div><div class="v">NowCardView · default state</div></div>
+    <div class="notes">
+      <div><span class="nh">NOTES:<span>(UNLESS OTHERWISE SPECIFIED)</span></span><ol>
+        <li>Do not scale from screen. Read the numbers.</li>
+        <li>All dimensions in points at default Dynamic Type. Text rows are line heights of the text style.</li>
+        <li>Slots are placeholders. Text, symbols and copy are not part of the drawing.</li></ol></div>
+      <div><span class="nh" aria-hidden="true">&nbsp;</span><ol start="4">
+        <li>Every dimension is a variable (S1, R1, H3…). Values and formulas are in the variable tables.</li>
+        <li>HUG = sized by its content · FLEX = takes the remaining space · FILL = full width of its parent.</li>
+        <li>Corners use the continuous style. Unknown system values are [TBD].</li>
+        <li>Grayscale by design. Color is out of scope.</li></ol></div>
+    </div>
+    <div class="figs">
+      <div><div class="lbl">W · card-w</div><div class="v">screen − 2·V1</div></div>
+      <div><div class="lbl">V1 · view-margin</div><div class="v">16</div></div>
+      <div><div class="lbl">S1 · card-pad</div><div class="v">16</div></div>
+      <div><div class="lbl">S2 · stack-gap</div><div class="v">6</div></div>
+      <div><div class="lbl">R1 · r-card</div><div class="v">22</div></div>
+      <div><div class="lbl">H · card-h</div><div class="v">2·S1 + rows + 4·S2</div></div>
+      <div><div class="lbl">T1 · touch-min</div><div class="v">44</div></div>
+    </div>
+  </header>
+  <div class="sheetwrap"><div class="scroll"><svg id="sh1" viewBox="0 0 1700 1060" role="img" aria-label="Single sheet, architecture: plan view with variable dimensions, viewport placement, exploded layers, hint, headline row and maneuver details, radius details, variable tables"></svg></div>
+  <div class="foot"><span>2026-10-31 &nbsp;|&nbsp; UI component reference</span><span><b>Now card, architecture</b> &nbsp;|&nbsp; 1</span></div></div>
+</div>
+
+<script>
+(function(){
+const NS='http://www.w3.org/2000/svg';let sv,A,HAT,uid=0;
+function mk(t,a,p){const e=document.createElementNS(NS,t);for(const k in a)if(a[k]!=null)e.setAttribute(k,a[k]);(p||sv).appendChild(e);return e}
+function tx(x,y,s,c,a,p){const t=mk('text',Object.assign({x:x,y:y,class:c||'dt'},a||{}),p);t.textContent=s;return t}
+function begin(id){sv=document.getElementById(id);sv.innerHTML='';const n=uid++;const d=mk('defs',{});const m=mk('marker',{id:'ar'+n,viewBox:'0 0 10 10',refX:10,refY:5,markerWidth:7,markerHeight:7,orient:'auto-start-reverse',markerUnits:'userSpaceOnUse'},d);mk('path',{d:'M0,1.7 L10,5 L0,8.3 z',class:'arrow'},m);
+ const pt=mk('pattern',{id:'hat'+n,width:5,height:5,patternUnits:'userSpaceOnUse',patternTransform:'rotate(45)'},d);mk('line',{x1:0,y1:0,x2:0,y2:5,class:'hl'},pt);A='url(#ar'+n+')';HAT='url(#hat'+n+')';rr(20,20,1660,1020,16,'border')}
+
+/* ---- kit ---- */
+function dimH(x1,x2,y,e1,e2,l,o){o=o||{};[[x1,e1],[x2,e2]].forEach(([x,e])=>{if(e==null)return;const s=Math.sign(y-e)||1;mk('line',{x1:x,y1:e+s*3,x2:x,y2:y+s*5,class:'ext'})});
+ if(x2-x1>=28)mk('line',{x1:x1,y1:y,x2:x2,y2:y,class:'dl','marker-start':A,'marker-end':A});else{mk('line',{x1:x1-13,y1:y,x2:x1,y2:y,class:'dl','marker-end':A});mk('line',{x1:x2+13,y1:y,x2:x2,y2:y,class:'dl','marker-end':A});mk('line',{x1:x1,y1:y,x2:x2,y2:y,class:'dl'})}
+ tx((x1+x2)/2+(o.dx||0),(o.below?y+13:y-4)+(o.dy||0),l,o.c||'dt',{'text-anchor':'middle'})}
+function dimV(y1,y2,x,e1,e2,l,o){o=o||{};[[y1,e1],[y2,e2]].forEach(([y,e])=>{if(e==null)return;const s=Math.sign(x-e)||1;mk('line',{x1:e+s*3,y1:y,x2:x+s*5,y2:y,class:'ext'})});
+ if(y2-y1>=28)mk('line',{x1:x,y1:y1,x2:x,y2:y2,class:'dl','marker-start':A,'marker-end':A});else{mk('line',{x1:x,y1:y1-13,x2:x,y2:y1,class:'dl','marker-end':A});mk('line',{x1:x,y1:y2+13,x2:x,y2:y2,class:'dl','marker-end':A});mk('line',{x1:x,y1:y1,x2:x,y2:y2,class:'dl'})}
+ const c=(y1+y2)/2;if(o.side){const r=o.side==='r';tx(r?x+6:x-6,c+4,l,o.c||'dt',{'text-anchor':r?'start':'end'})}else tx(x-5,c,l,o.c||'dt',{'text-anchor':'middle',transform:'rotate(-90 '+(x-5)+' '+c+')'})}
+function callout(px,py,ex,ey,l,dir,c){const s=dir||(ex>=px?1:-1);mk('circle',{cx:px,cy:py,r:1.8,class:'dot'});mk('polyline',{points:px+','+py+' '+ex+','+ey+' '+(ex+s*10)+','+ey,class:'lead'});tx(ex+s*14,ey+4,l,c||'dt',{'text-anchor':s>0?'start':'end'})}
+function rad(cx,cy,r,c,l,L){const sx=c.includes('l')?-1:1,sy=c.includes('t')?-1:1;const ox=cx-sx*r,oy=cy-sy*r;const px=ox+sx*r*Math.SQRT1_2,py=oy+sy*r*Math.SQRT1_2;callout(px,py,px+sx*L,py+sy*L,l,sx)}
+function nb(x,y,n){mk('rect',{x:x-6,y:y-6,width:12,height:12,class:'nb'});tx(x,y+3.5,String(n),'nbt',{'text-anchor':'middle'})}
+function rr(x,y,w,h,r,c){return mk('rect',{x:x,y:y,width:w,height:h,rx:r,class:c})}
+function slotLabel(x,y,w,h,l,al){tx(al==='l'?x+6:x+w/2,y+h/2+3.2,l,'sl',{'text-anchor':al==='l'?'start':'middle'})}
+function title(x,y,t,s){tx(x,y,t,'vt',{'text-anchor':'middle'});if(s)tx(x,y+14,s,'dts',{'text-anchor':'middle'})}
+function notes(list){const NX=50,NY=58;tx(NX,NY,'NOTES:','nth');tx(NX+62,NY,'(UNLESS OTHERWISE SPECIFIED)','nt');
+ list.forEach(([n,t],i)=>{const y=NY+30+i*24;if(n){nb(NX+6,y-4,n);tx(NX+22,y,t,'nt')}else tx(NX,y,t,'nt')})}
+function table(x,y,ttl,rows){const ws=[40,88,96],rh=17;tx(x,y-8,ttl,'vt');
+ const all=[['Code','Variable','Value']].concat(rows);all.forEach((r,i)=>{let cx2=x;r.forEach((c,j)=>{mk('rect',{x:cx2,y:y+i*rh,width:ws[j],height:rh,class:'thin'});tx(cx2+(j?ws[j]/2:6),y+i*rh+12,c,i?'tc':'th',{'text-anchor':j?'middle':'start'});cx2+=ws[j]})});return y+all.length*rh+36}
+function detailRef(cx,cy,r,lbl,lx,ly){mk('circle',{cx:cx,cy:cy,r:r,class:'ph'});const a=Math.atan2(ly-cy,lx-cx);mk('line',{x1:cx+r*Math.cos(a),y1:cy+r*Math.sin(a),x2:lx,y2:ly,class:'lead'});tx(lx+(lx<cx?-4:4),ly+4,lbl,'dts',{'text-anchor':lx<cx?'end':'start'})}
+
+const W=358,H=205;
+const VAR={
+ spacing:[['S1','card-pad','16'],['S2','stack-gap','6'],['S3','head-gap','8'],['S4','head-gap-stack','4'],['S5','metric-gap','12'],['S6','text-gap','2'],['S7','hint-pad-v','8'],['S8','hint-pad-h','12'],['S9','hint-icon-gap','8'],['S10','lead-gap','12']],
+ size:[['H1','eyebrow-h','13'],['H2','headline-h','34'],['H3','line-h','20'],['H4','metric-label-h','16'],['H5','metric-value-h','28'],['H6','hint-h','2·S7+H3 = 36'],['H7','metrics-h','H4+S6+H5 = 46'],['H8','badge-min-h','28'],['H9','title-h','22'],['Z1','symbol-tile','56'],['T1','touch-min','44'],['H','card-h','Σ rows = 205']],
+ radius:[['R1','r-card','22'],['R2','r-hint','12'],['R3','r-badge','8'],['R4','r-symbol','14']],
+ view:[['V1','view-margin','16'],['W','card-w','358 @ 390'],['V2','view-top','[TBD]'],['MH','max-h (AX)','[TBD]']]
+};
+
+/* card plan at scale k, origin (ox,oy) */
+function cardPlan(ox,oy,k){const X=v=>ox+v*k,Y=v=>oy+v*k;
+ mk('rect',{x:X(0),y:Y(0),width:W*k,height:H*k,rx:22*k,class:'obj'});
+ const sl=(x,y,w,h,r,c,l,al)=>{mk('rect',{x:X(x),y:Y(y),width:w*k,height:h*k,rx:r*k,class:c});if(l)slotLabel(X(x),Y(y),w*k,h*k,l,al)};
+ sl(16,16,120,13,2,'slot','Eyebrow · hug','l');
+ sl(16,35,200,34,2,'slot','Headline slot · hug','l');sl(224,38,68,28,8,'hug','Badge · hug');
+ sl(16,75,240,20,2,'slot','Context slot · hug','l');
+ const cw=(326-24)/3;[0,1,2].forEach(i=>{const x=16+i*(cw+12);sl(x,101,cw,46,2,'slot');sl(x+6,101,52,16,2,'slot','Label');sl(x+6,119,72,28,2,'slot','Value')});
+ sl(16,153,326,36,12,'hug');sl(28,161,16,20,2,'slot');
+ mk('path',{d:'M'+X(28)+','+Y(161)+' L'+X(44)+','+Y(181)+' M'+X(44)+','+Y(161)+' L'+X(28)+','+Y(181),class:'thin'});
+ sl(52,161,278,20,2,'slot','Text slot · flex','l');
+ mk('line',{x1:X(-16),y1:Y(52),x2:X(W+16),y2:Y(52),class:'cl'});mk('line',{x1:X(-16),y1:Y(171),x2:X(W+16),y2:Y(171),class:'cl'});
+ return {X:X,Y:Y,cw:cw}}
+
+/* =================== SHEET =================== */
+begin('sh1');
+notes([[1,'CARD HUGS CONTENT HEIGHT: H = 2·S1 + ROWS + 4·S2.'],[2,'CARD FILLS WIDTH: W = SCREEN − 2·V1. ROW SLOTS HUG.'],[3,'HEADLINE ROW STACKS (S4) WHEN THE BADGE DOES NOT FIT. SEE B.'],[4,'EXACTLY THREE METRICS, EQUAL WIDTH, GAP S5.'],[5,'HINT IS OPTIONAL. ACTION UNDER HINT ONLY FOR NEXT CONNECTION.'],[6,'MANEUVER ROW REPLACES THE HEADLINE ROW WHEN PRESENT. SEE C.'],[7,'GLASS SURFACE, R1 CONTINUOUS. BLUR, TINT, SHADOW: [TBD].'],[8,'AX TYPE SIZES: METRICS STACK (GAP 8), CARD SCROLLS AT MH.']]);
+
+/* plan view 1.35:1 */
+{const k=1.35,PX=700,PY=310;const {X,Y,cw}=cardPlan(PX,PY,k);
+ nb(X(180),Y(197),1);nb(X(330),Y(8),2);nb(X(150),Y(8),3);nb(X(325),Y(108),4);nb(X(336),Y(171),5);nb(X(8),Y(8),7);
+ const ty=Y(-30);
+ dimH(X(0),X(16),ty,Y(0),Y(16),'S1',{dx:-9});dimH(X(16),X(216),ty,null,Y(35),'HUG',{c:'dts'});dimH(X(216),X(224),ty,null,Y(38),'S3');dimH(X(224),X(292),ty,null,Y(38),'HUG',{c:'dts'});dimH(X(342),X(358),ty,Y(0),Y(0),'S1',{dx:9});
+ dimH(X(0),X(358),Y(-62),Y(-34),Y(-34),'W');tx(X(179),Y(-80),'W = SCREEN − 2·V1 · REF 358 @ 390','dts',{'text-anchor':'middle'});nb(X(60),Y(-84),2);
+ const by=Y(H+30);
+ dimH(X(0),X(16),by,Y(H),Y(147),'S1',{below:true,dx:-9});
+ const c1=16,c2=16+cw+12,c3=16+2*(cw+12);
+ dimH(X(c1),X(c1+cw),by,null,Y(147),'FILL ÷ 3',{below:true,c:'dts'});dimH(X(c1+cw),X(c2),by,null,Y(147),'S5',{below:true});
+ dimH(X(c2),X(c2+cw),by,null,Y(147),'FILL ÷ 3',{below:true,c:'dts'});dimH(X(c2+cw),X(c3),by,null,Y(147),'S5',{below:true});
+ dimH(X(c3),X(342),by,null,Y(147),'FILL ÷ 3',{below:true,c:'dts'});dimH(X(342),X(358),by,null,Y(H),'S1',{below:true,dx:9});
+ const lx=X(-58);
+ [[16,29,'H1'],[35,69,'H2'],[75,95,'H3'],[101,147,'H7'],[153,189,'H6']].forEach(([a,b,l])=>dimV(Y(a),Y(b),lx,X(0),X(0),l,{side:'l'}));
+ dimV(Y(0),Y(H),X(-96),X(0),X(0),'(REF '+H+')');
+ const rx=X(394);
+ [[0,16,'S1'],[29,35,'S2'],[69,75,'S2'],[95,101,'S2'],[101,117,'H4'],[117,119,'S6'],[119,147,'H5'],[147,153,'S2'],[189,205,'S1']].forEach(([a,b,l])=>dimV(Y(a),Y(b),rx,X(358),X(358),l,{side:'r'}));
+ rad(X(0),Y(H),22*k,'bl','R1',22);rad(X(342),Y(189),12*k,'br','R2',16);rad(X(292),Y(66),8*k,'br','R3',16);
+ detailRef(X(320),Y(171),34,'DETAIL A',1290,Y(171)+14);
+ detailRef(X(256),Y(52),50,'DETAIL B',X(300),Y(52)-30);
+ title(X(179),Y(H+54),'Plan view','Scale 1.35:1 · reference W = 358');}
+
+/* viewport placement (schematic) */
+{const SX=130,SY=290,SW=200,SH=300,s=(SW-16)/W;
+ mk('rect',{x:SX,y:SY,width:SW,height:SH,rx:22,class:'obj'});
+ mk('rect',{x:SX,y:SY+210,width:SW,height:90,rx:22,class:'slot'});slotLabel(SX,SY+210,SW,90,'Sheet · [TBD]');
+ const cy=SY+48,ch=H*s;
+ mk('rect',{x:SX+8,y:cy,width:W*s,height:ch,rx:22*s,class:'hug'});slotLabel(SX+8,cy,W*s,ch,'Now card · hug height');
+ dimV(SY,cy,SX-20,SX,SX+8,'V2',{side:'l'});
+ dimH(SX+8,SX+8+W*s,cy-16,cy,cy,'W');
+ dimH(SX,SX+8,cy+ch+16,cy+ch,cy+ch,'V1',{below:true,dx:-12});dimH(SX+SW-8,SX+SW,cy+ch+16,cy+ch,cy+ch,'V1',{below:true,dx:12});
+ nb(SX+SW+16,SY+12,8);
+ title(SX+SW/2,SY+SH+36,'Viewport placement','Schematic · not to scale · ref screen 390');}
+
+/* exploded view */
+{const sc=.8,TX=420,TY=850,gap=60,a=.94*sc,b=.17*sc,c=-.34*sc,dd=.47*sc;
+ const P=(x,y,z)=>[TX+a*x+c*y,TY+b*x+dd*y-z];
+ const G=z=>mk('g',{transform:'matrix('+a+','+b+','+c+','+dd+','+TX+','+(TY-z)+')'});
+ const R2=(g,x,y,w,h,r,cls)=>mk('rect',{x:x,y:y,width:w,height:h,rx:r,class:cls,'vector-effect':'non-scaling-stroke'},g);
+ [[0,0],[W,0],[W,H],[0,H]].forEach(([x,y])=>{const p1=P(x,y,gap),p2=P(x,y,gap*3);mk('line',{x1:p1[0],y1:p1[1],x2:p2[0],y2:p2[1],class:'ph'})});
+ let g=G(0);R2(g,-20,-20,W+40,H+40,0,'thin');
+ g=G(gap);R2(g,0,0,W,H,22,'obj');
+ g=G(gap*2);R2(g,16,153,326,36,12,'hug');R2(g,224,38,68,28,8,'hug');
+ g=G(gap*3);R2(g,16,16,120,13,2,'slot');R2(g,16,35,200,34,2,'slot');R2(g,16,75,240,20,2,'slot');
+ [0,1,2].forEach(i=>R2(g,16+i*((326-24)/3+12),101,(326-24)/3,46,2,'slot'));
+ R2(g,52,161,278,20,2,'slot');
+ const LX=300;
+ [[0,[-20,H+20],'L0 · Map canvas','Page background'],[gap,[0,H],'L1 · Glass surface','R1 · system material'],[gap*2,[16,189],'L2 · Tinted surfaces','Hint R2 · badge R3'],[gap*3,[16,189],'L3 · Slots','Text · metrics · controls']].forEach(([z,[x,y],t,st])=>{
+  const p1=P(x,y,z);mk('circle',{cx:p1[0],cy:p1[1],r:1.8,class:'dot'});mk('polyline',{points:p1[0]+','+p1[1]+' '+(LX+10)+','+p1[1]+' '+LX+','+p1[1],class:'lead'});
+  tx(LX-4,p1[1]-2,t,'vt',{'text-anchor':'end'});tx(LX-4,p1[1]+11,st,'dts',{'text-anchor':'end'})});
+ title(410,1010,'Exploded view','Axonometric · z gaps not to scale');}
+
+/* Detail A · hint + action 0.85:1 */
+{const k=.85,AX=775,AY=725,X=v=>AX+v*k,Y=v=>AY+v*k;
+ mk('rect',{x:X(0),y:Y(0),width:326*k,height:36*k,rx:12*k,class:'hug'});
+ mk('rect',{x:X(12),y:Y(8),width:16*k,height:20*k,rx:2,class:'slot'});mk('path',{d:'M'+X(12)+','+Y(8)+' L'+X(28)+','+Y(28)+' M'+X(28)+','+Y(8)+' L'+X(12)+','+Y(28),class:'thin'});
+ mk('rect',{x:X(36),y:Y(8),width:278*k,height:20*k,rx:2,class:'slot'});slotLabel(X(36),Y(8),278*k,20*k,'Text slot · flex','l');
+ mk('rect',{x:X(0),y:Y(42),width:190*k,height:44*k,rx:2,class:'slot'});slotLabel(X(0),Y(42),190*k,44*k,'Action · hug · min T1','l');
+ const ty=Y(-20);
+ dimH(X(0),X(12),ty,Y(0),Y(8),'S8',{dx:-9});dimH(X(12),X(28),ty,null,Y(8),'HUG',{c:'dts',dy:-12});dimH(X(28),X(36),ty,null,Y(8),'S9',{dx:8});dimH(X(36),X(314),ty,null,Y(8),'FLEX',{c:'dts'});dimH(X(314),X(326),ty,null,Y(0),'S8',{dx:9});
+ dimV(Y(0),Y(8),X(-18),X(0),X(0),'S7',{side:'l'});dimV(Y(28),Y(36),X(-18),X(0),X(0),'S7',{side:'l'});dimV(Y(0),Y(36),X(-48),X(0),X(0),'H6');
+ dimV(Y(8),Y(28),X(348),X(326),X(326),'H3',{side:'r'});
+ dimV(Y(36),Y(42),X(214),X(190),X(190),'S2',{side:'r'});dimV(Y(42),Y(86),X(214),X(190),X(190),'T1',{side:'r'});
+ nb(X(262),Y(64),5);
+ title(X(163),Y(86)+44,'Detail A · hint and action','Scale 0.85:1');}
+
+/* Detail B · headline row 1:1 */
+{const k=1,BX=1095,BY=745,X=v=>BX+v*k,Y=v=>BY+v*k;
+ mk('rect',{x:X(0),y:Y(0),width:90,height:34,rx:2,class:'slot'});slotLabel(X(0),Y(0),90,34,'Headline');
+ mk('rect',{x:X(98),y:Y(3),width:60,height:28,rx:8,class:'hug'});slotLabel(X(98),Y(3),60,28,'Badge');
+ mk('rect',{x:X(200),y:Y(0),width:90,height:34,rx:2,class:'slot'});slotLabel(X(200),Y(0),90,34,'Headline');
+ mk('rect',{x:X(200),y:Y(38),width:60,height:28,rx:8,class:'hug'});slotLabel(X(200),Y(38),60,28,'Badge');
+ dimH(X(90),X(98),Y(-16),Y(0),Y(3),'S3');dimV(Y(34),Y(38),X(306),X(290),X(260),'S4',{side:'r'});
+ dimV(Y(0),Y(34),X(-14),X(0),X(0),'H2',{side:'l'});dimV(Y(3),Y(31),X(172),X(158),X(158),'H8',{side:'r'});
+ rad(X(158),Y(31),8,'br','R3',12);
+ tx(X(79),Y(54),'Fits','dts',{'text-anchor':'middle'});tx(X(245),Y(82),'Does not fit','dts',{'text-anchor':'middle'});
+ title(X(145),Y(103),'Detail B · headline row','Scale 1:1 · wide or stacked');}
+
+/* Detail C · maneuver row 1.1:1 */
+{const k=1.1,CX=775,CY=890,X=v=>CX+v*k,Y=v=>CY+v*k;
+ mk('rect',{x:X(0),y:Y(12),width:56*k,height:56*k,rx:14*k,class:'hug'});slotLabel(X(0),Y(12),56*k,56*k,'Symbol');
+ mk('rect',{x:X(68),y:Y(0),width:150*k,height:34*k,rx:2,class:'slot'});slotLabel(X(68),Y(0),150*k,34*k,'Meters · hug','l');
+ mk('rect',{x:X(68),y:Y(36),width:150*k,height:22*k,rx:2,class:'slot'});slotLabel(X(68),Y(36),150*k,22*k,'Title · hug','l');
+ mk('rect',{x:X(68),y:Y(60),width:150*k,height:20*k,rx:2,class:'slot'});slotLabel(X(68),Y(60),150*k,20*k,'Then · hug · optional','l');
+ mk('line',{x1:X(-8),y1:Y(40),x2:X(226),y2:Y(40),class:'cl'});
+ dimV(Y(12),Y(68),X(-16),X(0),X(0),'Z1',{side:'l'});dimH(X(56),X(68),Y(-14),Y(12),Y(0),'S10');
+ [[0,34,'H2'],[34,36,'S6'],[36,58,'H9'],[60,80,'H3']].forEach(([a,b,l])=>dimV(Y(a),Y(b),X(240),X(218),X(218),l,{side:'r'}));
+ rad(X(0),Y(68),14*k,'bl','R4',14);nb(X(238),Y(-8),6);
+ title(X(120),Y(80)+30,'Detail C · maneuver row','Scale 1.1:1');}
+
+/* radius details 2:1 */
+{const q=2,y0=960,items=[['R1','Card',22],['R2','Hint',12],['R3','Badge',8],['R4','Symbol tile',14]];
+ items.forEach(([c,n,r],i)=>{const x0=1095+i*78,L=28;const P=(u,v)=>[x0+u*q,y0-v*q];
+  mk('path',{d:'M'+P(0,L)+' L'+P(0,r)+' A'+r*q+' '+r*q+' 0 0 0 '+P(r,0)+' L'+P(L,0),class:'obj',fill:'none'});
+  const cc=P(r,r);mk('path',{d:'M'+(cc[0]-5)+','+cc[1]+' h10 M'+cc[0]+','+(cc[1]-5)+' v10',class:'thin'});
+  const a=225*Math.PI/180;mk('line',{x1:cc[0],y1:cc[1],x2:cc[0]+r*q*Math.cos(a),y2:cc[1]-r*q*Math.sin(a),class:'dl','marker-end':A});
+  tx(x0+L*q/2+4,y0-L*q+16,c,'dt');tx(x0,y0+16,n,'dts');});
+ title(1230,1015,'Radius details','Scale 2:1 · continuous corners');}
+
+{let y=table(1426,86,'Spacing',VAR.spacing);y=table(1426,y,'Size',VAR.size);y=table(1426,y,'Radius',VAR.radius);table(1426,y,'Viewport',VAR.view);}
+})();
+</script>
+</body>
+</html>

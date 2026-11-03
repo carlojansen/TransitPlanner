@@ -299,3 +299,24 @@ Sichtprüfung (Simulator iOS 27, Scratch-App außerhalb des Repos): `ActivityLoc
 **Gerätetest und Freigabe (2.11.):** Carlo hat Etappen 2 bis 4 freigegeben. Auf dem Gerät gesehen, per Screenshot belegt: Widget klein, Live Activity auf dem Sperrbildschirm, erweiterte Island, jeweils in der Phase vor der Abfahrt mit Verspätung. Befund behoben: Die erweiterte Island schnitt Badge und Leg-Bar an den runden Ecken ab; jetzt `.contentMargins(.horizontal, 28, for: .expanded)`. Der Wert ist aus dem Screenshot geschätzt und am Gerät noch nicht gesehen. Nach der Änderung: `swift test` 162, App 185, UI-Tests 4 bestanden und 1 übersprungen, unsignierter Release-Gerätebuild grün; kein weiterer Review-Lauf für diese eine Zeile. Der letzte Gerätebuild aus der IDE stammt von 11:12, also vor `SWIFT_EMIT_LOC_STRINGS: YES`; die Wirkung des Flags in der IDE bleibt ungeprüft.
 
 **Offen am Gerät:** Dateischutz des Snapshots (`fileIsProtectedUntilFirstUnlock`, in Etappe 2 als Freigabebedingung notiert, per Screenshot nicht belegt). Zusätzlich zu Etappe 3: Island-Rand nach der Korrektur, Wegwischen und 8-h-Ende im Betrieb (`SystemTripActivities.noteGone` läuft nur mit echtem ActivityKit und hat keinen automatischen Test, die Logik `dismissed` schon), Geräte-Neustart (eine aktive Activity gilt als abgelehnt, bis ein bewusster Start sie aufhebt; eine geplante nicht), Haptik der `AlertConfiguration`, Endstand 5 Min., Ende nach der Abfahrt im Hintergrund, Dynamic Island.
+
+## UI-Audit im Simulator (3.11.)
+
+Zwei Durchgänge im Simulator iPhone 17 mit `-uiTestFakes -fakeOnboarded` (ohne `-uiTestFakes` greifen die Fakes nicht), danach Review durch `security-hig-reviewer` (0 Blocker). Der Test auf dem echten iPhone lieferte keine Beobachtungen, da die Xcode-Werkzeuge nur Simulatoren bedienen.
+
+**Behoben (Commits c444395, 160db57):**
+- Fehlerbanner lag im Ergebnis-Sheet über der Navigationsleiste ("Zurück zur Planung" unerreichbar); er steht jetzt als erste Zeile der Liste. In den übrigen Sheets bleibt er oben.
+- Touch-Ziele auf 44 pt: "Später suchen", "Andere Zeit wählen", Zeile in der Suche, Chips im Erinnerungs-Sheet.
+- Karte passt die Route nach dem Einrasten des Sheets neu an (300 ms), 32 pt zusätzlicher Rand unten für den Ziel-Pin.
+- Im Planungsformular zeigt die Karte keine alte Route mehr; die Ergebnisse bleiben für den Weg zurück erhalten.
+- Überschrift "Weitere Verbindungen" über den Alternativen (Abweichung von Figma, in DESIGN.md vermerkt, Freigabe durch Carlo offen).
+- Suchliste: kleinere Abschnittsabstände. `scrollDismissesKeyboard` wurde nach dem Review wieder entfernt (ließ das Planungsformular springen).
+
+**Kein Fehler:** Kein Adresse/Haltestelle-Schalter (DESIGN 27.10.: ein Feld ohne Modus). Die inkonsistenten Navigationsdaten stammten von den Fakes (auf den 24.10.2026 datiert); mit `-fakeNow 2026-10-24T06:05:00Z` stimmen Banner und Sheet. Der Chip "Bus" war nicht abgeschnitten.
+
+**Offen:**
+- Suchliste: etwa 55 pt Leerraum zwischen Eingabe und erstem Eintrag, Ursache nicht gefunden.
+- Banner "Adressen brauchen deinen Standort." (PlanSheets) widerspricht DESIGN ("ohne Banner") und hat keinen Knopf zum Erlauben.
+- Feldlabel zeigt "Nach" statt "Zuhause/Uni/Arbeit" beim Festlegen eines Favoriten.
+- Zurück-Knopf im Schlüssel-Screen heißt immer "Einstellungen".
+- Nicht getestet: Szenarien offlineAfterFirst, plainFirst, deutz; Dark Mode in Hero Card, Details, Navigation; Zwischenhalte; Favoriten-Verwaltung.
