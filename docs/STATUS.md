@@ -320,3 +320,17 @@ Zwei Durchgänge im Simulator iPhone 17 mit `-uiTestFakes -fakeOnboarded` (ohne 
 - Feldlabel zeigt "Nach" statt "Zuhause/Uni/Arbeit" beim Festlegen eines Favoriten.
 - Zurück-Knopf im Schlüssel-Screen heißt immer "Einstellungen".
 - Nicht getestet: Szenarien offlineAfterFirst, plainFirst, deutz; Dark Mode in Hero Card, Details, Navigation; Zwischenhalte; Favoriten-Verwaltung.
+
+## Gleisnummern Köln und Rangformel (10.11.)
+
+Anlass: Rückmeldung vom Gerät ("Gleis 76" in Köln Süd, unsinnige Route als beste Verbindung). Eine Live-Anfrage an Transitous (Düsseldorf Hbf nach Köln Weyertal) als Beleg.
+
+**Gleis (Backend, `resolveTracks` in `mapper.js`):** In den DELFI-Daten für Köln ist `Place.track` eine interne Nummer (Köln Süd 76, Messe/Deutz 90), das echte Gleis steht in `Place.description` ("Bahnsteig Gleis 1"). In Düsseldorf stimmt `track` ("Gleis 15+16"). Regel: Nennt die Beschreibung genau eine Nummer, die einem numerischen `track` widerspricht, und liegt kein Echtzeit-Gleiswechsel vor, gilt die Beschreibung für Gleis und geplantes Gleis. Nur für Stop-IDs `de-DELFI_de:05315:` (Köln), weil nur dort belegt; anderswo ist "Bahnsteig 3" nicht das Gleis. Schema unverändert, `docs/API.md` ergänzt.
+
+**Rangformel (`DurationLabel.swift`):** Jede Gehminute kostet eine Minute extra (`walkWeight`, alle Fußwege), eine ausgefallene Fahrt bekommt die 7-Tage-Strafe und steht nur vorn, wenn es keine andere gibt. Fehlt die Dauer eines Fußwegs, zählt Ankunft minus Abfahrt. Zwei Alt-Tests an die neue Gewichtung angepasst, Aussage laut Review erhalten.
+
+Review durch `security-hig-reviewer`: **FREIGABE**, 0 Blocker, 1 MAJOR (Regel galt für alle Feeds), behoben durch die Beschränkung auf Köln und numerische Gleise; dazu Ziffernbegrenzung und Rückfall der Gehdauer. Diese Nachbesserung ist nicht erneut reviewt.
+
+Tests: Backend 90/0 (`npm test`), TransitCore 166/0 (`swift test`). Gegenproben vor der Nachbesserung: ohne Gleis-Regel 2 Tests rot, ohne Gehzeit-Term 3, ohne Ausfall-Strafe 2. Kein xcodebuild, kein Simulator, nicht am Gerät gesehen; das Backend ist nicht neu ausgerollt.
+
+**Offen:** Echtzeit-Gleiswechsel in Köln zeigt weiter interne Nummern. Führende Nullen ("Gleis 01") nicht behandelt. Kein Test für den Rückfall der Gehdauer und für die Ankunftssuche mit Gehzeit. Weitere Regionen mit internen Nummern unbekannt. Ursache der fehlenden U75 nicht belegt (in der Live-Anfrage kamen genau 4 Verbindungen). Noch nicht begonnen: Zeile mit vielen Linien und Details-Ansicht, Auswahl nach Rang im Backend (bis 6), Hinweis bei Ausfall und Störung in der Hero Card.

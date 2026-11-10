@@ -12,17 +12,30 @@ public enum DurationLabel {
     }
 }
 
+private extension Leg {
+    /// Dauer laut Fahrplan; fehlt sie, aus Abfahrt und Ankunft (ein Fussweg ohne Dauer darf nicht kostenlos sein).
+    var plannedSeconds: Int {
+        if let durationSeconds { return durationSeconds }
+        guard let departure, let arrival else { return 0 }
+        return max(0, Int(arrival.timeIntervalSince(departure)))
+    }
+}
+
 extension Journey {
     /// Strafe fuer einen knappen Umstieg (unter `TransferCheck.minimumSlackSeconds`).
     static let tightTransferPenalty: TimeInterval = 15 * 60
     /// Strafe fuer einen Umstieg, der nicht reicht: nur beste, wenn es keine andere gibt.
     static let missedTransferPenalty: TimeInterval = 7 * 24 * 3600
+    /// Aufschlag je Gehsekunde (1.0 = jede Gehminute kostet eine Minute extra).
+    static let walkWeight: Double = 1.0
 
-    /// Rang fuer "beste Verbindung": frueheste Ankunft plus 8 Min. je Umstieg (Gehen zaehlt nicht extra) plus Strafe
-    /// fuer knappe bzw. nicht machbare Umstiege. Bei Ankunftszeit-Suche zaehlt die spaeteste Abfahrt.
-    /// MOTIS sortiert nach Abfahrt, das war oft nicht die beste.
+    /// Rang fuer "beste Verbindung": frueheste Ankunft plus 8 Min. je Umstieg plus Gehzeit aller Fusswege x `walkWeight`
+    /// plus Strafe fuer knappe bzw. nicht machbare Umstiege; eine ausgefallene Fahrt kostet wie ein verpasster Umstieg.
+    /// Bei Ankunftszeit-Suche zaehlt die spaeteste Abfahrt. MOTIS sortiert nach Abfahrt, das war oft nicht die beste.
     func rank(arrivalSearch: Bool) -> TimeInterval {
-        let penalty = TimeInterval(transfers * 480) + transferPenalty
+        let walking = legs.filter(\.isWalk).reduce(0) { $0 + $1.plannedSeconds }
+        let penalty = TimeInterval(transfers * 480) + transferPenalty + Self.walkWeight * TimeInterval(walking)
+            + (cancelled ? Self.missedTransferPenalty : 0)
         if arrivalSearch { return -(departure ?? .distantPast).timeIntervalSince1970 + penalty }
         return (arrival ?? .distantFuture).timeIntervalSince1970 + penalty
     }
@@ -56,11 +69,13 @@ extension RoutesResponse {
 }
 
 extension CalibratedJourney {
-    /// Wie `Journey.rank`, aber mit kalibrierten Gehzeiten: Ankunft inkl. letztem Fussweg, Puffer im gelernten Tempo.
+    /// Wie `Journey.rank`, aber mit kalibrierten Gehzeiten: Ankunft inkl. letztem Fussweg, Puffer im gelernten Tempo,
+    /// Gehzeit-Aufschlag aus `walks` (Rueckfall auf Fahrplandauer).
     func rank(arrivalSearch: Bool) -> TimeInterval {
+        let walking = journey.legs.filter(\.isWalk).reduce(0) { $0 + (walks[$1.index]?.seconds ?? $1.plannedSeconds) }
         let penalty = TimeInterval(journey.transfers * 480) + transfers.reduce(0) {
             $0 + ($1.status == .missed ? Journey.missedTransferPenalty : $1.status == .tight ? Journey.tightTransferPenalty : 0)
-        }
+        } + Journey.walkWeight * TimeInterval(walking) + (journey.cancelled ? Journey.missedTransferPenalty : 0)
         if arrivalSearch { return -(departureFromOrigin ?? .distantPast).timeIntervalSince1970 + penalty }
         return (arrivalAtDestination ?? .distantFuture).timeIntervalSince1970 + penalty
     }
