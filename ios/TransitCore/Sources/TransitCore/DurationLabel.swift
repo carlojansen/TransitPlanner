@@ -26,16 +26,18 @@ extension Journey {
     static let tightTransferPenalty: TimeInterval = 15 * 60
     /// Strafe fuer einen Umstieg, der nicht reicht: nur beste, wenn es keine andere gibt.
     static let missedTransferPenalty: TimeInterval = 7 * 24 * 3600
+    /// Ausfall wiegt doppelt: ein Umstieg, der rechnerisch nicht reicht, ist eine Prognose, ein Ausfall steht fest.
+    static let cancelledPenalty: TimeInterval = 2 * missedTransferPenalty
     /// Aufschlag je Gehsekunde (1.0 = jede Gehminute kostet eine Minute extra).
     static let walkWeight: Double = 1.0
 
     /// Rang fuer "beste Verbindung": frueheste Ankunft plus 8 Min. je Umstieg plus Gehzeit aller Fusswege x `walkWeight`
-    /// plus Strafe fuer knappe bzw. nicht machbare Umstiege; eine ausgefallene Fahrt kostet wie ein verpasster Umstieg.
+    /// plus Strafe fuer knappe bzw. nicht machbare Umstiege; eine ausgefallene Fahrt kostet doppelt so viel wie ein verpasster Umstieg.
     /// Bei Ankunftszeit-Suche zaehlt die spaeteste Abfahrt. MOTIS sortiert nach Abfahrt, das war oft nicht die beste.
     func rank(arrivalSearch: Bool) -> TimeInterval {
         let walking = legs.filter(\.isWalk).reduce(0) { $0 + $1.plannedSeconds }
         let penalty = TimeInterval(transfers * 480) + transferPenalty + Self.walkWeight * TimeInterval(walking)
-            + (cancelled ? Self.missedTransferPenalty : 0)
+            + (cancelled ? Self.cancelledPenalty : 0)
         if arrivalSearch { return -(departure ?? .distantPast).timeIntervalSince1970 + penalty }
         return (arrival ?? .distantFuture).timeIntervalSince1970 + penalty
     }
@@ -75,7 +77,7 @@ extension CalibratedJourney {
         let walking = journey.legs.filter(\.isWalk).reduce(0) { $0 + (walks[$1.index]?.seconds ?? $1.plannedSeconds) }
         let penalty = TimeInterval(journey.transfers * 480) + transfers.reduce(0) {
             $0 + ($1.status == .missed ? Journey.missedTransferPenalty : $1.status == .tight ? Journey.tightTransferPenalty : 0)
-        } + Journey.walkWeight * TimeInterval(walking) + (journey.cancelled ? Journey.missedTransferPenalty : 0)
+        } + Journey.walkWeight * TimeInterval(walking) + (journey.cancelled ? Journey.cancelledPenalty : 0)
         if arrivalSearch { return -(departureFromOrigin ?? .distantPast).timeIntervalSince1970 + penalty }
         return (arrivalAtDestination ?? .distantFuture).timeIntervalSince1970 + penalty
     }

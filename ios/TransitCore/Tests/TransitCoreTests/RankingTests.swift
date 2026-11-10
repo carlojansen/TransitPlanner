@@ -125,5 +125,9 @@ import Testing
         #expect(CalibratedJourney.bestIndex([a, calibrated(direct, [0: 60])], arrivalSearch: false) == 1)
         let cancelledDirect = try response([direkt("06:40", cancelled: true)]).journeys[0]
         #expect(CalibratedJourney.bestIndex([a, calibrated(cancelledDirect, [0: 60])], arrivalSearch: false) == 0)
+        // Geraet 10.11.: Ausfall stand vorn, weil die Alternative einen Umstieg hatte, der rechnerisch nicht reicht.
+        let missed = calibrated(transfer, [0: 60, 2: 3600, 4: 60])
+        #expect(missed.transfers.contains { $0.status == .missed })
+        #expect(CalibratedJourney.bestIndex([calibrated(cancelledDirect, [0: 60]), missed], arrivalSearch: false) == 1)
     }
 }
