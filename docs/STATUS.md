@@ -350,3 +350,20 @@ Tests: `xcodebuild test` ohne UI-Tests (iPhone 17): TransitCore 166/0, App 189/0
 **Offen:** Nicht am Gerät gesehen. Am Gerät wirkte die Zeile höher als die gemessenen 170 pt und der Status fehlte ganz, beides ungeklärt. Bei Wechsel nur des Ausstiegsgleises meldet der Hinweis in der Ergebnisliste "Gleis 2 statt 2" (vorbestehend). Höhentests hängen an festen Pixelwerten. Weiter offen: Auswahl nach Rang im Backend, Hinweis bei Ausfall in der Hero Card.
 
 **Nachtrag Gerät (10.11., Screenshot):** Die Zeile mit vier Linien bricht am iPhone wie geplant um. Als beste Verbindung stand aber eine ausgefallene Fahrt, darunter eine pünktliche. Erklärung aus dem Code, nicht aus den Daten belegt: Ausfall und "Umstieg reicht nicht" kosteten beide 7 Tage, dann entschied die frühere Ankunft; die Zeile zeigte für die Alternative nur "pünktlich". Geändert: Ausfall kostet doppelt (`cancelledPenalty`), die Zeile zeigt "Umstieg reicht nicht" vor "pünktlich". Nicht reviewt.
+
+## Ideen (nicht geplant, nicht begonnen)
+
+### Engel-Modus (10.11., Idee Carlo)
+
+Abends eine Route, auf der man wenig läuft und gut warten kann, dazu eine Vertrauensperson ("Engel"), die mitbekommt, wo man ist. Engel vorher festgelegt oder spontan über Teilen.
+
+**Route:** Schalter beim Planen, der nur die Gewichte der Rangformel ändert: Fußwege zählen stärker (letzter Weg besonders), Warten an kleinen Haltestellen kostet, an großen Bahnhöfen nicht; weniger Umstiege, kein knapper Umstieg, keine letzte Fahrt des Abends ohne Rückfall. Die Anzeige nennt den Grund ("8 Min. warten in Neuss Hbf"), nie "sicher": Studien finden keinen belegten Nutzen von Sicherheits-Apps und warnen vor falschem Sicherheitsgefühl. Beleuchtung aus OSM (`lit`) ist lückenhaft, höchstens Bonus.
+
+**Teilen, geräteübergreifend:** Apple "Wo ist?" und Wegbegleitung gehen nur zwischen iPhones und lassen sich nicht aus der App starten; WhatsApp-Live-Standort und Google Maps gehen auf beiden Systemen, aber nur von Hand. Deshalb eigener Link über das iOS-Teilen-Menü, der im Browser jedes Handys läuft. In Stufen:
+1. Ohne Server: Text mit Abfahrt, Ankunft und Linien über das Teilen-Menü.
+2. Link mit Live-Stand (Karte, Ankunft, letzter Standort, Meldung bei Ausfall oder Umplanung). Standort auf dem Gerät verschlüsselt, Schlüssel nur im Link, Server löscht nach Ankunft.
+3. Alarm bei Nicht-Ankunft per Push an Familienmitglieder mit App.
+
+**Face ID:** "Nicht mehr teilen" und "Bin angekommen" nur mit Face ID. Schwäche: lässt sich erzwingen; robuster wäre ein Code mit Alarm-Variante.
+
+**Vor Beginn zu klären:** Stufe 2 bricht die Regel, dass das Backend keinen Personenstandort bekommt; nur verschlüsselt und nach bewusster Änderung von CLAUDE.md und SPEZIFIKATION. Standort im Hintergrund nicht geprüft. Alarm für Engel ohne App bräuchte SMS (Kosten) oder Web-Push. Bei Minderjährigen: Wer darf das Teilen beenden? Bedarf laut BKA-Dunkelfeldstudie 2026: nachts im ÖPNV fühlen sich 33 % der Frauen sicher, 57 % der Männer.
