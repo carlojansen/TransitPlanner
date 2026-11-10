@@ -63,6 +63,20 @@ extension Leg {
 
     var shownArrivalPlatform: String? { showsArrivalPlatform ? arrivalPlatform : nil }
 
+    /// Hinweis der Hero Card bei `platformChanged`: das Gleis, das sich wirklich geaendert hat. Einstieg geht vor;
+    /// wechselt nur der Ausstieg, steht "Ausstieg" davor. Nie zwei gleiche Gleise ("Gleis 2 statt 2").
+    var platformChangeHint: String? {
+        guard platformChanged == true else { return nil }
+        if let platform = departurePlatform, platform != plannedDeparturePlatform {
+            return plannedDeparturePlatform.map { String(localized: "Gleis \(platform) statt \($0)") }
+                ?? String(localized: "Gleis \(platform)")
+        }
+        if let platform = arrivalPlatform, let planned = plannedArrivalPlatform, platform != planned {
+            return String(localized: "Ausstieg Gleis \(platform) statt \(planned)")
+        }
+        return nil
+    }
+
     /// Kurzname fuer Badges: Linienname, sonst Verkehrsmittel.
     var badgeName: String { line?.name ?? displayMode.displayName }
 

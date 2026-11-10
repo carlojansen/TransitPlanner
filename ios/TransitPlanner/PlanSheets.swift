@@ -994,9 +994,7 @@ struct HeroCard: View {
             let from = sev.origin.name ?? ""
             out.append(Hint(text: String(localized: "Ersatzverkehr: Bus ab \(from)"), symbol: "bus.fill", tone: .alert))
         }
-        if let changed = journey.legs.first(where: { $0.platformChanged == true }), let platform = changed.departurePlatform {
-            let text = changed.plannedDeparturePlatform.map { String(localized: "Gleis \(platform) statt \($0)") }
-                ?? String(localized: "Gleis \(platform)")
+        if let text = journey.legs.lazy.compactMap(\.platformChangeHint).first {
             out.append(Hint(text: text, symbol: "exclamationmark.triangle.fill", tone: .warn))
         }
         if calibrated?.transfers.contains(where: { $0.status == .missed }) == true {

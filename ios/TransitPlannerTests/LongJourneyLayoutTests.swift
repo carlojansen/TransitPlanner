@@ -56,5 +56,29 @@ import TransitCore
         #expect(shown == [.regional: true, .nationalExpress: true, .subway: false, .bus: false, .tram: false])
         #expect(sev.showsArrivalPlatform == false)
     }
+
+    /// Hinweis der Hero Card: nennt das Gleis, das sich geaendert hat, nie zwei gleiche ("Gleis 2 statt 2").
+    @Test func platformChangeHintNamesTheChangedPlatform() throws {
+        func leg(_ platforms: String) throws -> Leg {
+            try TransitJSON.decoder().decode(Leg.self, from: Data(#"""
+            {"index":1,"mode":"regional","origin":{"kind":"stop","id":"a","name":"A"},"destination":{"kind":"stop","id":"b","name":"B"},
+             "realtime":true,"cancelled":false,\#(platforms)}
+            """#.utf8))
+        }
+        let boarding = try leg(#""departurePlatform":"2","plannedDeparturePlatform":"1","arrivalPlatform":"5","plannedArrivalPlatform":"5","platformChanged":true"#)
+        let exit = try leg(#""departurePlatform":"2","plannedDeparturePlatform":"2","arrivalPlatform":"5","plannedArrivalPlatform":"4","platformChanged":true"#)
+        let both = try leg(#""departurePlatform":"2","plannedDeparturePlatform":"1","arrivalPlatform":"5","plannedArrivalPlatform":"4","platformChanged":true"#)
+        let unplanned = try leg(#""departurePlatform":"2","platformChanged":true"#)
+        let same = try leg(#""departurePlatform":"2","plannedDeparturePlatform":"2","platformChanged":true"#)
+        let none = try leg(#""departurePlatform":"2","plannedDeparturePlatform":"1","platformChanged":false"#)
+        #expect(boarding.platformChangeHint == "Gleis 2 statt 1")
+        #expect(exit.platformChangeHint == "Ausstieg Gleis 5 statt 4")
+        #expect(both.platformChangeHint == "Gleis 2 statt 1")
+        #expect(unplanned.platformChangeHint == "Gleis 2")
+        #expect(same.platformChangeHint == nil)
+        #expect(none.platformChangeHint == nil)
+        // Die Fake-Verbindung mit Wechsel am Einstieg bleibt wie bisher.
+        #expect(FakeData.routes?.journeys.first?.legs.lazy.compactMap(\.platformChangeHint).first == "Gleis 2 statt 1")
+    }
 }
 #endif

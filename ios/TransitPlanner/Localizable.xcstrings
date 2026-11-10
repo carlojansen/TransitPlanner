@@ -408,6 +408,16 @@
     "Ausstieg %@" : {
 
     },
+    "Ausstieg Gleis %@ statt %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Ausstieg Gleis %1$@ statt %2$@"
+          }
+        }
+      }
+    },
     "BESTE VERBINDUNG" : {
 
     },
