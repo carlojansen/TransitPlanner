@@ -53,6 +53,16 @@ extension Leg {
     /// Ersatzverkehr wird immer als Bus gezeichnet (mode/bus), auch wenn der Feed etwas anderes meldet.
     var displayMode: TransitMode { replacement ? .bus : mode }
 
+    /// Gleis am Ausstieg nur bei Bahnen (S-Bahn, Regio, Fernzug): dort zaehlt es fuer den Umstieg.
+    /// Bei Tram, Bus (auch SEV) und U-Bahn hilft es niemandem; am Einstieg bleibt es immer.
+    /// Ausnahme: ein echter Gleiswechsel am Ausstieg bleibt sichtbar, sonst gaebe es die Warnung ohne Grund.
+    var showsArrivalPlatform: Bool {
+        [.suburban, .regional, .regionalExpress, .national, .nationalExpress].contains(displayMode)
+            || (plannedArrivalPlatform != nil && arrivalPlatform != plannedArrivalPlatform)
+    }
+
+    var shownArrivalPlatform: String? { showsArrivalPlatform ? arrivalPlatform : nil }
+
     /// Kurzname fuer Badges: Linienname, sonst Verkehrsmittel.
     var badgeName: String { line?.name ?? displayMode.displayName }
 

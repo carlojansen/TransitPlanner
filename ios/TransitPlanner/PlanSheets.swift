@@ -1012,20 +1012,35 @@ struct HeroCard: View {
 struct AlternativeRow: View {
     let journey: Journey
     let calibrated: CalibratedJourney?
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         TimelineView(.everyMinute) { context in
             let leave = calibrated?.departureFromOrigin ?? journey.departure
             let arrive = calibrated?.arrivalAtDestination ?? journey.arrival
-            HStack(spacing: 8) {
+            // AX-Groessen: Dauer unter den Block, sonst laeuft der einzeilige Status ueber den Rand.
+            let ax = typeSize.isAccessibilitySize
+            let layout = ax ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 8))
+            layout {
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 8) { times(leave, arrive); badges; status }
+                    // Lange Ketten: Status neben die Zeiten, Badges brechen um wie in der Leg-Bar. Frueher stand der
+                    // Status in einem HStack neben festen Badges, bekam fast keine Breite und brach zeichenweise um.
+                    // Die Badges stehen ausserhalb des inneren ViewThatFits, weil FlowLayout als Idealbreite eine
+                    // einzige lange Zeile meldet und damit jede Variante "zu breit" waere.
                     VStack(alignment: .leading, spacing: 4) {
-                        times(leave, arrive)
-                        HStack(spacing: 8) { badges; status }
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) { times(leave, arrive); status }
+                            // AX-Groessen: Zeiten und Status passen nicht nebeneinander.
+                            VStack(alignment: .leading, spacing: 4) { times(leave, arrive); status }
+                        }
+                        FlowLayout(spacing: 4, lineSpacing: 4) {
+                            ForEach(journey.legs.filter { !$0.isWalk }, id: \.index) { LineBadge(leg: $0) }
+                        }
                     }
                 }
-                Spacer(minLength: 4)
+                .layoutPriority(1)
+                if !ax { Spacer(minLength: 4) }
                 if let leave, let arrive {
                     MinutesText(seconds: Int(arrive.timeIntervalSince(leave)))
                         .font(.footnote)
@@ -1033,7 +1048,7 @@ struct AlternativeRow: View {
                         .fixedSize()
                 }
             }
-            .frame(minHeight: 46)
+            .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
             .padding(.vertical, 4)
             .contentShape(.rect)
             .accessibilityElement(children: .ignore)
@@ -1057,9 +1072,17 @@ struct AlternativeRow: View {
         }
     }
 
-    @ViewBuilder private var status: some View {
+    /// Immer einzeilig in voller Breite, nie gequetscht.
+    private var status: some View {
+        statusText.lineLimit(1).fixedSize()
+    }
+
+    @ViewBuilder private var statusText: some View {
         if journey.cancelled {
             Text("Fällt aus").font(.caption.weight(.semibold)).foregroundStyle(Color(.statusAlert))
+        } else if calibrated?.transfers.contains(where: { $0.status == .missed }) == true {
+            // Sonst steht "pünktlich" an einer Verbindung, die wegen des Umstiegs nicht vorn landet.
+            Text("Umstieg reicht nicht").font(.caption.weight(.semibold)).foregroundStyle(Color(.statusAlert))
         } else if journey.legs.contains(where: \.replacement) {
             Text("Ersatzverkehr").font(.caption.weight(.semibold)).foregroundStyle(Color(.modeBus))
         } else if let delay = journey.legs.first(where: { !$0.isWalk })?.departureDelayMinutes {

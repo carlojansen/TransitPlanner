@@ -522,7 +522,7 @@ enum NavigationPresenter {
 
         if let from, let to {
             let stop = from.destination.name ?? to.origin.name ?? ""
-            let a = from.arrivalPlatform.map { String(localized: "Gleis \($0)") }
+            let a = from.shownArrivalPlatform.map { String(localized: "Gleis \($0)") }
             let b = to.departurePlatform.map { String(localized: "Gleis \($0)") }
             let platforms: String? = switch (a, b) {
             case let (a?, b?): "\(a) → \(b)"
@@ -560,7 +560,7 @@ enum NavigationPresenter {
         let from = leg.departurePlatform.map { String(localized: "ab Gleis \($0)") }
             ?? leg.origin.name.map { String(localized: "ab \($0)") }
         let to = [arrival.map { String(localized: "an \(spokenTime($0))") },
-                  leg.arrivalPlatform.map { String(localized: "Gleis \($0)") }].compactMap { $0 }.joined(separator: " ")
+                  leg.shownArrivalPlatform.map { String(localized: "Gleis \($0)") }].compactMap { $0 }.joined(separator: " ")
         // Im Fahrzeug: Halte bis zum Ausstieg statt der Abfahrt, die schon war.
         var stops: String?
         if isCurrent, case .onBoardTransit = input.step {
@@ -572,7 +572,7 @@ enum NavigationPresenter {
         spoken += [leg.origin.name.map { String(localized: "ab \($0)") }, leg.departurePlatform.map { String(localized: "Gleis \($0)") },
                    leg.destination.name.map { String(localized: "bis \($0)") },
                    arrival.map { String(localized: "an \(spokenTime($0))") },
-                   leg.arrivalPlatform.map { String(localized: "Gleis \($0)") }, stops]
+                   leg.shownArrivalPlatform.map { String(localized: "Gleis \($0)") }, stops]
         if leg.cancelled { spoken.append(String(localized: "Fällt aus")) }
         return RouteOverview.Row(id: String(leg.index), kind: .ride, time: departure, leg: leg,
                                  title: leg.destination.name.map { String(localized: "bis \($0)") } ?? "",

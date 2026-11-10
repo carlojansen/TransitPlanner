@@ -331,6 +331,22 @@ Anlass: Rückmeldung vom Gerät ("Gleis 76" in Köln Süd, unsinnige Route als b
 
 Review durch `security-hig-reviewer`: **FREIGABE**, 0 Blocker, 1 MAJOR (Regel galt für alle Feeds), behoben durch die Beschränkung auf Köln und numerische Gleise; dazu Ziffernbegrenzung und Rückfall der Gehdauer. Diese Nachbesserung ist nicht erneut reviewt.
 
-Tests: Backend 90/0 (`npm test`), TransitCore 166/0 (`swift test`). Gegenproben vor der Nachbesserung: ohne Gleis-Regel 2 Tests rot, ohne Gehzeit-Term 3, ohne Ausfall-Strafe 2. Kein xcodebuild, kein Simulator, nicht am Gerät gesehen; das Backend ist nicht neu ausgerollt.
+Tests: Backend 90/0 (`npm test`), TransitCore 166/0 (`swift test`). Gegenproben vor der Nachbesserung: ohne Gleis-Regel 2 Tests rot, ohne Gehzeit-Term 3, ohne Ausfall-Strafe 2. Kein xcodebuild, kein Simulator, nicht am Gerät gesehen. Das Backend ist am 10.11. ausgerollt (healthz ok, 401 ohne Token; keine Routenanfrage über den Server geprüft).
 
 **Offen:** Echtzeit-Gleiswechsel in Köln zeigt weiter interne Nummern. Führende Nullen ("Gleis 01") nicht behandelt. Kein Test für den Rückfall der Gehdauer und für die Ankunftssuche mit Gehzeit. Weitere Regionen mit internen Nummern unbekannt. Ursache der fehlenden U75 nicht belegt (in der Live-Anfrage kamen genau 4 Verbindungen). Noch nicht begonnen: Zeile mit vielen Linien und Details-Ansicht, Auswahl nach Rang im Backend (bis 6), Hinweis bei Ausfall und Störung in der Hero Card.
+
+## Anzeige langer Verbindungen (10.11.)
+
+Anlass: zwei Screenshots vom Gerät (aufgeblähte Zeile bei vier Linien, Gleis am Tram-Ausstieg).
+
+**Weitere Verbindungen (`AlternativeRow`):** Ursache per Messung belegt (`sizeThatFits`, 338 pt Breite): Der Status stand neben vier festen Badges, bekam fast keine Breite und brach zeichenweise um, 170 pt. Jetzt Zeiten und Status oben, Badges darunter im vorhandenen `FlowLayout`, rund 88 pt. Bei AX-Größen steht die Dauer unter dem Block, damit der einzeilige Status nicht über den Rand läuft.
+
+**Fahrtdetails:** Leg-Bar der ganzen Kette im Kopf (für VoiceOver stumm). Am Ausstieg Gleis nur bei S-Bahn, Regio und Fernzug oder bei echtem Gleiswechsel (`Leg.showsArrivalPlatform`); gilt auch für die Restfahrt in der Navigation, die Umstiegskarte zeigt weiter beide Gleise. In `docs/DESIGN.md` vermerkt; Figma ist seit 10.11. nicht mehr Maßstab (Carlo), es gilt das bestehende UI der App.
+
+Review durch `security-hig-reviewer`: **FREIGABE**, 0 Blocker, 3 MAJOR (Status-Überlauf bei AX, Gleiswechsel am Ausstieg unsichtbar, Regel in der Navigation nur halb), alle behoben; die Nachbesserung ist nicht erneut reviewt.
+
+Tests: `xcodebuild test` ohne UI-Tests (iPhone 17): TransitCore 166/0, App 189/0, davon 4 neu (Höhe, Breite bei AX mit Ersatzverkehr, Gleis-Regel).
+
+**Offen:** Nicht am Gerät gesehen. Am Gerät wirkte die Zeile höher als die gemessenen 170 pt und der Status fehlte ganz, beides ungeklärt. Bei Wechsel nur des Ausstiegsgleises meldet der Hinweis in der Ergebnisliste "Gleis 2 statt 2" (vorbestehend). Höhentests hängen an festen Pixelwerten. Weiter offen: Auswahl nach Rang im Backend, Hinweis bei Ausfall in der Hero Card.
+
+**Nachtrag Gerät (10.11., Screenshot):** Die Zeile mit vier Linien bricht am iPhone wie geplant um. Als beste Verbindung stand aber eine ausgefallene Fahrt, darunter eine pünktliche. Erklärung aus dem Code, nicht aus den Daten belegt: Ausfall und "Umstieg reicht nicht" kosteten beide 7 Tage, dann entschied die frühere Ankunft; die Zeile zeigte für die Alternative nur "pünktlich". Geändert: Ausfall kostet doppelt (`cancelledPenalty`), die Zeile zeigt "Umstieg reicht nicht" vor "pünktlich". Nicht reviewt.

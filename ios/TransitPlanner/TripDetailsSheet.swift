@@ -113,7 +113,7 @@ struct JourneyTimelineCard: View {
     }
 }
 
-/// Kopf laut Figma: "08:04 – 08:40" gross, darunter "36 Min. · 1 Umstieg".
+/// Kopf laut Figma: "08:04 – 08:40" gross, darunter "36 Min. · 1 Umstieg"; darunter die Leg-Bar (10.11.).
 private struct DetailsHeader: View {
     let journey: Journey
     let calibrated: CalibratedJourney?
@@ -136,6 +136,11 @@ private struct DetailsHeader: View {
             }
             .font(.subheadline)
             .foregroundStyle(Color(.labelSecondary))
+            // Ganze Kette auf einen Blick, bevor die lange Zeitleiste beginnt (wie in der Hero Card).
+            // Fuer VoiceOver stumm: die Zeitleiste darunter nennt jede Linie ohnehin.
+            LegBar(journey: journey, calibrated: calibrated)
+                .padding(.top, 8)
+                .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
@@ -266,8 +271,9 @@ private struct VehicleTimeline: View {
             .padding(.vertical, 4)
         }
         .fixedSize(horizontal: false, vertical: true)
-        StationRow(time: leg.arrival, planned: leg.plannedArrival, name: leg.destination.name, platform: leg.arrivalPlatform,
-                   plannedPlatform: leg.plannedArrivalPlatform,
+        StationRow(time: leg.arrival, planned: leg.plannedArrival, name: leg.destination.name,
+                   platform: leg.shownArrivalPlatform,
+                   plannedPlatform: leg.showsArrivalPlatform ? leg.plannedArrivalPlatform : nil,
                    delayMinutes: leg.realtime ? (leg.arrivalDelaySeconds).flatMap { $0 >= 60 ? $0 / 60 : nil } : nil,
                    rail: leg, leg: nil)
     }

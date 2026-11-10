@@ -133,6 +133,7 @@ Zeiten, Minuten, Meter: immer `.monospacedDigit()` und `.contentTransition(.nume
 - Gleiswechsel (platformChanged) → `.sensoryFeedback(.warning)`.
 - "Starten": Leg-Bar morpht per matchedGeometryEffect innerhalb des Sheets; Elemente oben über der Karte blenden per `.move(edge: .top)` + `.opacity` ein (über die Sheet-Grenze geht matchedGeometryEffect nicht).
 - Alternativen darunter als Zeilen (Uhrzeiten, Badges, Status, Dauer), 46 pt hoch, mit sichtbarer Überschrift "Weitere Verbindungen" (Überarbeitung 3.11., Freigabe durch Carlo offen).
+- **Lange Ketten (10.11.):** Passt die Zeile nicht in eine Reihe, stehen oben Uhrzeiten und Status (Status immer einzeilig, bei AX-Größen unter den Zeiten und die Dauer unter dem Block), darunter brechen die Badges um wie in der Leg-Bar. Die Zeile wächst nur um Badge-Zeilen (vier Linien auf 402-pt-iPhone etwa 88 pt).
 - Im Planungsformular zeigt die Karte keine Route; die Ergebnisse bleiben für den Weg zurück erhalten. Nach dem Einrasten des Sheets wird die Route neu eingepasst (300 ms Debounce), sofern der Nutzer die Karte nicht bewegt hat.
 - VoiceOver Hero Card: "Beste Verbindung: In 7 Minuten losgehen. 6 Minuten Fußweg, dann RE 5 Richtung Koblenz, 3 Minuten verspätet. Gleis 7."
 - Quellenangabe Transitous + OSM sichtbar (Nutzungsregel).
@@ -149,6 +150,7 @@ Zeiten, Minuten, Meter: immer `.monospacedDigit()` und `.contentTransition(.nume
 **3d Fahrtdetails**
 - Tipp auf Hero Card oder Alternative öffnet die Details im selben Sheet (Detent .large, Zustand der State-Machine, kein Push). Kopf als Standard-Toolbar (NavigationStack im Sheet, kein Push): Zurück "Verbindungen", Titel "Details" (Carlo, 31.10.). Unten per `.safeAreaBar`: "Erinnern" und "Starten", bei AX untereinander.
 - Zeitleiste: Zeitspalte monospacedDigit, Echtzeit darunter in status/warn; Schiene in Linienfarbe für Fahrten, gepunktet (mode/walk) für Fußwege.
+- **Seit 10.11.:** Unter "Dauer · Umstiege" im Kopf die Leg-Bar der ganzen Kette. Am Ausstieg kein Gleis bei Tram, Bus (auch SEV) und U-Bahn, auch nicht in VoiceOver; am Einstieg und bei Bahnen (S-Bahn, Regio, Fernzug) am Ausstieg bleibt es, ebenso bei einem echten Gleiswechsel. Gilt auch für Zeitleiste und Restfahrt in der Navigation; die Umstiegskarte ("Gleis 3 → Gleis 7") zeigt weiter beide Gleise. Die Leg-Bar im Kopf ist für VoiceOver stumm, die Zeitleiste nennt die Linien.
 - Gleiswechsel: neues Gleis hervorgehoben + "statt 10"; `.sensoryFeedback(.warning)` beim Eintreffen, Puls einmalig.
 - "4 Zwischenhalte" klappt per Motion.micro auf (DisclosureGroup); Fußweg-Zeilen zeigen die kalibrierte Gehzeit.
 - Wegbeschreibung: OSM-Teilstücke derselben Straße (geradeaus, namenlos, leichte Biegung derselben Straße, unter 10 m)
