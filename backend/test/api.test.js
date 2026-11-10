@@ -615,6 +615,48 @@ describe('Datenqualitaet (aus dem Live-Test)', () => {
 		expect(r.body.journeys[0].legs[0]).toMatchObject({departurePlatform: '1', platformChanged: false, line: {name: 'RB48', fahrtNr: '10123'}});
 	});
 
+	it('Gleis aus Place.description (DELFI Koeln) ersetzt die interne Nummer', async () => {
+		const {resolveTracks} = await import('../src/lib/mapper.js');
+		const r = (track, scheduledTrack, description, stopId = 'de-DELFI_de:05315:11513:7:71') => resolveTracks({track, scheduledTrack, description, stopId});
+		const same = (v) => ({platform: v, planned: v});
+		// Koeln: interne Nummer, echtes Gleis in der Beschreibung
+		expect(r('76', '76', 'Bahnsteig Gleis 1')).toEqual(same('1'));
+		expect(r('90', '90', 'Bahnsteig Gleis 7')).toEqual(same('7'));
+		expect(r('87', '87', 'Bahnsteig Gleis 4')).toEqual(same('4'));
+		expect(r('12', '12', 'Bahnsteig Gleis 2')).toEqual(same('2'));
+		expect(r('11', '11', 'Bahnsteig 1')).toEqual(same('1'));
+		expect(r('14', '14', 'Bahnsteig Gleis 2')).toEqual(same('2'));
+		// Duesseldorf: track steht in der Liste, bleibt
+		expect(r('16', '16', 'Gleis 15+16')).toEqual(same('16'));
+		expect(r('4', '4', 'Gleis 4+5')).toEqual(same('4'));
+		expect(r('12', '12', 'Gleis 11+12 (S)')).toEqual(same('12'));
+		// Buchstabe, fehlendes scheduledTrack, fehlendes track
+		expect(r('50', '50', 'Gleis 3a')).toEqual(same('3A'));
+		expect(r('76', undefined, 'Bahnsteig Gleis 1')).toEqual(same('1'));
+		expect(r(undefined, undefined, 'Bahnsteig Gleis 1')).toEqual(same('1'));
+		// Echtzeit-Gleiswechsel, mehrere Nummern ohne Treffer, Freitext, keine Beschreibung: wie bisher
+		expect(r('77', '76', 'Bahnsteig Gleis 1')).toEqual({platform: '77', planned: '76'});
+		expect(r('9', '9', 'Gleis 15+16')).toEqual(same('9'));
+		expect(r('9', '9', 'Hinter dem Aufzug links, Gleis 1')).toEqual(same('9'));
+		expect(r('9', '9', undefined)).toEqual(same('9'));
+		expect(r(undefined, undefined, 'Gleis 15+16')).toEqual({platform: null, planned: null});
+		// Nur fuer Koeln belegt: andere Regionen und Buchstaben-Steige bleiben unangetastet
+		expect(r('5', '5', 'Bahnsteig 3', 'de-DELFI_de:05111:18235:90:4')).toEqual(same('5'));
+		expect(r('5', '5', 'Bahnsteig 3', null)).toEqual(same('5'));
+		expect(r('A', 'A', 'Gleis 1')).toEqual(same('A'));
+		expect(r('76', '76', 'Gleis 9999')).toEqual(same('76'));
+	});
+
+	it('Gleis aus Beschreibung gilt im Leg und im Stopover, ohne platformChanged', async () => {
+		const koelnSued = {name: 'Köln Süd Bf', stopId: 'de-DELFI_de:05315:11513:7:71', lat: 50.91, lon: 6.94, track: '76', scheduledTrack: '76', description: 'Bahnsteig Gleis 1'};
+		const stop = {...koelnSued, name: 'Köln Messe/Deutz Bf', stopId: 'de-DELFI_de:05315:11901:7:78', track: '90', scheduledTrack: '90', description: 'Bahnsteig Gleis 7', arrival: '2026-10-24T06:22:00Z', scheduledArrival: '2026-10-24T06:20:00Z'};
+		build({async plan() { return {itineraries: [itinerary({legs: [leg({to: koelnSued, extra: {intermediateStops: [stop]}})]})]}; }});
+		const res = await request(app).post('/api/routes').set(auth).send({origin: {type: 'stop', id: 'de-DELFI_de:05111:18235'}, destination: {type: 'stop', id: 'de-DELFI_s'}}).expect(200);
+		const l = res.body.journeys[0].legs[0];
+		expect(l).toMatchObject({arrivalPlatform: '1', plannedArrivalPlatform: '1', platformChanged: true}); // from = placeDusHbf (9 -> 10)
+		expect(l.stopovers[0]).toMatchObject({platform: '7', plannedPlatform: '7'});
+	});
+
 	it('Fusswege mit Schritten (Ebenen, Treppe, Aufzug), ohne OSM-IDs und Schritt-Geometrie', async () => {
 		const w = {...walk(), steps: [
 			{relativeDirection: 'DEPART', distance: 40.4, fromLevel: 0, toLevel: 0, streetName: ' Breslauer Platz ', osmWay: 123, polyline: {points: 'abc', precision: 7, length: 2}, exit: '', stayOn: false, area: false},

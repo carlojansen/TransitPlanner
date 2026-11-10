@@ -53,6 +53,30 @@ export function normTrack(t) {
 	return v.length ? v : null;
 }
 
+// DELFI-Koeln: Place.track ist eine interne Nummer, das echte Gleis steht in Place.description
+// ("Bahnsteig Gleis 1", "Gleis 15+16 (S)"). Freitext liefert keine Aussage.
+const DESC_TRACKS = /^(?:bahnsteig\s+gleis|bahnsteig|gleis)\s+(\d{1,3}[a-z]?(?:\s*\+\s*\d{1,3}[a-z]?)*)(?:\s*\([^)]*\))?$/i;
+// ponytail: nur fuer Koeln belegt (AGS 05315). Anderswo ist "Bahnsteig 3" nicht das Gleis; weitere Regionen
+// erst nach Pruefung einer echten Antwort ergaenzen.
+const INTERNAL_TRACK_STOPS = /^de-DELFI_de:05315:/;
+export function placeTracks(p) {
+	const m = typeof p?.description === 'string' ? DESC_TRACKS.exec(p.description.trim()) : null;
+	return m ? m[1].split('+').map((x) => x.trim().toUpperCase()) : [];
+}
+
+// Liefert {platform, planned}. Die Beschreibung ersetzt das Gleis nur bei genau einer Nummer ohne Treffer
+// und ohne Echtzeit-Gleiswechsel; Gleis und geplantes Gleis werden dann gemeinsam ersetzt (kein falsches platformChanged).
+export function resolveTracks(p) {
+	const platform = normTrack(p?.track);
+	const planned = normTrack(p?.scheduledTrack);
+	const nums = placeTracks(p);
+	if (nums.length !== 1 || !INTERNAL_TRACK_STOPS.test(p?.stopId ?? '')) return {platform, planned};
+	// Buchstaben-Steige ("A") sind nie interne Nummern.
+	if (platform && (!/^\d+$/.test(platform) || nums.includes(platform))) return {platform, planned};
+	if (platform && planned && platform !== planned) return {platform, planned};
+	return {platform: nums[0], planned: nums[0]};
+}
+
 // Transitous haengt die Zugnummer an den Anzeigenamen ("RE5 (28517)"); die Nummer steht separat in fahrtNr.
 const stripTripNo = (s) => (typeof s === 'string' ? s.replace(/\s*\(\d+\)\s*$/, '').trim() : '');
 // displayName zuerst: routeShortName ist (MOTIS API >= v4) der rohe GTFS-Kurzname ohne Gattung ("704" statt "STR 704").
@@ -158,6 +182,7 @@ export function mapPolyline(geom) {
 }
 
 function mapStopover(p, realtime) {
+	const {platform, planned} = resolveTracks(p);
 	return {
 		stop: mapPlace(p),
 		arrival: p.arrival ?? null,
@@ -166,8 +191,8 @@ function mapStopover(p, realtime) {
 		departure: p.departure ?? null,
 		plannedDeparture: p.scheduledDeparture ?? null,
 		departureDelaySeconds: realtime ? seconds(p.departure, p.scheduledDeparture) : null,
-		platform: normTrack(p.track),
-		plannedPlatform: normTrack(p.scheduledTrack),
+		platform,
+		plannedPlatform: planned,
 		cancelled: p.cancelled === true,
 	};
 }
@@ -204,10 +229,8 @@ export function mapLeg(leg, index, {withPolylines = true} = {}) {
 		};
 	}
 
-	const depPlatform = normTrack(leg.from?.track);
-	const depPlanned = normTrack(leg.from?.scheduledTrack);
-	const arrPlatform = normTrack(leg.to?.track);
-	const arrPlanned = normTrack(leg.to?.scheduledTrack);
+	const {platform: depPlatform, planned: depPlanned} = resolveTracks(leg.from);
+	const {platform: arrPlatform, planned: arrPlanned} = resolveTracks(leg.to);
 	return {
 		...base,
 		line: {

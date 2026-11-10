@@ -120,6 +120,7 @@ Fahrzeug: `line {name, productName, fahrtNr, operator, color, textColor}` (Farbe
 `direction`, `tripId`, `departurePlatform`, `plannedDeparturePlatform`, `arrivalPlatform`, `plannedArrivalPlatform`,
 `platformChanged` (Bool, löst `.warning`-Haptik aus), `wheelchairAccessible` (`yes` | `no` | `unknown`; `unknown` = Feld fehlt, gilt nie als barrierefrei; nur Hinweis, siehe `accessibility`), `replacement` (Bool: Schienenersatzverkehr, erkannt an GTFS-`route_type` 714 oder „SEV“/„Ersatz“ im Linien- bzw. Produktnamen; `mode` bleibt dabei meist `bus`), `loadFactor` (derzeit immer `null`, Transitous liefert keine Auslastung),
 `stopovers [Stopover]`, `remarks [Remark]`.
+Gleisfelder (auch in `Stopover`) stammen aus MOTIS `Place.track`/`scheduledTrack`; nennt `Place.description` genau eine Gleis-/Bahnsteignummer („Bahnsteig Gleis 1“), die einem numerischen `track` widerspricht, und liegt kein Echtzeit-Gleiswechsel vor, gilt die Nummer aus der Beschreibung für Gleis und geplantes Gleis. Das gilt nur für Kölner Halte (Stop-ID `de-DELFI_de:05315:`), dort ist `track` eine interne Nummer. Bekannte Grenze: Bei einem Echtzeit-Gleiswechsel in Köln bleiben die internen Nummern stehen.
 
 `polyline`: `{type:"LineString", coordinates:[[lon,lat],...]}` oder `null`.
 
