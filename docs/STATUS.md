@@ -90,6 +90,8 @@ Review durch `security-hig-reviewer`: **FREIGABE**, 0 Blocker, 2 Mittel, 5 Niedr
 
 **UI Stufe A (Schritt 3):** Plus neben Von/Nach öffnet die bestehende Suche mit Slot `via`; nur Haltestellen (Adressen und "Mein Standort" abgelehnt, Hinweis über der Liste), max. 2, nicht doppelt, nicht Start/Ziel, nie in Verlauf oder Favoriten. Je Stopp Zeile in der Von/Nach-Karte mit Stepper (5 bis 120 Min., Standard 15) und Entfernen. Tauschen dreht die Reihenfolge. `PlanKey` enthält `via` (Offline-Reserve zeigt keine Antwort ohne neuen Stopp). Fahrtdetails: Block "Aufenthalt <Name> · <n> Min." mit echter Dauer, Warnung "Aufenthalt nur <n> Min." bei Verspätung; Umstiegszahl ohne erkannte Aufenthalte (Hero, Zeile, Kopf, VoiceOver). "Nächste Verbindung" und Alternativen unterwegs behalten noch nicht erreichte Stopps; Erinnerungen speichern `via`. Tests: App 195/0, 6 Gegenproben rot (eine Lücke beim `PlanKey` gefunden und per Test geschlossen). **Nicht reviewt** (Carlo hat vor dem Review den Gerätetest freigegeben, 16.11.).
 
+**Ausgerollt 16.11.:** Backend auf dem Server (Servertests 93/93, `healthz` ok, 401 ohne Token, Anfrage mit Zwischenstopp Düsseldorf Hbf nach Köln Hbf über Leverkusen Mitte über den Server liefert 2 Verbindungen).
+
 **Offen:** Review der UI. Gerätetest bei Carlo. Karte nennt die Grenze weiter "Umstieg"; Alternativen unterwegs zählen den Aufenthalt als Umstieg; "Umstieg knapp/reicht nicht" heißt am Stopp weiter "Umstieg". Stufe B (Geschäfts-Pins, Navigationsschritt "Aufenthalt") nicht begonnen. Ursprünglich danach Schritt 2 (TransitCore: `via` in Requests, Erkennung der Leg-Grenze, Rang) und Schritt 3 (UI Stufe A).
 
 ## Ideen (nicht geplant, nicht begonnen)
