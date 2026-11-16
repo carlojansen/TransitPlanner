@@ -59,4 +59,16 @@ if (routes) {
 	}
 }
 if (routes?.removedLongDistance) console.log(`      (${routes.removedLongDistance} Verbindung(en) mit Fernverkehr herausgefiltert)`);
+const viaRoutes = await step('Route mit Zwischenstopp Leverkusen Mitte, 20 Min.', () => service.routes({
+	origin: {type: 'coordinate', latitude: 51.21996, longitude: 6.79432},
+	destination: {type: 'coordinate', latitude: 50.94282, longitude: 6.95873},
+	isArrivalTime: false, onlyNahverkehr: true, results: 2,
+	via: [{id: 'de-DELFI_de:05316:21101', stayMinutes: 20}],
+}));
+for (const j of viaRoutes?.journeys ?? []) {
+	const stay = j.legs.findIndex((l, i) => l.mode !== 'walk' && /Leverkusen Mitte/.test(l.destination.name ?? '')
+		&& j.legs[i + 1] && Date.parse(j.legs[i + 1].departure) - Date.parse(l.arrival) >= 20 * 60_000);
+	console.log(`      -> ${time(j.departure)}-${time(j.arrival)}  ${stay >= 0 ? `Aufenthalt nach Abschnitt ${stay}` : 'FAIL kein Aufenthalt gefunden'}`);
+	if (stay < 0) process.exitCode = 1;
+}
 console.log(`\nQuellenangabe fuer die App: ${(routes?.attribution?.links ?? []).map((l) => l.url).join(' | ')}`);

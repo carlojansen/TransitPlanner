@@ -311,11 +311,38 @@ describe('POST /api/routes', () => {
 
 	it('Paging: Cursor plus unveraenderte Ursprungsparameter', async () => {
 		const t = new Date(Date.now() + 3600_000).toISOString();
-		await request(app).post('/api/routes').set(auth).send({...body, targetTime: t, laterThan: 'next'}).expect(200);
+		await request(app).post('/api/routes').set(auth).send({...body, targetTime: t, laterThan: 'next', via: [{id: 'de-a', stayMinutes: 15}]}).expect(200);
 		const [, q] = client.calls.find((c) => c[0] === 'plan');
 		expect(q.pageCursor).toBe('next');
 		expect(q.time).toBe(t);
+		expect([q.via, q.viaMinimumStay]).toEqual(['de-a', '15']);
 		await request(app).post('/api/routes').set(auth).send({...body, laterThan: 'a', earlierThan: 'b'}).expect(400);
+	});
+
+	it('Zwischenstopps: via und viaMinimumStay kommagetrennt an MOTIS', async () => {
+		const via = [{id: 'de-DELFI_de:05316:21101', stayMinutes: 20}, {id: 'de-DELFI_de:05111:18235', stayMinutes: 5}];
+		await request(app).post('/api/routes').set(auth).send({...body, via}).expect(200);
+		const [, q] = client.calls.find((c) => c[0] === 'plan');
+		expect(q.via).toBe('de-DELFI_de:05316:21101,de-DELFI_de:05111:18235');
+		expect(q.viaMinimumStay).toBe('20,5');
+	});
+
+	it('Zwischenstopps: lehnt Namen, Koordinaten, 0 Min., mehr als 2, Doppelte und Start/Ziel als Stopp ab', async () => {
+		const v = (id, stayMinutes = 10) => ({id, stayMinutes});
+		const bad = [
+			[{...v('de-a'), name: 'Apotheke'}],
+			[{type: 'coordinate', latitude: 51.2, longitude: 6.8, stayMinutes: 10}],
+			[v('de-a', 0)], [v('de-a', 181)], [v('de-a', 2.5)], [v('de-a,b')],
+			[v('de-a'), v('de-b'), v('de-c')],
+			[v('de-a'), v('de-a')],
+			[v('de-DELFI_de:05315:11201')], // = Ziel
+			[],
+		];
+		for (const via of bad) {
+			build(); // frisches Limit pro IP (8/min)
+			await request(app).post('/api/routes').set(auth).send({...body, via}).expect(400);
+			expect(client.calls.filter((c) => c[0] === 'plan')).toHaveLength(0);
+		}
 	});
 
 	it('begrenzt auf results', async () => {
@@ -392,9 +419,10 @@ describe('POST /api/routes', () => {
 					: {itineraries: [itinerary({id: 'ic'}), itinerary({id: 'regio'})].map((it, i) => (i === 0 ? {...it, legs: [leg({mode: 'REGIONAL_RAIL', extra: {routeShortName: 'IC 2045'}})]} : it))};
 			},
 		});
-		const r = await request(app).post('/api/routes').set(auth).send(body).expect(200);
+		const r = await request(app).post('/api/routes').set(auth).send({...body, via: [{id: 'de-a', stayMinutes: 15}]}).expect(200);
 		expect(n).toBe(2);
 		expect(client.calls[1][1].numItineraries).toBe(12);
+		expect(client.calls[1][1].via).toBe('de-a'); // zweiter Versuch behaelt den Zwischenstopp
 		expect(r.body.journeys.map((j) => j.refreshToken)).toEqual(['regio']);
 	});
 
@@ -404,6 +432,12 @@ describe('POST /api/routes', () => {
 		expect(r.body.walkOnly).toBe(true);
 		expect(r.body.journeys[0].modes).toEqual([]);
 		expect(r.body.laterRef).toBeNull();
+	});
+
+	it('mit Zwischenstopp kein Fussweg-Rueckfall: der wuerde den Stopp ueberspringen', async () => {
+		build({async plan() { return {itineraries: [], direct: [itinerary({id: 'walk', legs: [walk()]})]}; }});
+		const r = await request(app).post('/api/routes').set(auth).send({...body, via: [{id: 'de-a', stayMinutes: 10}]}).expect(404);
+		expect(r.body.error.code).toBe('NO_CONNECTIONS');
 	});
 
 	it('unerwartete Antwortform (z. B. HTML mit 200) ist UPSTREAM_UNAVAILABLE, nicht NO_CONNECTIONS', async () => {

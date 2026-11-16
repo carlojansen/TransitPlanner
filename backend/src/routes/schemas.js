@@ -56,9 +56,20 @@ export const routesBody = z.object({
 	// uebrigen Parameter wie bei der Ursprungsanfrage (inkl. targetTime).
 	laterThan: opaque.optional(),
 	earlierThan: opaque.optional(),
+	// Zwischenstopps: nur Stop-ID und Minuten, nie Name oder Kategorie des Ziels (Zero-Knowledge).
+	via: z.array(z.object({
+		id: stopPoint.shape.id,
+		stayMinutes: z.number().int().min(1).max(180),
+	}).strict()).min(1).max(2).optional(),
 }).strict()
 	.refine((b) => !sameDbPoint(b.origin, b.destination), {message: 'Start und Ziel sind identisch'})
 	.refine((b) => !(b.laterThan && b.earlierThan), {message: 'laterThan und earlierThan schliessen sich aus'})
+	.refine((b) => {
+		if (!b.via) return true;
+		const ids = b.via.map((v) => v.id);
+		const ends = [b.origin, b.destination].filter((p) => p.type === 'stop').map((p) => p.id);
+		return new Set(ids).size === ids.length && !ids.some((id) => ends.includes(id));
+	}, {message: 'Zwischenstopp doppelt oder gleich Start/Ziel'})
 	.refine((b) => {
 		if (!b.targetTime) return true;
 		const t = Date.parse(b.targetTime);

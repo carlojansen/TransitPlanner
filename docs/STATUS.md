@@ -31,7 +31,7 @@ Offen, bevor die App über den Eigengebrauch hinausgeht:
 
 ## Offene Punkte / Risiken
 - **Tests:** `npm test` crashte mit Node 26 / Vitest 5 (rolldown) nach altem Install; nach `rm -rf node_modules && npm ci` laufen alle Tests grün (aktuell 79).
-- **Live-Test:** Cloud- und Mac-Sandbox sperren `api.transitous.org`; der Smoke-Test läuft nur im macOS-Terminal.
+- **Live-Test:** `npm run smoke` lief am 16.11. aus Claude Code heraus (lokal am Mac); die Cloud-Sandbox sperrt `api.transitous.org` weiterhin.
 - **SPKI-Pin:** Caddy nutzt `reuse_private_keys`. Backup-Pin ist in der App; der Offline-Backup-Schlüssel muss von Carlo außerhalb der iCloud verwahrt werden.
 - **SSH-Zugang:** Die Firewall-Regel hängt an Carlos wechselnder IP. Bei jedem IP-Wechsel muss sie angepasst werden.
 - **Server:** siehe "Hosting und Veröffentlichung" im Archiv und `docs/DEPLOYMENT.md`.
@@ -75,6 +75,18 @@ Tests: `xcodebuild test` ohne UI-Tests (iPhone 17): TransitCore 166/0, App 189/0
 **Offen:** Nicht am Gerät gesehen. Am Gerät wirkte die Zeile höher als die gemessenen 170 pt und der Status fehlte ganz, beides ungeklärt. Bei Wechsel nur des Ausstiegsgleises meldet der Hinweis in der Ergebnisliste "Gleis 2 statt 2" (vorbestehend). Höhentests hängen an festen Pixelwerten. Weiter offen: Auswahl nach Rang im Backend, Hinweis bei Ausfall in der Hero Card.
 
 **Nachtrag Gerät (10.11., Screenshot):** Die Zeile mit vier Linien bricht am iPhone wie geplant um. Als beste Verbindung stand aber eine ausgefallene Fahrt, darunter eine pünktliche. Erklärung aus dem Code, nicht aus den Daten belegt: Ausfall und "Umstieg reicht nicht" kosteten beide 7 Tage, dann entschied die frühere Ankunft; die Zeile zeigte für die Alternative nur "pünktlich". Geändert: Ausfall kostet doppelt (`cancelledPenalty`), die Zeile zeigt "Umstieg reicht nicht" vor "pünktlich". Nicht reviewt.
+
+## Zwischenstopps (16.11., Idee Carlo)
+
+Ziel: Plus neben Von/Nach, Nutzer fügt bis zu 2 Zwischenstopps hinzu (keine gespeicherten Stopps). Stufe A: Haltestelle über die bestehende Suche plus Aufenthalt in Minuten. Stufe B: Geschäfts-Pins auf der Karte (lokal per MapKit), die App wählt die Haltestelle mit der kürzesten Gehzeit, Fußwege und Aufenthalt werden lokal in die Lücke gelegt, Navigation bekommt einen Schritt "Aufenthalt".
+
+**Live-Befund (Transitous, Düsseldorf Hbf nach Köln Hbf über Leverkusen Mitte, 20 Min.):** MOTIS hält den Aufenthalt ein (Abfahrt und Ankunftssuche), er zählt als Umstieg. Die Lücke liegt zwischen der Ankunft am Stopp und dem folgenden Umstiegsweg. Die Leg-Grenze trägt Bahnsteig-IDs (`…:21101:7:73`), sogar eine Flixbus-ID als Via wurde auf den DELFI-Bahnhof abgebildet; die App muss den Stopp deshalb über die Nähe finden, nicht über die ID. Antwortzeit 0,9 bis 2,4 s.
+
+**Backend (Stufe A, Schritt 1):** `via: [{id, stayMinutes}]` in `docs/API.md`, Schema (max. 2, 1 bis 180 Min., keine Doppelten, nicht Start/Ziel, nur ID und Minuten) und Service (`via`/`viaMinimumStay` kommagetrennt, kein `walkOnly`-Rückfall). 3 neue Tests, Smoke-Test um eine Route mit Zwischenstopp ergänzt (live grün). Tests: Backend 93/0.
+
+Review durch `security-hig-reviewer`: **FREIGABE**, 0 Blocker, 2 Mittel, 5 Niedrig. Mittel 1 (`parentId` mitliefern) entfällt: MOTIS liefert ihn an der Via-Grenze nicht (live geprüft), die App nutzt ID-Präfix, sonst Nähe. Mittel 2 (Rundtour ohne Verbindung) live widerlegt: Start und Ziel 350 m auseinander über Leverkusen liefert 2 Verbindungen. Niedrig: Tests für Paging und zweiten Versuch mit `via` ergänzt, Smoke-Reihenfolge korrigiert, API.md präzisiert ("nur exakte ID"); die Umstiegswertung der Via-Grenze kommt in Schritt 2. Nachbesserung nicht erneut reviewt.
+
+**Offen:** nicht ausgerollt, nicht committet. Danach Schritt 2 (TransitCore: `via` in Requests, Erkennung der Leg-Grenze, Rang) und Schritt 3 (UI Stufe A).
 
 ## Ideen (nicht geplant, nicht begonnen)
 

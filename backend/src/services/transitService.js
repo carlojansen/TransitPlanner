@@ -141,7 +141,7 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 	}
 
 	// POST /api/routes
-	async function routes({origin, destination, targetTime, isArrivalTime, onlyNahverkehr, modes, accessibility, results, laterThan, earlierThan}) {
+	async function routes({origin, destination, targetTime, isArrivalTime, onlyNahverkehr, modes, accessibility, results, laterThan, earlierThan, via}) {
 		const query = {
 			fromPlace: toMotisPlace(origin),
 			toPlace: toMotisPlace(destination),
@@ -158,6 +158,10 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 		if (targetTime) query.time = new Date(targetTime).toISOString();
 		if (modes?.length) query.transitModes = joinList([...new Set(modes.map((m) => PILL_MODES[m]))]);
 		else if (onlyNahverkehr) query.transitModes = joinList(NAHVERKEHR_MODES);
+		if (via?.length) {
+			query.via = joinList(via.map((v) => v.id));
+			query.viaMinimumStay = joinList(via.map((v) => v.stayMinutes));
+		}
 		// Paging: MOTIS verlangt dieselben Parameter plus Cursor.
 		const cursor = laterThan ?? earlierThan;
 		if (cursor) query.pageCursor = cursor;
@@ -186,7 +190,8 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 		// Bei sehr kurzen Distanzen (Fussweg bis ca. 5 min) rechnet MOTIS gar kein OEV-Routing und liefert
 		// nur "direct" (motis src/endpoints/routing.cc). Dann ist Laufen die Antwort.
 		let walkOnly = false;
-		if (itineraries.length === 0 && Array.isArray(res.direct) && res.direct.length > 0) {
+		// Mit Zwischenstopp nie: der direkte Fussweg wuerde den Stopp ueberspringen.
+		if (itineraries.length === 0 && !via?.length && Array.isArray(res.direct) && res.direct.length > 0) {
 			itineraries = res.direct.slice(0, 1);
 			walkOnly = true;
 		}
