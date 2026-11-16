@@ -308,7 +308,7 @@ private struct StayRow: View {
                     .monospacedDigit()
                     .contentTransition(.numericText())
                     .animation(Motion.micro, value: minutes)
-                if stay.isShort(in: journey), let minutes {
+                if let minutes, minutes < stay.via.stayMinutes {
                     CardHint(text: String(localized: "Aufenthalt nur \(minutes) Min."), symbol: "clock.badge.exclamationmark", tone: .warn)
                 }
             }

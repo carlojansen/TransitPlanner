@@ -25,9 +25,6 @@ extension ViaStay {
         guard let arrival, let end = walk ?? departure else { return nil }
         return Int(end.timeIntervalSince(arrival) / 60)
     }
-
-    /// Kuerzer als gewuenscht, z. B. wegen Verspaetung.
-    func isShort(in journey: Journey) -> Bool { minutes(in: journey).map { $0 < via.stayMinutes } ?? false }
 }
 
 /// Phasen im persistenten Sheet (DESIGN.md B). Fahrtdetails sind ein Zustand im Sheet, kein Push.
@@ -787,8 +784,7 @@ final class AppFlow {
 
     func setStay(_ minutes: Int, at index: Int) {
         guard via.indices.contains(index) else { return }
-        let stop = via[index]
-        via[index] = ViaStop(id: stop.id, stayMinutes: minutes, label: stop.label, coordinate: stop.coordinate)
+        via[index].stayMinutes = minutes
     }
 
     private func advance() {
@@ -1305,7 +1301,7 @@ final class AppFlow {
                 }
                 // Start am Zwischenstopp selbst (Fahrt dorthin laeuft): der Stopp entfaellt, das Backend lehnt Start = Stopp ab.
                 let startID: String? = if case .stop(let id, _) = start { id } else { nil }
-                let via = rest.filter { stop in startID.map { $0 != stop.id && !$0.hasPrefix(stop.id + ":") } ?? true }
+                let via = rest.filter { stop in startID.map { !stop.matches(stopID: $0) } ?? true }
                 // Der Aufenthalt dort bleibt: Weiterfahrt erst danach.
                 let stay = rest.filter { !via.contains($0) }.reduce(0) { $0 + $1.stayMinutes }
                 let trip = ManualTripRequest(origin: start, destination: target, targetTime: time.addingTimeInterval(TimeInterval(stay * 60)),

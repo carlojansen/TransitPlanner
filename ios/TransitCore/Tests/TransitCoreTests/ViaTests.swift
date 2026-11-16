@@ -97,6 +97,9 @@ import Testing
         let high = try JSONDecoder().decode(ViaStop.self, from: Data(#"{"id":"a","stayMinutes":999,"label":"x"}"#.utf8))
         #expect(low.stayMinutes == 1)
         #expect(high.stayMinutes == 180)
+        var edited = low
+        edited.stayMinutes = 999
+        #expect(edited.stayMinutes == 180)
 
         let v = { (id: String) in ViaStop(id: id, stayMinutes: 10, label: id) }
         let req = RoutesRequest(origin: .stop(id: "a"), destination: .stop(id: "b"), via: [v("a"), v("x"), v("x"), v("b"), v("y"), v("z")])

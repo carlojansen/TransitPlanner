@@ -563,7 +563,7 @@ struct AlternativesView: View {
 
     @ViewBuilder private var content: some View {
         switch flow.peek {
-        case .loaded(let response, let walks, _):
+        case .loaded(let response, let walks, let via):
             SectionTitle("Alternativen")
             if response.journeys.isEmpty {
                 Text("Keine Verbindung gefunden").foregroundStyle(.secondary)
@@ -572,7 +572,7 @@ struct AlternativesView: View {
                 Button { chosen = index } label: {
                     ContentCard {
                         VStack(alignment: .leading, spacing: 4) {
-                            AlternativeRow(journey: journey, calibrated: walks?[safe: index])
+                            AlternativeRow(journey: journey, calibrated: walks?[safe: index], via: via)
                             delta(journey)
                         }
                     }

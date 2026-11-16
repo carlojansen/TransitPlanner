@@ -67,8 +67,8 @@ public enum Accessibility: String, Sendable, Hashable, Codable, CaseIterable {
 /// `label` (z. B. Geschaeft) und `coordinate` bleiben auf dem Geraet und dienen der Anzeige und der Erkennung in der Antwort.
 public struct ViaStop: Codable, Sendable, Hashable {
     public var id: String
-    /// 1-180 Min. (Backend-Regel), beim Init begrenzt.
-    public private(set) var stayMinutes: Int
+    /// 1-180 Min. (Backend-Regel), immer begrenzt.
+    public var stayMinutes: Int { didSet { stayMinutes = min(max(stayMinutes, 1), 180) } }
     public var label: String
     public var coordinate: GeoCoordinate?
 
@@ -87,6 +87,9 @@ public struct ViaStop: Codable, Sendable, Hashable {
         self.init(id: try c.decode(String.self, forKey: .id), stayMinutes: try c.decode(Int.self, forKey: .stayMinutes),
                   label: try c.decode(String.self, forKey: .label), coordinate: try c.decodeIfPresent(GeoCoordinate.self, forKey: .coordinate))
     }
+
+    /// MOTIS liefert Bahnsteig-IDs "<station>:7:73": exakt oder mit Praefix "<id>:".
+    public func matches(stopID: String) -> Bool { stopID == id || stopID.hasPrefix(id + ":") }
 
     fileprivate struct Wire: Encodable { let id: String; let stayMinutes: Int }
     fileprivate var wire: Wire { Wire(id: id, stayMinutes: stayMinutes) }
@@ -138,8 +141,7 @@ extension Journey {
     }
 
     private static func idMatches(_ place: Place, _ stop: ViaStop) -> Bool {
-        guard let id = place.id else { return false }
-        return id == stop.id || id.hasPrefix(stop.id + ":")
+        place.id.map(stop.matches(stopID:)) ?? false
     }
 
     private static func isNear(_ place: Place, _ stop: ViaStop) -> Bool {

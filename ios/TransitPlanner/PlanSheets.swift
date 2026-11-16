@@ -1168,6 +1168,7 @@ struct AlternativeRow: View {
     }
 
     @ViewBuilder private var statusText: some View {
+        let transfers = journey.transfers(excludingStaysAt: via)
         if journey.cancelled {
             Text("Fällt aus").font(.caption.weight(.semibold)).foregroundStyle(Color(.statusAlert))
         } else if calibrated?.transfers.contains(where: { $0.status == .missed }) == true {
@@ -1179,8 +1180,8 @@ struct AlternativeRow: View {
             DelayBadge(minutes: delay)
         } else if journey.realtime {
             Text("pünktlich").font(.caption).foregroundStyle(Color(.statusOk))
-        } else if journey.transfers(excludingStaysAt: via) > 0 {
-            TransfersText(count: journey.transfers(excludingStaysAt: via)).font(.caption).foregroundStyle(Color(.labelSecondary))
+        } else if transfers > 0 {
+            TransfersText(count: transfers).font(.caption).foregroundStyle(Color(.labelSecondary))
         }
     }
 }

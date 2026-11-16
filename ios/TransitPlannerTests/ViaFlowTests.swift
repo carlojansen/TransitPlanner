@@ -117,9 +117,6 @@ import TransitCore
         }
         let short = try #require(journey.viaStays([ViaStop(id: "b", stayMinutes: 15, label: "Bilk S")]).first)
         #expect(short.minutes(in: journey) == 12)
-        #expect(short.isShort(in: journey))
-        let fits = try #require(journey.viaStays([ViaStop(id: "b", stayMinutes: 10, label: "Bilk S")]).first)
-        #expect(!fits.isShort(in: journey))
         // Ohne Umstiegsweg: bis zur Abfahrt (06:23)
         let direct = try Self.changed(base) { legs in legs.remove(at: 2) }
         let stay = try #require(direct.viaStays([ViaStop(id: "b", stayMinutes: 15, label: "Bilk S")]).first)
