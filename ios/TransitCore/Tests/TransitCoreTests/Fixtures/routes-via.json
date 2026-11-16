@@ -1,0 +1,802 @@
+{
+ "journeys": [
+  {
+   "refreshToken": null,
+   "departure": "2026-11-16T11:27:00Z",
+   "arrival": "2026-11-16T12:30:00Z",
+   "durationSeconds": 3780,
+   "transfers": 1,
+   "modes": [
+    "regional"
+   ],
+   "cancelled": false,
+   "realtime": true,
+   "hasPolylines": false,
+   "legs": [
+    {
+     "index": 0,
+     "mode": "walk",
+     "origin": {
+      "kind": "coordinate",
+      "id": null,
+      "name": null,
+      "latitude": 51.22,
+      "longitude": 6.7943
+     },
+     "destination": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05111:18235:93:16",
+      "name": "Düsseldorf Hbf",
+      "latitude": 51.21954,
+      "longitude": 6.79478,
+      "modes": [
+       "nationalExpress",
+       "national",
+       "bus",
+       "regional",
+       "suburban",
+       "subway",
+       "tram"
+      ]
+     },
+     "departure": "2026-11-16T11:27:00Z",
+     "plannedDeparture": "2026-11-16T11:27:00Z",
+     "departureDelaySeconds": null,
+     "arrival": "2026-11-16T11:29:00Z",
+     "plannedArrival": "2026-11-16T11:29:00Z",
+     "arrivalDelaySeconds": null,
+     "durationSeconds": 120,
+     "realtime": false,
+     "cancelled": false,
+     "polyline": null,
+     "isTransfer": false,
+     "distanceMeters": 94,
+     "durationSource": "motis-osm",
+     "steps": []
+    },
+    {
+     "index": 1,
+     "mode": "regional",
+     "origin": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05111:18235:93:16",
+      "name": "Düsseldorf Hbf",
+      "latitude": 51.21954,
+      "longitude": 6.79478,
+      "modes": [
+       "nationalExpress",
+       "national",
+       "bus",
+       "regional",
+       "suburban",
+       "subway",
+       "tram"
+      ]
+     },
+     "destination": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05316:21101:7:73",
+      "name": "Wiesdorf Leverkusen Mitte Bf",
+      "latitude": 51.03201,
+      "longitude": 6.99141,
+      "modes": [
+       "regional",
+       "suburban",
+       "bus",
+       "onDemand"
+      ]
+     },
+     "departure": "2026-11-16T11:29:00Z",
+     "plannedDeparture": "2026-11-16T10:40:00Z",
+     "departureDelaySeconds": 2940,
+     "arrival": "2026-11-16T11:43:00Z",
+     "plannedArrival": "2026-11-16T10:54:00Z",
+     "arrivalDelaySeconds": 2940,
+     "durationSeconds": 840,
+     "realtime": true,
+     "cancelled": false,
+     "polyline": null,
+     "line": {
+      "name": "RE1",
+      "productName": null,
+      "fahrtNr": "026814",
+      "operator": "National Express",
+      "color": "#C00000",
+      "textColor": "#FFFFFF"
+     },
+     "direction": "Aachen, Hbf",
+     "tripId": "20261116_10:20_de-DELFI_3478667113",
+     "departurePlatform": "16",
+     "plannedDeparturePlatform": "16",
+     "arrivalPlatform": "79",
+     "plannedArrivalPlatform": "79",
+     "platformChanged": false,
+     "replacement": false,
+     "wheelchairAccessible": "no",
+     "loadFactor": null,
+     "stopovers": [],
+     "remarks": [],
+     "steps": []
+    },
+    {
+     "index": 2,
+     "mode": "walk",
+     "origin": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05316:21101:7:73",
+      "name": "Wiesdorf Leverkusen Mitte Bf",
+      "latitude": 51.03201,
+      "longitude": 6.99141,
+      "modes": [
+       "regional",
+       "suburban",
+       "bus",
+       "onDemand"
+      ]
+     },
+     "destination": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05316:21101:7:73",
+      "name": "Wiesdorf Leverkusen Mitte Bf",
+      "latitude": 51.03201,
+      "longitude": 6.99141,
+      "modes": [
+       "regional",
+       "suburban",
+       "bus",
+       "onDemand"
+      ]
+     },
+     "departure": "2026-11-16T12:03:00Z",
+     "plannedDeparture": "2026-11-16T12:03:00Z",
+     "departureDelaySeconds": null,
+     "arrival": "2026-11-16T12:05:00Z",
+     "plannedArrival": "2026-11-16T12:05:00Z",
+     "arrivalDelaySeconds": null,
+     "durationSeconds": 120,
+     "realtime": false,
+     "cancelled": false,
+     "polyline": null,
+     "isTransfer": true,
+     "distanceMeters": 0,
+     "durationSource": "motis-osm",
+     "steps": []
+    },
+    {
+     "index": 3,
+     "mode": "regional",
+     "origin": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05316:21101:7:73",
+      "name": "Wiesdorf Leverkusen Mitte Bf",
+      "latitude": 51.03201,
+      "longitude": 6.99141,
+      "modes": [
+       "regional",
+       "suburban",
+       "bus",
+       "onDemand"
+      ]
+     },
+     "destination": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05315:11201",
+      "name": "Köln Hbf",
+      "latitude": 50.94303,
+      "longitude": 6.95873,
+      "modes": [
+       "nationalExpress",
+       "national",
+       "bus",
+       "regional",
+       "suburban",
+       "tram"
+      ]
+     },
+     "departure": "2026-11-16T12:14:00Z",
+     "plannedDeparture": "2026-11-16T12:14:00Z",
+     "departureDelaySeconds": null,
+     "arrival": "2026-11-16T12:29:00Z",
+     "plannedArrival": "2026-11-16T12:29:00Z",
+     "arrivalDelaySeconds": null,
+     "durationSeconds": 900,
+     "realtime": false,
+     "cancelled": false,
+     "polyline": null,
+     "line": {
+      "name": "RE5",
+      "productName": null,
+      "fahrtNr": "028517",
+      "operator": "National Express",
+      "color": "#FF6418",
+      "textColor": "#FFFFFF"
+     },
+     "direction": "Koblenz Hauptbahnhof",
+     "tripId": "20261116_12:33_de-DELFI_3478670817",
+     "departurePlatform": "79",
+     "plannedDeparturePlatform": "79",
+     "arrivalPlatform": null,
+     "plannedArrivalPlatform": null,
+     "platformChanged": false,
+     "replacement": false,
+     "wheelchairAccessible": "no",
+     "loadFactor": null,
+     "stopovers": [
+      {
+       "stop": {
+        "kind": "stop",
+        "id": "de-DELFI_de:05315:11901:7:78",
+        "name": "Köln Messe/Deutz Bf",
+        "latitude": 50.94106,
+        "longitude": 6.97598,
+        "modes": [
+         "nationalExpress",
+         "national",
+         "regional",
+         "suburban",
+         "bus"
+        ]
+       },
+       "arrival": "2026-11-16T12:25:00Z",
+       "plannedArrival": "2026-11-16T12:25:00Z",
+       "arrivalDelaySeconds": null,
+       "departure": "2026-11-16T12:26:00Z",
+       "plannedDeparture": "2026-11-16T12:26:00Z",
+       "departureDelaySeconds": null,
+       "platform": "7",
+       "plannedPlatform": "7",
+       "cancelled": false
+      }
+     ],
+     "remarks": [],
+     "steps": []
+    },
+    {
+     "index": 4,
+     "mode": "walk",
+     "origin": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05315:11201",
+      "name": "Köln Hbf",
+      "latitude": 50.94303,
+      "longitude": 6.95873,
+      "modes": [
+       "nationalExpress",
+       "national",
+       "bus",
+       "regional",
+       "suburban",
+       "tram"
+      ]
+     },
+     "destination": {
+      "kind": "coordinate",
+      "id": null,
+      "name": null,
+      "latitude": 50.9428,
+      "longitude": 6.9587
+     },
+     "departure": "2026-11-16T12:29:00Z",
+     "plannedDeparture": "2026-11-16T12:29:00Z",
+     "departureDelaySeconds": null,
+     "arrival": "2026-11-16T12:30:00Z",
+     "plannedArrival": "2026-11-16T12:30:00Z",
+     "arrivalDelaySeconds": null,
+     "durationSeconds": 60,
+     "realtime": false,
+     "cancelled": false,
+     "polyline": null,
+     "isTransfer": false,
+     "distanceMeters": 62,
+     "durationSource": "motis-osm",
+     "steps": []
+    }
+   ],
+   "remarks": []
+  },
+  {
+   "refreshToken": null,
+   "departure": "2026-11-16T11:47:00Z",
+   "arrival": "2026-11-16T13:06:00Z",
+   "durationSeconds": 4740,
+   "transfers": 2,
+   "modes": [
+    "regional",
+    "bus"
+   ],
+   "cancelled": false,
+   "realtime": true,
+   "hasPolylines": false,
+   "legs": [
+    {
+     "index": 0,
+     "mode": "walk",
+     "origin": {
+      "kind": "coordinate",
+      "id": null,
+      "name": null,
+      "latitude": 51.22,
+      "longitude": 6.7943
+     },
+     "destination": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05111:18235:93:16",
+      "name": "Düsseldorf Hbf",
+      "latitude": 51.21954,
+      "longitude": 6.79478,
+      "modes": [
+       "nationalExpress",
+       "national",
+       "bus",
+       "regional",
+       "suburban",
+       "subway",
+       "tram"
+      ]
+     },
+     "departure": "2026-11-16T11:47:00Z",
+     "plannedDeparture": "2026-11-16T11:47:00Z",
+     "departureDelaySeconds": null,
+     "arrival": "2026-11-16T11:49:00Z",
+     "plannedArrival": "2026-11-16T11:49:00Z",
+     "arrivalDelaySeconds": null,
+     "durationSeconds": 120,
+     "realtime": false,
+     "cancelled": false,
+     "polyline": null,
+     "isTransfer": false,
+     "distanceMeters": 94,
+     "durationSource": "motis-osm",
+     "steps": []
+    },
+    {
+     "index": 1,
+     "mode": "regional",
+     "origin": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05111:18235:93:16",
+      "name": "Düsseldorf Hbf",
+      "latitude": 51.21954,
+      "longitude": 6.79478,
+      "modes": [
+       "nationalExpress",
+       "national",
+       "bus",
+       "regional",
+       "suburban",
+       "subway",
+       "tram"
+      ]
+     },
+     "destination": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05316:21101:7:73",
+      "name": "Wiesdorf Leverkusen Mitte Bf",
+      "latitude": 51.03201,
+      "longitude": 6.99141,
+      "modes": [
+       "regional",
+       "suburban",
+       "bus",
+       "onDemand"
+      ]
+     },
+     "departure": "2026-11-16T11:49:00Z",
+     "plannedDeparture": "2026-11-16T11:40:00Z",
+     "departureDelaySeconds": 540,
+     "arrival": "2026-11-16T12:03:00Z",
+     "plannedArrival": "2026-11-16T11:54:00Z",
+     "arrivalDelaySeconds": 540,
+     "durationSeconds": 840,
+     "realtime": true,
+     "cancelled": false,
+     "polyline": null,
+     "line": {
+      "name": "RE1",
+      "productName": null,
+      "fahrtNr": "026816",
+      "operator": "National Express",
+      "color": "#C00000",
+      "textColor": "#FFFFFF"
+     },
+     "direction": "Aachen, Hbf",
+     "tripId": "20261116_11:20_de-DELFI_3478667107",
+     "departurePlatform": "16",
+     "plannedDeparturePlatform": "16",
+     "arrivalPlatform": "79",
+     "plannedArrivalPlatform": "79",
+     "platformChanged": false,
+     "replacement": false,
+     "wheelchairAccessible": "no",
+     "loadFactor": null,
+     "stopovers": [],
+     "remarks": [],
+     "steps": []
+    },
+    {
+     "index": 2,
+     "mode": "walk",
+     "origin": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05316:21101:7:73",
+      "name": "Wiesdorf Leverkusen Mitte Bf",
+      "latitude": 51.03201,
+      "longitude": 6.99141,
+      "modes": [
+       "regional",
+       "suburban",
+       "bus",
+       "onDemand"
+      ]
+     },
+     "destination": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05316:21101:2:25",
+      "name": "Wiesdorf Leverkusen Mitte Bf",
+      "latitude": 51.03273,
+      "longitude": 6.99003,
+      "modes": [
+       "regional",
+       "suburban",
+       "bus",
+       "onDemand"
+      ]
+     },
+     "departure": "2026-11-16T12:23:00Z",
+     "plannedDeparture": "2026-11-16T12:23:00Z",
+     "departureDelaySeconds": null,
+     "arrival": "2026-11-16T12:26:00Z",
+     "plannedArrival": "2026-11-16T12:26:00Z",
+     "arrivalDelaySeconds": null,
+     "durationSeconds": 180,
+     "realtime": false,
+     "cancelled": false,
+     "polyline": null,
+     "isTransfer": true,
+     "distanceMeters": 195,
+     "durationSource": "motis-osm",
+     "steps": []
+    },
+    {
+     "index": 3,
+     "mode": "bus",
+     "origin": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05316:21101:2:25",
+      "name": "Wiesdorf Leverkusen Mitte Bf",
+      "latitude": 51.03273,
+      "longitude": 6.99003,
+      "modes": [
+       "regional",
+       "suburban",
+       "bus",
+       "onDemand"
+      ]
+     },
+     "destination": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05316:22101:2:24",
+      "name": "Leverkusen Opladen Bf",
+      "latitude": 51.06643,
+      "longitude": 7.00707,
+      "modes": [
+       "regional",
+       "bus",
+       "onDemand"
+      ]
+     },
+     "departure": "2026-11-16T12:29:00Z",
+     "plannedDeparture": "2026-11-16T12:29:00Z",
+     "departureDelaySeconds": null,
+     "arrival": "2026-11-16T12:39:00Z",
+     "plannedArrival": "2026-11-16T12:39:00Z",
+     "arrivalDelaySeconds": null,
+     "durationSeconds": 600,
+     "realtime": false,
+     "cancelled": false,
+     "polyline": null,
+     "line": {
+      "name": "SB24",
+      "productName": null,
+      "fahrtNr": "1454053",
+      "operator": "wupsi GmbH",
+      "color": "#008540",
+      "textColor": "#FFFFFF"
+     },
+     "direction": "Wermelskirchen Busbf",
+     "tripId": "20261116_13:29_de-DELFI_3463019817",
+     "departurePlatform": "40",
+     "plannedDeparturePlatform": "40",
+     "arrivalPlatform": "24",
+     "plannedArrivalPlatform": "24",
+     "platformChanged": false,
+     "replacement": false,
+     "wheelchairAccessible": "no",
+     "loadFactor": null,
+     "stopovers": [
+      {
+       "stop": {
+        "kind": "stop",
+        "id": "de-DELFI_de:05316:21142:2:21_G",
+        "name": "Leverkusen Wiesdorf Rathaus-Galerie",
+        "latitude": 51.03378,
+        "longitude": 6.98897,
+        "modes": [
+         "bus"
+        ]
+       },
+       "arrival": "2026-11-16T12:31:00Z",
+       "plannedArrival": "2026-11-16T12:31:00Z",
+       "arrivalDelaySeconds": null,
+       "departure": "2026-11-16T12:31:00Z",
+       "plannedDeparture": "2026-11-16T12:31:00Z",
+       "departureDelaySeconds": null,
+       "platform": null,
+       "plannedPlatform": null,
+       "cancelled": false
+      },
+      {
+       "stop": {
+        "kind": "stop",
+        "id": "de-DELFI_de:05316:22140:2:22",
+        "name": "Leverkusen Opladen Wilhelmstr.",
+        "latitude": 51.0599,
+        "longitude": 7.00704,
+        "modes": [
+         "bus"
+        ]
+       },
+       "arrival": "2026-11-16T12:37:00Z",
+       "plannedArrival": "2026-11-16T12:37:00Z",
+       "arrivalDelaySeconds": null,
+       "departure": "2026-11-16T12:37:00Z",
+       "plannedDeparture": "2026-11-16T12:37:00Z",
+       "departureDelaySeconds": null,
+       "platform": null,
+       "plannedPlatform": null,
+       "cancelled": false
+      }
+     ],
+     "remarks": [],
+     "steps": []
+    },
+    {
+     "index": 4,
+     "mode": "walk",
+     "origin": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05316:22101:2:24",
+      "name": "Leverkusen Opladen Bf",
+      "latitude": 51.06643,
+      "longitude": 7.00707,
+      "modes": [
+       "regional",
+       "bus",
+       "onDemand"
+      ]
+     },
+     "destination": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05316:22101:7:71",
+      "name": "Leverkusen Opladen Bf",
+      "latitude": 51.06535,
+      "longitude": 7.00887,
+      "modes": [
+       "regional",
+       "bus",
+       "onDemand"
+      ]
+     },
+     "departure": "2026-11-16T12:39:00Z",
+     "plannedDeparture": "2026-11-16T12:39:00Z",
+     "departureDelaySeconds": null,
+     "arrival": "2026-11-16T12:42:00Z",
+     "plannedArrival": "2026-11-16T12:42:00Z",
+     "arrivalDelaySeconds": null,
+     "durationSeconds": 180,
+     "realtime": false,
+     "cancelled": false,
+     "polyline": null,
+     "isTransfer": true,
+     "distanceMeters": 352,
+     "durationSource": "motis-osm",
+     "steps": []
+    },
+    {
+     "index": 5,
+     "mode": "regional",
+     "origin": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05316:22101:7:71",
+      "name": "Leverkusen Opladen Bf",
+      "latitude": 51.06535,
+      "longitude": 7.00887,
+      "modes": [
+       "regional",
+       "bus",
+       "onDemand"
+      ]
+     },
+     "destination": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05315:11201",
+      "name": "Köln Hbf",
+      "latitude": 50.94303,
+      "longitude": 6.95873,
+      "modes": [
+       "nationalExpress",
+       "national",
+       "bus",
+       "regional",
+       "suburban",
+       "tram"
+      ]
+     },
+     "departure": "2026-11-16T12:46:00Z",
+     "plannedDeparture": "2026-11-16T12:46:00Z",
+     "departureDelaySeconds": null,
+     "arrival": "2026-11-16T13:05:00Z",
+     "plannedArrival": "2026-11-16T13:05:00Z",
+     "arrivalDelaySeconds": null,
+     "durationSeconds": 1140,
+     "realtime": false,
+     "cancelled": false,
+     "polyline": null,
+     "line": {
+      "name": "RB48",
+      "productName": null,
+      "fahrtNr": "017341",
+      "operator": "National Express",
+      "color": "#FFC82E",
+      "textColor": "#000000"
+     },
+     "direction": "Köln Hbf",
+     "tripId": "20261116_13:12_de-DELFI_3478698849",
+     "departurePlatform": "77",
+     "plannedDeparturePlatform": "77",
+     "arrivalPlatform": null,
+     "plannedArrivalPlatform": null,
+     "platformChanged": false,
+     "replacement": false,
+     "wheelchairAccessible": "no",
+     "loadFactor": null,
+     "stopovers": [
+      {
+       "stop": {
+        "kind": "stop",
+        "id": "de-DELFI_de:05316:21201:7:72",
+        "name": "Leverkusen Manfort Bf",
+        "latitude": 51.03056,
+        "longitude": 7.01534,
+        "modes": [
+         "regional",
+         "bus",
+         "onDemand"
+        ]
+       },
+       "arrival": "2026-11-16T12:49:00Z",
+       "plannedArrival": "2026-11-16T12:49:00Z",
+       "arrivalDelaySeconds": null,
+       "departure": "2026-11-16T12:49:00Z",
+       "plannedDeparture": "2026-11-16T12:49:00Z",
+       "departureDelaySeconds": null,
+       "platform": "76",
+       "plannedPlatform": "76",
+       "cancelled": false
+      },
+      {
+       "stop": {
+        "kind": "stop",
+        "id": "de-DELFI_de:05315:19201:7:72",
+        "name": "Köln Mülheim Bf Mülheim",
+        "latitude": 50.95776,
+        "longitude": 7.01287,
+        "modes": [
+         "regional",
+         "suburban",
+         "tram",
+         "bus"
+        ]
+       },
+       "arrival": "2026-11-16T12:55:00Z",
+       "plannedArrival": "2026-11-16T12:55:00Z",
+       "arrivalDelaySeconds": null,
+       "departure": "2026-11-16T12:56:00Z",
+       "plannedDeparture": "2026-11-16T12:56:00Z",
+       "departureDelaySeconds": null,
+       "platform": "4",
+       "plannedPlatform": "4",
+       "cancelled": false
+      },
+      {
+       "stop": {
+        "kind": "stop",
+        "id": "de-DELFI_de:05315:11901:7:78",
+        "name": "Köln Messe/Deutz Bf",
+        "latitude": 50.94106,
+        "longitude": 6.97598,
+        "modes": [
+         "nationalExpress",
+         "national",
+         "regional",
+         "suburban",
+         "bus"
+        ]
+       },
+       "arrival": "2026-11-16T13:01:00Z",
+       "plannedArrival": "2026-11-16T13:01:00Z",
+       "arrivalDelaySeconds": null,
+       "departure": "2026-11-16T13:02:00Z",
+       "plannedDeparture": "2026-11-16T13:02:00Z",
+       "departureDelaySeconds": null,
+       "platform": "7",
+       "plannedPlatform": "7",
+       "cancelled": false
+      }
+     ],
+     "remarks": [],
+     "steps": []
+    },
+    {
+     "index": 6,
+     "mode": "walk",
+     "origin": {
+      "kind": "stop",
+      "id": "de-DELFI_de:05315:11201",
+      "name": "Köln Hbf",
+      "latitude": 50.94303,
+      "longitude": 6.95873,
+      "modes": [
+       "nationalExpress",
+       "national",
+       "bus",
+       "regional",
+       "suburban",
+       "tram"
+      ]
+     },
+     "destination": {
+      "kind": "coordinate",
+      "id": null,
+      "name": null,
+      "latitude": 50.9428,
+      "longitude": 6.9587
+     },
+     "departure": "2026-11-16T13:05:00Z",
+     "plannedDeparture": "2026-11-16T13:05:00Z",
+     "departureDelaySeconds": null,
+     "arrival": "2026-11-16T13:06:00Z",
+     "plannedArrival": "2026-11-16T13:06:00Z",
+     "arrivalDelaySeconds": null,
+     "durationSeconds": 60,
+     "realtime": false,
+     "cancelled": false,
+     "polyline": null,
+     "isTransfer": false,
+     "distanceMeters": 62,
+     "durationSource": "motis-osm",
+     "steps": []
+    }
+   ],
+   "remarks": []
+  }
+ ],
+ "walkOnly": false,
+ "removedLongDistance": 0,
+ "earlierRef": "EARLIER|1794827460",
+ "laterRef": "LATER|1794829680",
+ "fetchedAt": "2026-11-16T11:11:40.272Z",
+ "attribution": {
+  "text": "Fahrplandaten: Transitous und Datenquellen. Wege- und Kartendaten: © OpenStreetMap-Mitwirkende.",
+  "links": [
+   {
+    "label": "Transitous-Datenquellen",
+    "url": "https://transitous.org/sources/"
+   },
+   {
+    "label": "OpenStreetMap",
+    "url": "https://www.openstreetmap.org/copyright"
+   }
+  ]
+ }
+}

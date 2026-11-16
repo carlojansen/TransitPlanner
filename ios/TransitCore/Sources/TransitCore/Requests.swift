@@ -63,6 +63,91 @@ public enum Accessibility: String, Sendable, Hashable, Codable, CaseIterable {
     case none, stepFree
 }
 
+/// Zwischenstopp einer Fahrt. Ans Backend gehen nur `id` und `stayMinutes` (docs/API.md `via`);
+/// `label` (z. B. Geschaeft) und `coordinate` bleiben auf dem Geraet und dienen der Anzeige und der Erkennung in der Antwort.
+public struct ViaStop: Codable, Sendable, Hashable {
+    public var id: String
+    /// 1-180 Min. (Backend-Regel), beim Init begrenzt.
+    public private(set) var stayMinutes: Int
+    public var label: String
+    public var coordinate: GeoCoordinate?
+
+    public init(id: String, stayMinutes: Int, label: String, coordinate: GeoCoordinate? = nil) {
+        self.id = id
+        self.stayMinutes = min(max(stayMinutes, 1), 180)
+        self.label = label
+        self.coordinate = coordinate
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, stayMinutes, label, coordinate }
+
+    /// Auch gespeicherte Werte werden begrenzt (sonst lehnt das Backend den Request ab).
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: try c.decode(String.self, forKey: .id), stayMinutes: try c.decode(Int.self, forKey: .stayMinutes),
+                  label: try c.decode(String.self, forKey: .label), coordinate: try c.decodeIfPresent(GeoCoordinate.self, forKey: .coordinate))
+    }
+
+    fileprivate struct Wire: Encodable { let id: String; let stayMinutes: Int }
+    fileprivate var wire: Wire { Wire(id: id, stayMinutes: stayMinutes) }
+}
+
+/// Aufenthalt an einem Zwischenstopp innerhalb einer Verbindung: Ankunft mit Fahrzeug `arrivalLeg`,
+/// weiter mit dem naechsten Fahrzeug (der Umstiegsweg dazwischen gehoert zum Aufenthalt).
+public struct ViaStay: Sendable, Hashable {
+    public let via: ViaStop
+    public let arrivalLeg: Int
+    public let arrival: Date?
+    public let departure: Date?
+}
+
+extension Journey {
+    /// Findet je Zwischenstopp (in Reihenfolge) die Grenze, an der der Aufenthalt liegt.
+    /// MOTIS liefert an der Grenze eine Bahnsteig-ID ("<station>:7:73") ohne `parentId` (live geprueft 16.11.):
+    /// Zuerst zaehlt die ID (exakt oder Praefix "<id>:"). Nur ohne ID-Treffer die Naehe (unter 300 m von `coordinate`),
+    /// und nie an einer Grenze, deren ID zu einem anderen Stopp gehoert. Mehrere Treffer: die laengste Pause bis zum
+    /// naechsten Fahrzeug (oder, am letzten Fahrzeug, bis zum Fussweg). Kein Treffer: der Stopp fehlt im Ergebnis.
+    public func viaStays(_ via: [ViaStop]) -> [ViaStay] {
+        var stays: [ViaStay] = []
+        var start = 0
+        for stop in via {
+            let open = legs.indices.dropLast().filter { $0 >= start }
+            var candidates = open.filter { Self.idMatches(legs[$0].destination, stop) }
+            if candidates.isEmpty {
+                candidates = open.filter { pos in
+                    Self.isNear(legs[pos].destination, stop)
+                        && !via.contains { $0 != stop && Self.idMatches(legs[pos].destination, $0) }
+                }
+            }
+            var best: (pos: Int, stay: ViaStay, gap: TimeInterval)?
+            for pos in candidates {
+                let leg = legs[pos]
+                let next = legs[(pos + 1)...].first(where: { !$0.isWalk }) ?? legs[pos + 1]
+                let arrival = leg.arrival ?? leg.plannedArrival
+                let departure = next.departure ?? next.plannedDeparture
+                let gap = (departure ?? .distantPast).timeIntervalSince(arrival ?? .distantFuture)
+                if gap > best?.gap ?? -.infinity {
+                    best = (pos, ViaStay(via: stop, arrivalLeg: leg.index, arrival: arrival, departure: departure), gap)
+                }
+            }
+            guard let best else { continue }
+            stays.append(best.stay)
+            start = best.pos + 1
+        }
+        return stays
+    }
+
+    private static func idMatches(_ place: Place, _ stop: ViaStop) -> Bool {
+        guard let id = place.id else { return false }
+        return id == stop.id || id.hasPrefix(stop.id + ":")
+    }
+
+    private static func isNear(_ place: Place, _ stop: ViaStop) -> Bool {
+        guard let a = place.coordinate, let b = stop.coordinate else { return false }
+        return a.distance(to: b) < 300
+    }
+}
+
 /// Body fuer POST /api/routes. Optionale Felder werden weggelassen (Backend lehnt `null` und unbekannte Felder ab).
 public struct RoutesRequest: Sendable, Hashable, Encodable {
     public var origin: RoutePoint
@@ -77,10 +162,13 @@ public struct RoutesRequest: Sendable, Hashable, Encodable {
     public private(set) var results: Int
     public var laterThan: String?
     public var earlierThan: String?
+    /// Zwischenstopps (max. 2); nil oder leer = keine.
+    public var via: [ViaStop]?
 
     public init(origin: RoutePoint, destination: RoutePoint, targetTime: Date? = nil,
                 isArrivalTime: Bool = false, onlyNahverkehr: Bool = true, modes: [ModeFilter]? = nil,
-                accessibility: Accessibility = .none, results: Int = 4) {
+                accessibility: Accessibility = .none, results: Int = 4, via: [ViaStop]? = nil) {
+        self.via = via
         self.accessibility = accessibility
         self.origin = origin
         self.destination = destination
@@ -101,7 +189,7 @@ public struct RoutesRequest: Sendable, Hashable, Encodable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case origin, destination, targetTime, isArrivalTime, onlyNahverkehr, modes, accessibility, results, laterThan, earlierThan
+        case origin, destination, targetTime, isArrivalTime, onlyNahverkehr, modes, accessibility, results, laterThan, earlierThan, via
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -117,6 +205,11 @@ public struct RoutesRequest: Sendable, Hashable, Encodable {
         try c.encode(results, forKey: .results)
         try c.encodeIfPresent(laterThan, forKey: .laterThan)
         try c.encodeIfPresent(earlierThan, forKey: .earlierThan)
+        // Backend-Regeln (docs/API.md): max. 2, keine Doppelten, nicht gleich Start/Ziel.
+        var seen = Set<String>()
+        for case .stop(let id) in [origin, destination] { seen.insert(id) }
+        let wire = (via ?? []).filter { seen.insert($0.id).inserted }.prefix(2).map(\.wire)
+        if !wire.isEmpty { try c.encode(wire, forKey: .via) }
     }
 }
 
@@ -172,16 +265,18 @@ public protocol TripRequest: Sendable {
     var trigger: TripTrigger { get }
     var modes: [ModeFilter]? { get }
     var accessibility: Accessibility { get }
+    var via: [ViaStop]? { get }
 }
 
 public extension TripRequest {
     var accessibility: Accessibility { .none }
+    var via: [ViaStop]? { nil }
 
     /// Einzige Stelle, an der aus einer Fahrt ein Backend-Request wird: nur Punkte, Zeit, Filter.
     func routesRequest(onlyNahverkehr: Bool = true, results: Int = 4) -> RoutesRequest {
         RoutesRequest(origin: origin.routePoint, destination: destination.routePoint, targetTime: targetTime,
                       isArrivalTime: isArrivalTime, onlyNahverkehr: onlyNahverkehr, modes: modes,
-                      accessibility: accessibility, results: results)
+                      accessibility: accessibility, results: results, via: via)
     }
 }
 
@@ -198,10 +293,13 @@ public struct ManualTripRequest: TripRequest, Hashable, Codable {
     public var trigger: TripTrigger
     public var modes: [ModeFilter]?
     public var accessibility: Accessibility
+    /// Optional, damit vor dem Feature gespeicherte Fahrten dekodierbar bleiben.
+    public var via: [ViaStop]?
 
     public init(origin: TripEndpoint, destination: TripEndpoint, targetTime: Date,
                 isArrivalTime: Bool = false, trigger: TripTrigger = .manual, modes: [ModeFilter]? = nil,
-                accessibility: Accessibility = .none) {
+                accessibility: Accessibility = .none, via: [ViaStop]? = nil) {
+        self.via = via
         self.modes = modes
         self.accessibility = accessibility
         self.origin = origin
