@@ -106,7 +106,7 @@ struct JourneyTimelineCard: View {
                                         afterStay: stays.contains { $0.arrivalLeg == leg.index - 1 })
                     } else {
                         VehicleTimeline(leg: leg)
-                        if let stay = stays.first(where: { $0.arrivalLeg == leg.index }) { StayRow(stay: stay) }
+                        if let stay = stays.first(where: { $0.arrivalLeg == leg.index }) { StayRow(stay: stay, journey: journey) }
                     }
                 }
                 if let last = journey.legs.last {
@@ -285,13 +285,15 @@ private struct VehicleTimeline: View {
     }
 }
 
-/// Aufenthalt am Zwischenstopp statt Umstieg: echte Dauer bis zum naechsten Fahrzeug (Echtzeit), Warnung wenn kuerzer
+/// Aufenthalt am Zwischenstopp statt Umstieg: echte Dauer bis zum Umstiegsweg (Echtzeit), Warnung wenn kuerzer
 /// als gewuenscht.
 private struct StayRow: View {
     let stay: ViaStay
+    let journey: Journey
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        let minutes = stay.minutes(in: journey)
         HStack(alignment: .top, spacing: 8) {
             if !typeSize.isAccessibilitySize { Color.clear.frame(width: 56) }
             Image(systemName: "bag")
@@ -300,13 +302,13 @@ private struct StayRow: View {
                 .frame(width: 12)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
-                Text(stay.minutes.map { String(localized: "Aufenthalt \(stay.via.label) · \($0) Min.") }
+                Text(minutes.map { String(localized: "Aufenthalt \(stay.via.label) · \($0) Min.") }
                      ?? String(localized: "Aufenthalt \(stay.via.label)"))
                     .font(.footnote.weight(.semibold))
                     .monospacedDigit()
                     .contentTransition(.numericText())
-                    .animation(Motion.micro, value: stay.minutes)
-                if stay.isShort, let minutes = stay.minutes {
+                    .animation(Motion.micro, value: minutes)
+                if stay.isShort(in: journey), let minutes {
                     CardHint(text: String(localized: "Aufenthalt nur \(minutes) Min."), symbol: "clock.badge.exclamationmark", tone: .warn)
                 }
             }

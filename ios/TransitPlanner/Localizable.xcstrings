@@ -1,16 +1,19 @@
 {
   "sourceLanguage" : "de",
   "strings" : {
+    ", dann " : {
+
+    },
     "%@ entfernen" : {
+
+    },
+    "%@ fällt aus." : {
 
     },
     "%@ festlegen" : {
 
     },
     "%@ folgen" : {
-
-    },
-    "%@ fällt aus." : {
 
     },
     "%@ in %@" : {
@@ -33,12 +36,12 @@
         }
       }
     },
-    "%@%lld Minuten Fußweg" : {
+    "%@ über %@ nach %@" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@%2$lld Minuten Fußweg"
+            "value" : "%1$@ über %2$@ nach %3$@"
           }
         }
       }
@@ -59,6 +62,16 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@: %2$@"
+          }
+        }
+      }
+    },
+    "%@%lld Minuten Fußweg" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@%2$lld Minuten Fußweg"
           }
         }
       }
@@ -88,19 +101,13 @@
         }
       }
     },
+    "%lld m" : {
+
+    },
     "%lld Meter" : {
 
     },
     "%lld Min." : {
-
-    },
-    "%lld Min. früher" : {
-
-    },
-    "%lld Min. später" : {
-
-    },
-    "%lld Min. zu Fuß" : {
 
     },
     "%lld Min. · %lld m" : {
@@ -112,6 +119,15 @@
           }
         }
       }
+    },
+    "%lld Min. früher" : {
+
+    },
+    "%lld Min. später" : {
+
+    },
+    "%lld Min. zu Fuß" : {
+
     },
     "%lld Minuten" : {
       "localizations" : {
@@ -204,6 +220,9 @@
     "%lld Minuten zu Fuß" : {
 
     },
+    "%lld s" : {
+
+    },
     "%lld Sekunden" : {
       "localizations" : {
         "de" : {
@@ -273,22 +292,22 @@
         }
       }
     },
-    "%lld m" : {
-
-    },
-    "%lld s" : {
+    "© OpenStreetMap-Mitwirkende, verfügbar unter der Open Database License (ODbL)." : {
 
     },
     "+%lld Min." : {
 
     },
-    ", dann " : {
+    "± %lld m" : {
 
     },
     "10:00 – 10:45 · 45 Min." : {
 
     },
     "Ab" : {
+
+    },
+    "ab %@" : {
 
     },
     "Ab %@, %@" : {
@@ -300,6 +319,9 @@
           }
         }
       }
+    },
+    "ab Gleis %@" : {
+
     },
     "Abbrechen" : {
 
@@ -353,10 +375,16 @@
     "Am Gleis sein vorher" : {
 
     },
+    "an %@" : {
+
+    },
     "An dein Gehtempo angepasst" : {
 
     },
     "Andere Zeit wählen" : {
+
+    },
+    "Ändert Start, Ziel oder Zeit" : {
 
     },
     "Angabe des Fahrplan-Servers" : {
@@ -393,10 +421,29 @@
     "Arbeit" : {
 
     },
+    "Aufenthalt %@" : {
+
+    },
+    "Aufenthalt %@ · %lld Min." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Aufenthalt %1$@ · %2$lld Min."
+          }
+        }
+      }
+    },
+    "Aufenthalt nur %lld Min." : {
+
+    },
     "Aufzug" : {
 
     },
     "Aus" : {
+
+    },
+    "aussteigen in %@" : {
 
     },
     "Aussteigen in %@" : {
@@ -408,9 +455,6 @@
     "Ausstieg %@" : {
 
     },
-    "BESTE VERBINDUNG" : {
-
-    },
     "Bearbeiten" : {
 
     },
@@ -420,13 +464,28 @@
     "Beim Verwenden" : {
 
     },
+    "BESTE VERBINDUNG" : {
+
+    },
     "Beste Verbindung:" : {
+
+    },
+    "bis %@" : {
 
     },
     "Bus" : {
 
     },
     "Bus ab %@" : {
+
+    },
+    "ca." : {
+
+    },
+    "ca. %@" : {
+
+    },
+    "ca. %lld m" : {
 
     },
     "Danach" : {
@@ -465,10 +524,10 @@
     "Die Verbindung ist nicht mehr aktuell." : {
 
     },
-    "Direkt." : {
+    "direkt" : {
 
     },
-    "ERINNERN" : {
+    "Direkt." : {
 
     },
     "Ebene %@" : {
@@ -507,6 +566,9 @@
 
     },
     "Erinnern" : {
+
+    },
+    "ERINNERN" : {
 
     },
     "Erinnerung %@" : {
@@ -567,6 +629,9 @@
         }
       }
     },
+    "Fähre" : {
+
+    },
     "Fahrplandaten" : {
 
     },
@@ -580,6 +645,12 @@
 
     },
     "Fahrt geplant" : {
+
+    },
+    "Fällt aus" : {
+
+    },
+    "Fällt aus." : {
 
     },
     "Favorit" : {
@@ -612,15 +683,6 @@
     "Fußwege mit deinem Tempo" : {
 
     },
-    "Fähre" : {
-
-    },
-    "Fällt aus" : {
-
-    },
-    "Fällt aus." : {
-
-    },
     "Ganze Route" : {
 
     },
@@ -633,10 +695,16 @@
     "Genauigkeit ± %lld m" : {
 
     },
+    "geradeaus" : {
+
+    },
     "Geradeaus" : {
 
     },
     "Gilt für neue Erinnerungen, bestehende übernehmen den Wert bei der nächsten Neuberechnung. Bei 0 Min. entfällt „Später erinnern“ in der Losgehen-Mitteilung, außer du gehst früher los. Umstiege bewertet die App davon unabhängig." : {
+
+    },
+    "gleich schnell" : {
 
     },
     "Gleis %@" : {
@@ -668,10 +736,13 @@
     "Gut angekommen" : {
 
     },
-    "Haltestelle oder Adresse" : {
+    "Haltestelle" : {
 
     },
     "Haltestelle „%@“ beim Fahrplan-Server suchen" : {
+
+    },
+    "Haltestelle oder Adresse" : {
 
     },
     "Haltestellen in der Nähe" : {
@@ -683,11 +754,24 @@
     "Hinzufügen" : {
 
     },
+    "hoch" : {
+
+    },
     "Im %@" : {
 
     },
     "Im Kreisverkehr" : {
 
+    },
+    "In %lld m %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "In %1$lld m %2$@"
+          }
+        }
+      }
     },
     "In %lld Minuten losgehen" : {
       "localizations" : {
@@ -711,17 +795,10 @@
         }
       }
     },
-    "In %lld m %@" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "In %1$lld m %2$@"
-          }
-        }
-      }
-    },
     "In 15 Min. losgehen" : {
+
+    },
+    "in den Kreisverkehr" : {
 
     },
     "In der Nähe" : {
@@ -757,16 +834,31 @@
     "Keine Verbindung gefunden" : {
 
     },
+    "knapp, Puffer %@" : {
+
+    },
     "Knapp: %@" : {
 
     },
     "Knapp: Alternativen vergleichen" : {
 
     },
+    "leer" : {
+
+    },
+    "leicht links" : {
+
+    },
     "Leicht links" : {
 
     },
+    "leicht rechts" : {
+
+    },
     "Leicht rechts" : {
+
+    },
+    "links" : {
 
     },
     "Links abbiegen" : {
@@ -778,6 +870,9 @@
     "Los in 10 Min." : {
 
     },
+    "Löschen" : {
+
+    },
     "Losgehen" : {
 
     },
@@ -785,9 +880,6 @@
 
     },
     "Losgehen in %@" : {
-
-    },
-    "Löschen" : {
 
     },
     "Mein Standort" : {
@@ -811,6 +903,18 @@
     "Nach dem Einfügen den Schlüssel aus der Zwischenablage des anderen Geräts entfernen." : {
 
     },
+    "Nächste Station" : {
+
+    },
+    "Nächste Verbindung" : {
+
+    },
+    "nächster Halt aussteigen" : {
+
+    },
+    "Nächster Halt aussteigen" : {
+
+    },
     "Nahverkehr" : {
 
     },
@@ -826,6 +930,9 @@
     "Noch" : {
 
     },
+    "noch %lld Halte" : {
+
+    },
     "Noch %lld m zu %@" : {
       "localizations" : {
         "de" : {
@@ -836,16 +943,13 @@
         }
       }
     },
-    "Nächste Station" : {
-
-    },
-    "Nächste Verbindung" : {
-
-    },
-    "Nächster Halt aussteigen" : {
-
-    },
     "Offene Fahrplan- und Echtzeitdaten über Transitous (MOTIS 2), u. a. DELFI." : {
+
+    },
+    "Öffnet die Fahrtdetails" : {
+
+    },
+    "Öffnet die Planung" : {
 
     },
     "Ohne Schlüssel kann die App keine Haltestellen und Verbindungen abrufen." : {
@@ -869,10 +973,16 @@
     "Puffer %lld Min." : {
 
     },
+    "pünktlich" : {
+
+    },
     "Quellen und Lizenzen" : {
 
     },
     "Rechnet sofort neu." : {
+
+    },
+    "rechts" : {
 
     },
     "Rechts abbiegen" : {
@@ -887,6 +997,9 @@
     "Regionalzug" : {
 
     },
+    "reicht nicht" : {
+
+    },
     "Reicht nicht" : {
 
     },
@@ -896,16 +1009,16 @@
     "Richtung %@" : {
 
     },
-    "Rufbus" : {
-
-    },
     "Rückgängig" : {
 
     },
-    "S-Bahn" : {
+    "Rufbus" : {
 
     },
-    "SEV %@" : {
+    "runter" : {
+
+    },
+    "S-Bahn" : {
 
     },
     "Scharf links" : {
@@ -941,7 +1054,7 @@
     "Sendet den Text, nicht deinen Standort." : {
 
     },
-    "Speichern" : {
+    "SEV %@" : {
 
     },
     "Später eintragen" : {
@@ -951,6 +1064,9 @@
 
     },
     "Später suchen" : {
+
+    },
+    "Speichern" : {
 
     },
     "Standort" : {
@@ -975,6 +1091,9 @@
 
     },
     "Starten" : {
+
+    },
+    "statt %@" : {
 
     },
     "Straßenbahn" : {
@@ -1005,6 +1124,12 @@
 
     },
     "U-Bahn" : {
+
+    },
+    "Über" : {
+
+    },
+    "Über %@" : {
 
     },
     "Umstieg" : {
@@ -1044,9 +1169,6 @@
     "Unterwegs" : {
 
     },
-    "VERKEHRSMITTEL" : {
-
-    },
     "Verbindung nicht mehr vorhanden" : {
 
     },
@@ -1069,6 +1191,9 @@
 
     },
     "Verkehrsmittel" : {
+
+    },
+    "VERKEHRSMITTEL" : {
 
     },
     "Version" : {
@@ -1117,6 +1242,9 @@
     "Weitere Verbindungen" : {
 
     },
+    "wenden" : {
+
+    },
     "Wenden" : {
 
     },
@@ -1141,10 +1269,10 @@
     "Zeigt die Karte ohne Anweisung" : {
 
     },
-    "Zeigt die Stelle auf der Karte" : {
+    "Zeigt die restliche Route auf der Karte" : {
 
     },
-    "Zeigt die restliche Route auf der Karte" : {
+    "Zeigt die Stelle auf der Karte" : {
 
     },
     "Zeigt wieder die aktuelle Anweisung" : {
@@ -1162,6 +1290,9 @@
     "Zu %@" : {
 
     },
+    "Zu dieser Verbindung wechseln?" : {
+
+    },
     "Zu Fuß" : {
 
     },
@@ -1172,9 +1303,6 @@
 
     },
     "Zu Fuß zum Ziel" : {
-
-    },
-    "Zu dieser Verbindung wechseln?" : {
 
     },
     "Zuhause" : {
@@ -1195,97 +1323,13 @@
     "Zurück zur Planung" : {
 
     },
-    "ab %@" : {
+    "Zwischenstopp entfernen" : {
 
     },
-    "ab Gleis %@" : {
+    "Zwischenstopp hinzufügen" : {
 
     },
-    "an %@" : {
-
-    },
-    "aussteigen in %@" : {
-
-    },
-    "bis %@" : {
-
-    },
-    "ca." : {
-
-    },
-    "ca. %@" : {
-
-    },
-    "ca. %lld m" : {
-
-    },
-    "direkt" : {
-
-    },
-    "geradeaus" : {
-
-    },
-    "gleich schnell" : {
-
-    },
-    "hoch" : {
-
-    },
-    "in den Kreisverkehr" : {
-
-    },
-    "knapp, Puffer %@" : {
-
-    },
-    "leer" : {
-
-    },
-    "leicht links" : {
-
-    },
-    "leicht rechts" : {
-
-    },
-    "links" : {
-
-    },
-    "noch %lld Halte" : {
-
-    },
-    "nächster Halt aussteigen" : {
-
-    },
-    "pünktlich" : {
-
-    },
-    "rechts" : {
-
-    },
-    "reicht nicht" : {
-
-    },
-    "runter" : {
-
-    },
-    "statt %@" : {
-
-    },
-    "wenden" : {
-
-    },
-    "© OpenStreetMap-Mitwirkende, verfügbar unter der Open Database License (ODbL)." : {
-
-    },
-    "± %lld m" : {
-
-    },
-    "Ändert Start, Ziel oder Zeit" : {
-
-    },
-    "Öffnet die Fahrtdetails" : {
-
-    },
-    "Öffnet die Planung" : {
+    "Zwischenstopp: bitte eine Haltestelle wählen" : {
 
     }
   },

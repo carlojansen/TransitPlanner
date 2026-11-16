@@ -350,6 +350,7 @@ struct PlanSheet: View {
                 .listSectionSpacing(.compact)
             }
         }
+        .sensoryFeedback(.error, trigger: flow.viaRejections)
         .onChange(of: flow.query) {
             if flow.query.count > AppFlow.maxQueryLength { flow.query = String(flow.query.prefix(AppFlow.maxQueryLength)) }
             flow.queryChanged()
@@ -357,6 +358,14 @@ struct PlanSheet: View {
     }
 
     // MARK: Peek (140 pt)
+
+    /// "Start über Bilk S nach Ziel" statt einer Aufzaehlung der Namen.
+    private var peekSpoken: Text {
+        let from = label(of: .origin) ?? String(localized: "Start")
+        let to = label(of: .destination) ?? String(localized: "Ziel")
+        let stops = flow.via.map(\.label).formatted(.list(type: .and))
+        return flow.via.isEmpty ? Text("\(from) nach \(to)") : Text("\(from) über \(stops) nach \(to)")
+    }
 
     private var peek: some View {
         VStack(spacing: 12) {
@@ -373,6 +382,7 @@ struct PlanSheet: View {
             .lineLimit(1)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
+            .accessibilityLabel(peekSpoken)
             if flow.endpointsFilled {
                 PrimaryButton(title: "Verbindungen suchen", systemImage: "magnifyingglass") { flow.send(.planTapped) }
                     .disabled(!flow.canPlan)
@@ -536,10 +546,12 @@ struct PlanSheet: View {
         return HStack(spacing: 4) {
             layout {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("Über").font(.caption).foregroundStyle(Color(.labelSecondary)).accessibilityHidden(true)
+                    Text("Über").font(.caption).foregroundStyle(Color(.labelSecondary))
                     Text(stop.label).lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text("Über \(stop.label)"))
                 Stepper(value: Binding { stop.stayMinutes } set: { flow.setStay($0, at: index) }, in: 5...120, step: 5) {
                     Text("\(stop.stayMinutes) Min.")
                         .monospacedDigit()

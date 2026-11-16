@@ -92,7 +92,9 @@ Review durch `security-hig-reviewer`: **FREIGABE**, 0 Blocker, 2 Mittel, 5 Niedr
 
 **Ausgerollt 16.11.:** Backend auf dem Server (Servertests 93/93, `healthz` ok, 401 ohne Token, Anfrage mit Zwischenstopp Düsseldorf Hbf nach Köln Hbf über Leverkusen Mitte über den Server liefert 2 Verbindungen).
 
-**Offen:** Review der UI. Gerätetest bei Carlo. Karte nennt die Grenze weiter "Umstieg"; Alternativen unterwegs zählen den Aufenthalt als Umstieg; "Umstieg knapp/reicht nicht" heißt am Stopp weiter "Umstieg". Stufe B (Geschäfts-Pins, Navigationsschritt "Aufenthalt") nicht begonnen. Ursprünglich danach Schritt 2 (TransitCore: `via` in Requests, Erkennung der Leg-Grenze, Rang) und Schritt 3 (UI Stufe A).
+**UI-Review 16.11.:** 1 Hoch (Alternative unterwegs behielt erreichte Stopps) und 6 weitere Befunde behoben: Alternative übernimmt die gesendeten Stopps, Aufenthalt zählt bis zum Start des Fußwegs, Umstiegszahl nur mit folgendem Fahrzeug, nicht erkannte Stopps fallen unterwegs weg, Peek ab dem Stopp startet nach dem Aufenthalt, Koordinate aus Haltestellen in der Nähe, VoiceOver und Haptik. Neue Strings in `Localizable.xcstrings` (von Xcode übernommen). Tests: App 202/0, TransitCore 173/0. Gegenproben "Alternative übernimmt via nicht" und "Aufenthalt bis Abfahrt" je rot.
+
+**Offen:** Gerätetest bei Carlo (Planen, Navigation, Alternativen unterwegs). Karte nennt die Grenze weiter "Umstieg"; "Umstieg knapp/reicht nicht" heißt am Stopp weiter "Umstieg". Stepper bei AX-Schriftgrößen ungeprüft. "Mein Standort" als Zwischenstopp wird ohne Haptik abgewiesen. Stufe B (Geschäfts-Pins, Navigationsschritt "Aufenthalt") nicht begonnen.
 
 ## Ideen (nicht geplant, nicht begonnen)
 

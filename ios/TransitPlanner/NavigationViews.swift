@@ -563,7 +563,7 @@ struct AlternativesView: View {
 
     @ViewBuilder private var content: some View {
         switch flow.peek {
-        case .loaded(let response, let walks):
+        case .loaded(let response, let walks, _):
             SectionTitle("Alternativen")
             if response.journeys.isEmpty {
                 Text("Keine Verbindung gefunden").foregroundStyle(.secondary)

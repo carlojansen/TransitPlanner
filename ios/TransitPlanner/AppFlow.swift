@@ -10,19 +10,24 @@ enum EndpointSlot: Sendable, Hashable {
 }
 
 extension Journey {
-    /// Umstiege ohne erkannte Aufenthalte an Zwischenstopps (MOTIS zaehlt den Aufenthalt als Umstieg).
-    func transfers(excludingStaysAt via: [ViaStop]) -> Int { max(0, transfers - viaStays(via).count) }
+    /// Umstiege ohne erkannte Aufenthalte an Zwischenstopps (MOTIS zaehlt den Aufenthalt als Umstieg, aber nur, wenn
+    /// danach noch ein Fahrzeug kommt; am letzten Fahrzeug folgt nur der Fussweg).
+    func transfers(excludingStaysAt via: [ViaStop]) -> Int {
+        let counted = viaStays(via).filter { stay in legs.contains { !$0.isWalk && $0.index > stay.arrivalLeg } }
+        return max(0, transfers - counted.count)
+    }
 }
 
 extension ViaStay {
-    /// Echte Dauer bis zum naechsten Fahrzeug (Echtzeit), ganze Minuten.
-    var minutes: Int? {
-        guard let arrival, let departure else { return nil }
-        return Int(departure.timeIntervalSince(arrival) / 60)
+    /// Echte Dauer (Echtzeit), ganze Minuten: Ankunft bis zum Umstiegsweg, der darunter eigens steht; ohne Weg bis zur Abfahrt.
+    func minutes(in journey: Journey) -> Int? {
+        let walk = journey.legs.first { $0.index > arrivalLeg }.flatMap { $0.isWalk ? $0.departure ?? $0.plannedDeparture : nil }
+        guard let arrival, let end = walk ?? departure else { return nil }
+        return Int(end.timeIntervalSince(arrival) / 60)
     }
 
     /// Kuerzer als gewuenscht, z. B. wegen Verspaetung.
-    var isShort: Bool { minutes.map { $0 < via.stayMinutes } ?? false }
+    func isShort(in journey: Journey) -> Bool { minutes(in: journey).map { $0 < via.stayMinutes } ?? false }
 }
 
 /// Phasen im persistenten Sheet (DESIGN.md B). Fahrtdetails sind ein Zustand im Sheet, kein Push.
@@ -241,6 +246,8 @@ final class AppFlow {
     private(set) var recents: [SavedPlace] = []
     /// Oeffentliche Haltestellendaten ohne Koordinate des Nutzers; beim Wechsel in den Hintergrund verworfen.
     private(set) var nearby: [Place] = []
+    /// Zaehlt abgelehnte Zwischenstopps (Adresse, Start/Ziel, dritter Stopp): Ausloeser fuer die Fehler-Haptik.
+    private(set) var viaRejections = 0
     /// Leere Favoriten-Kachel angetippt: die naechste Wahl in Planen wird dieser Favorit (keine Suche).
     private(set) var assigningRole: FavoritePlace.Role?
 
@@ -321,7 +328,8 @@ final class AppFlow {
     /// Karte ganz frei: Jetzt-Karte weg, Sheet nur eine Leiste. Zurueck per "Anweisung" oder automatisch bei neuem Schritt.
     var navMapOnly = false
     /// "Alternativen" unterwegs: Suche ab Standort, waehrend die Fahrt im Hintergrund weiterlaeuft.
-    enum Peek { case loading, loaded(RoutesResponse, [CalibratedJourney]?), failed(TransitError) }
+    /// `via`: die Stopps der Anfrage; "Wechseln" uebernimmt sie, damit erreichte nicht zurueckkommen.
+    enum Peek { case loading, loaded(RoutesResponse, [CalibratedJourney]?, via: [ViaStop]), failed(TransitError) }
     private(set) var peek: Peek?
     @ObservationIgnored private var peekTask: Task<Void, Never>?
     var showsSettings = false
@@ -762,7 +770,12 @@ final class AppFlow {
     /// Standard-Aufenthalt 15 Min.; danach wie jede Wahl weiter.
     private func addVia(_ endpoint: TripEndpoint, coordinate: GeoCoordinate?) {
         guard case .stop(let id, let label) = endpoint, via.count < 2, !via.contains(where: { $0.id == id }),
-              origin.place?.routePoint != endpoint.routePoint, destination?.place?.routePoint != endpoint.routePoint else { return }
+              origin.place?.routePoint != endpoint.routePoint, destination?.place?.routePoint != endpoint.routePoint else {
+            viaRejections += 1
+            return
+        }
+        // Favorit/Verlauf ohne Koordinate: die Umkreissuche kennt sie vielleicht (fuer die Erkennung in der Antwort).
+        let coordinate = coordinate ?? nearby.first { $0.id == id }?.coordinate
         via.append(ViaStop(id: id, stayMinutes: 15, label: label, coordinate: coordinate))
         advance()
     }
@@ -1223,12 +1236,14 @@ final class AppFlow {
     }
 
     /// Zwischenstopps, die die laufende Fahrt noch vor sich hat: eine Folgeverbindung behaelt sie, erreichte entfallen.
+    /// Nicht erkannte Stopps entfallen auch: ob sie noch vor einem liegen, ist unbekannt, und ein besuchter Stopp kostet
+    /// einen Umweg zurueck; ein fehlender laesst sich mit "+" wieder eintragen.
     private var remainingVia: [ViaStop] {
         guard let journey = navJourney else { return via }
         // Ohne Zielfahrzeug (Weg zum Ziel) liegen alle Stopps hinter einem.
         guard let target = navStep.flatMap(NavigationEngine.targetVehicle) else { return [] }
-        let reached = journey.viaStays(via).filter { $0.arrivalLeg < target }.map(\.via)
-        return via.filter { !reached.contains($0) }
+        let ahead = journey.viaStays(via).filter { $0.arrivalLeg >= target }.map(\.via)
+        return via.filter(ahead.contains)
     }
 
     /// Wo die Alternativen starten: am Standort oder an der naechsten Station der Fahrt (Umstieg, Einstieg, Ausstieg).
@@ -1291,13 +1306,15 @@ final class AppFlow {
                 // Start am Zwischenstopp selbst (Fahrt dorthin laeuft): der Stopp entfaellt, das Backend lehnt Start = Stopp ab.
                 let startID: String? = if case .stop(let id, _) = start { id } else { nil }
                 let via = rest.filter { stop in startID.map { $0 != stop.id && !$0.hasPrefix(stop.id + ":") } ?? true }
-                let trip = ManualTripRequest(origin: start, destination: target, targetTime: time, modes: modes, accessibility: accessibility,
-                                             via: via.isEmpty ? nil : via)
+                // Der Aufenthalt dort bleibt: Weiterfahrt erst danach.
+                let stay = rest.filter { !via.contains($0) }.reduce(0) { $0 + $1.stayMinutes }
+                let trip = ManualTripRequest(origin: start, destination: target, targetTime: time.addingTimeInterval(TimeInterval(stay * 60)),
+                                             modes: modes, accessibility: accessibility, via: via.isEmpty ? nil : via)
                 for try await stage in deps.planner.plan(trip, pace: pace) {
                     guard !Task.isCancelled else { return }
                     switch stage {
-                    case .skeleton(let r): peek = .loaded(r, nil)
-                    case .calibrated(let r, let c): peek = .loaded(r, c)
+                    case .skeleton(let r): peek = .loaded(r, nil, via: via)
+                    case .calibrated(let r, let c): peek = .loaded(r, c, via: via)
                     }
                 }
             } catch {
@@ -1423,7 +1440,8 @@ final class AppFlow {
 
     /// Wechsel auf eine Alternative: ersetzt die laufende Verbindung.
     func chooseAlternative(_ index: Int) {
-        guard case .loaded(let response, let walks) = peek, index < response.journeys.count else { return }
+        guard case .loaded(let response, let walks, let peekVia) = peek, index < response.journeys.count else { return }
+        via = peekVia
         routes = response
         calibrated = walks
         attribution = response.attribution
