@@ -263,7 +263,7 @@ struct NavigationSheet: View {
 
     @ViewBuilder private func body(_ rows: [RouteOverview.Row], tall: Bool) -> some View {
         if tall, let journey = flow.navJourney {
-            JourneyTimelineCard(journey: journey, calibrated: nil, destination: flow.destination?.label, expandWalks: true)
+            JourneyTimelineCard(journey: journey, calibrated: nil, destination: flow.destination?.label, expandWalks: true, via: flow.via)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
         } else {

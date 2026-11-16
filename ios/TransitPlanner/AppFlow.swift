@@ -5,7 +5,24 @@ import TransitCore
 
 /// Welcher Endpunkt gerade gesucht wird.
 enum EndpointSlot: Sendable, Hashable {
-    case origin, destination
+    /// `via`: neuer Zwischenstopp (bestehende werden entfernt, nicht bearbeitet).
+    case origin, destination, via
+}
+
+extension Journey {
+    /// Umstiege ohne erkannte Aufenthalte an Zwischenstopps (MOTIS zaehlt den Aufenthalt als Umstieg).
+    func transfers(excludingStaysAt via: [ViaStop]) -> Int { max(0, transfers - viaStays(via).count) }
+}
+
+extension ViaStay {
+    /// Echte Dauer bis zum naechsten Fahrzeug (Echtzeit), ganze Minuten.
+    var minutes: Int? {
+        guard let arrival, let departure else { return nil }
+        return Int(departure.timeIntervalSince(arrival) / 60)
+    }
+
+    /// Kuerzer als gewuenscht, z. B. wegen Verspaetung.
+    var isShort: Bool { minutes.map { $0 < via.stayMinutes } ?? false }
 }
 
 /// Phasen im persistenten Sheet (DESIGN.md B). Fahrtdetails sind ein Zustand im Sheet, kein Push.
@@ -202,6 +219,7 @@ private struct PlanKey: Hashable {
     let isArrivalTime: Bool
     let modes: Set<ModeFilter>
     let accessibility: Accessibility
+    let via: [ViaStop]
 }
 
 @Observable @MainActor
@@ -230,6 +248,8 @@ final class AppFlow {
     /// Standard "Mein Standort" (aufgeloest erst beim Planen; ohne Erlaubnis muss ein Start gewaehlt werden).
     private(set) var origin: PlanEndpoint = .currentLocation
     private(set) var destination: PlanEndpoint?
+    /// Zwischenstopps in Reihenfolge (max. 2), nur Haltestellen; nie in Verlauf oder Favoriten.
+    private(set) var via: [ViaStop] = []
     /// nil = jetzt (beim Tippen auf "Verbindungen suchen" bestimmt).
     var customTime: Date?
     /// Verkehrsmittel-Pillen (Figma); alle an = voller Nahverkehrsfilter. Mindestens eine bleibt an.
@@ -372,7 +392,11 @@ final class AppFlow {
     }
 
     func endpoint(_ slot: EndpointSlot) -> PlanEndpoint? {
-        slot == .origin ? origin : destination
+        switch slot {
+        case .origin: origin
+        case .destination: destination
+        case .via: nil
+        }
     }
 
     /// Feld mit Fokus in der Planen-Ansicht.
@@ -690,7 +714,8 @@ final class AppFlow {
     }
 
     /// Wahl eines Orts. Im Start (Favorit, Verlauf, Naehe) wie in Planen, aber immer ab "Mein Standort" und jetzt.
-    func choose(_ endpoint: TripEndpoint) {
+    /// `coordinate`: Lage des Suchtreffers, nur fuer die Erkennung eines Zwischenstopps in der Antwort.
+    func choose(_ endpoint: TripEndpoint, coordinate: GeoCoordinate? = nil) {
         let focus: EndpointSlot
         switch phase {
         case .plan(let slot):
@@ -700,9 +725,11 @@ final class AppFlow {
                 send(.back)
                 return
             }
+            if slot == .via { return addVia(endpoint, coordinate: coordinate) }
             focus = slot ?? .destination
         case .start:
             origin = .currentLocation
+            via = []
             customTime = nil
             isArrivalTime = false
             focus = .destination
@@ -716,7 +743,7 @@ final class AppFlow {
     /// "Mein Standort" als Start oder Ziel (Platzhalter, aufgeloest erst beim Planen; nie im Verlauf).
     func useCurrentLocation() {
         // "Mein Standort" wird nie Favorit (AGENT.md 3.1.2).
-        guard case .plan(let focus) = phase, locationAllowed, assigningRole == nil else { return }
+        guard case .plan(let focus) = phase, focus != .via, locationAllowed, assigningRole == nil else { return }
         set(.currentLocation, for: focus ?? .destination)
     }
 
@@ -726,7 +753,32 @@ final class AppFlow {
         switch slot {
         case .origin: origin = endpoint
         case .destination: destination = endpoint
+        case .via: return // nur ueber addVia
         }
+        advance()
+    }
+
+    /// Zwischenstopp: nur Haltestellen (Backend kennt nur Stop-IDs), hoechstens 2, nicht doppelt, nicht Start oder Ziel.
+    /// Standard-Aufenthalt 15 Min.; danach wie jede Wahl weiter.
+    private func addVia(_ endpoint: TripEndpoint, coordinate: GeoCoordinate?) {
+        guard case .stop(let id, let label) = endpoint, via.count < 2, !via.contains(where: { $0.id == id }),
+              origin.place?.routePoint != endpoint.routePoint, destination?.place?.routePoint != endpoint.routePoint else { return }
+        via.append(ViaStop(id: id, stayMinutes: 15, label: label, coordinate: coordinate))
+        advance()
+    }
+
+    func removeVia(at index: Int) {
+        guard via.indices.contains(index) else { return }
+        via.remove(at: index)
+    }
+
+    func setStay(_ minutes: Int, at index: Int) {
+        guard via.indices.contains(index) else { return }
+        let stop = via[index]
+        via[index] = ViaStop(id: stop.id, stayMinutes: minutes, label: stop.label, coordinate: stop.coordinate)
+    }
+
+    private func advance() {
         resetSearch()
         reloadSaved()
         if canPlan {
@@ -743,6 +795,7 @@ final class AppFlow {
     func swapEndpoints() {
         guard canSwap, let destination else { return }
         (origin, self.destination) = (destination, origin)
+        via.reverse()
     }
 
     // MARK: Planung
@@ -751,7 +804,7 @@ final class AppFlow {
         work?.cancel()
         guard let destination, blockedUntil == nil else { return }
         let origin = self.origin
-        let key = PlanKey(origin: origin, destination: destination, time: customTime, isArrivalTime: isArrivalTime, modes: modeFilter, accessibility: accessibility)
+        let key = PlanKey(origin: origin, destination: destination, time: customTime, isArrivalTime: isArrivalTime, modes: modeFilter, accessibility: accessibility, via: via)
         // H3: bei gleicher Anfrage bleibt die letzte Antwort fuer den Offline-Fall in Reserve.
         let previous = key == lastPlanKey ? (routes, calibrated) : (nil, nil)
         routes = nil
@@ -763,6 +816,7 @@ final class AppFlow {
         let time = customTime ?? deps.now()
         let arrival = isArrivalTime
         let modes: [ModeFilter]? = modeFilter.count == ModeFilter.allCases.count ? nil : ModeFilter.allCases.filter(modeFilter.contains)
+        let via = self.via
         work = Task {
             do throws(TransitError) {
                 // "Mein Standort": nur die Koordinate geht (gerundet) ans Backend, das Label bleibt lokal.
@@ -774,7 +828,8 @@ final class AppFlow {
                     here = .coordinate(fix.coordinate, label: PlanEndpoint.currentLocation.label)
                 }
                 guard let start = origin.place ?? here, let end = destination.place ?? here else { throw .locationUnavailable }
-                let trip = ManualTripRequest(origin: start, destination: end, targetTime: time, isArrivalTime: arrival, modes: modes, accessibility: accessibility)
+                let trip = ManualTripRequest(origin: start, destination: end, targetTime: time, isArrivalTime: arrival, modes: modes, accessibility: accessibility,
+                                             via: via.isEmpty ? nil : via)
                 try await consume(deps.planner.plan(trip, pace: pace))
                 guard !Task.isCancelled else { return }
                 lastPlanKey = key
@@ -1129,6 +1184,7 @@ final class AppFlow {
             // Ohne Standort: ab dem Halt, an dem man den Anschluss erwischen wollte, nicht ab dem urspruenglichen Start.
             origin = .place(.stop(id: id, label: stop.name ?? id))
         }
+        via = remainingVia
         customTime = nil
         isArrivalTime = false
         // Laeuft eine Erinnerungsfahrt, gilt wie beim Hinweis: startet eine andere Fahrt, endet ihr Wecker.
@@ -1164,6 +1220,15 @@ final class AppFlow {
         navExpired = false
         navFocus = nil
         navMapOnly = false
+    }
+
+    /// Zwischenstopps, die die laufende Fahrt noch vor sich hat: eine Folgeverbindung behaelt sie, erreichte entfallen.
+    private var remainingVia: [ViaStop] {
+        guard let journey = navJourney else { return via }
+        // Ohne Zielfahrzeug (Weg zum Ziel) liegen alle Stopps hinter einem.
+        guard let target = navStep.flatMap(NavigationEngine.targetVehicle) else { return [] }
+        let reached = journey.viaStays(via).filter { $0.arrivalLeg < target }.map(\.via)
+        return via.filter { !reached.contains($0) }
     }
 
     /// Wo die Alternativen starten: am Standort oder an der naechsten Station der Fahrt (Umstieg, Einstieg, Ausstieg).
@@ -1209,6 +1274,7 @@ final class AppFlow {
         let now = deps.now()
         let pace = self.pace
         let useNext = peekOrigin == .nextStation
+        let rest = remainingVia
         let modes: [ModeFilter]? = modeFilter.count == ModeFilter.allCases.count ? nil : ModeFilter.allCases.filter(modeFilter.contains)
         peekTask = Task {
             do {
@@ -1222,7 +1288,11 @@ final class AppFlow {
                     start = .coordinate(fix.coordinate, label: PlanEndpoint.currentLocation.label)
                     time = now
                 }
-                let trip = ManualTripRequest(origin: start, destination: target, targetTime: time, modes: modes, accessibility: accessibility)
+                // Start am Zwischenstopp selbst (Fahrt dorthin laeuft): der Stopp entfaellt, das Backend lehnt Start = Stopp ab.
+                let startID: String? = if case .stop(let id, _) = start { id } else { nil }
+                let via = rest.filter { stop in startID.map { $0 != stop.id && !$0.hasPrefix(stop.id + ":") } ?? true }
+                let trip = ManualTripRequest(origin: start, destination: target, targetTime: time, modes: modes, accessibility: accessibility,
+                                             via: via.isEmpty ? nil : via)
                 for try await stage in deps.planner.plan(trip, pace: pace) {
                     guard !Task.isCancelled else { return }
                     switch stage {
@@ -1287,7 +1357,7 @@ final class AppFlow {
               let end = destination?.place ?? endpoint(journey.legs.last?.destination) else { return nil }
         return ManualTripRequest(origin: start, destination: end, targetTime: journey.departure ?? deps.now(),
                                  modes: modeFilter.count == ModeFilter.allCases.count ? nil : ModeFilter.allCases.filter(modeFilter.contains),
-                                 accessibility: accessibility)
+                                 accessibility: accessibility, via: via.isEmpty ? nil : via)
     }
 
     /// Tipp auf eine Mitteilung oder "Starten"; wartet, bis der erste Start durchlaufen ist.
@@ -1318,6 +1388,7 @@ final class AppFlow {
         attribution = plan.attribution
         origin = .place(reminder.request.origin)
         destination = .place(reminder.request.destination)
+        via = reminder.request.via ?? []
         customTime = nil
         isArrivalTime = false
         lastPlanKey = nil
@@ -1336,6 +1407,7 @@ final class AppFlow {
         showsReminders = false
         origin = locationAllowed ? .currentLocation : .place(reminder.request.origin)
         destination = .place(reminder.request.destination)
+        via = reminder.request.via ?? []
         customTime = nil
         isArrivalTime = false
         if case .tripDetails = phase { send(.back) }

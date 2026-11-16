@@ -9,11 +9,12 @@ enum Spoken {
     }
 
     /// "Beste Verbindung: In 7 Minuten losgehen. 6 Minuten Fußweg, dann RE 5 Richtung Koblenz, 3 Minuten verspätet. Gleis 7."
-    static func hero(_ journey: Journey, calibrated: CalibratedJourney?, now: Date) -> String {
-        String(localized: "Beste Verbindung:") + " " + Spoken.journey(journey, calibrated: calibrated, now: now)
+    static func hero(_ journey: Journey, calibrated: CalibratedJourney?, now: Date, via: [ViaStop] = []) -> String {
+        String(localized: "Beste Verbindung:") + " " + Spoken.journey(journey, calibrated: calibrated, now: now, via: via)
     }
 
-    static func journey(_ journey: Journey, calibrated: CalibratedJourney?, now: Date) -> String {
+    /// `via`: Aufenthalte an Zwischenstopps zaehlen nicht als Umstieg.
+    static func journey(_ journey: Journey, calibrated: CalibratedJourney?, now: Date, via: [ViaStop] = []) -> String {
         var parts: [String] = []
         if let leave = calibrated?.departureFromOrigin ?? journey.departure {
             let minutes = Int((leave.timeIntervalSince(now) / 60).rounded(.down))
@@ -43,7 +44,8 @@ enum Spoken {
         if let arrive = calibrated?.arrivalAtDestination ?? journey.arrival {
             parts.append(String(localized: "Ankunft \(arrive.clockText)."))
         }
-        parts.append(journey.transfers == 0 ? String(localized: "Direkt.") : String(localized: "\(journey.transfers) Umstiege") + ".")
+        let transfers = journey.transfers(excludingStaysAt: via)
+        parts.append(transfers == 0 ? String(localized: "Direkt.") : String(localized: "\(transfers) Umstiege") + ".")
         if let sev = sev(journey) { parts.append(sev) }
         if calibrated?.transfers.contains(where: { $0.status == .missed }) == true {
             parts.append(String(localized: "Umstieg reicht nicht."))

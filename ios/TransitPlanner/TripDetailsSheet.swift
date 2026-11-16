@@ -29,12 +29,12 @@ struct TripDetailsSheet: View {
             let calibrated = flow.calibratedJourney(at: index)
             ScrollView {
                 VStack(spacing: 12) {
-                    DetailsHeader(journey: journey, calibrated: calibrated)
+                    DetailsHeader(journey: journey, calibrated: calibrated, via: flow.via)
                     if let sev = Spoken.sev(journey) {
                         CardHint(text: sev, symbol: "bus.fill", tone: .alert)
                     }
                     // Eine Karte fuer die ganze Zeitleiste (Figma), keine Listenzeilen mit Trennern.
-                    JourneyTimelineCard(journey: journey, calibrated: calibrated, destination: flow.destination?.label)
+                    JourneyTimelineCard(journey: journey, calibrated: calibrated, destination: flow.destination?.label, via: flow.via)
                     if !journey.remarks.isEmpty {
                         ContentCard {
                             VStack(alignment: .leading, spacing: 8) {
@@ -93,15 +93,20 @@ struct JourneyTimelineCard: View {
     let calibrated: CalibratedJourney?
     let destination: String?
     var expandWalks = false
+    /// Zwischenstopps der Planung; erkannte Aufenthalte ersetzen dort den Umstieg (unerkannte bleiben Umstieg).
+    var via: [ViaStop] = []
 
     var body: some View {
+        let stays = journey.viaStays(via)
         ContentCard {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(journey.legs, id: \.index) { leg in
                     if leg.isWalk {
-                        WalkTimelineRow(leg: leg, estimate: calibrated?.walks[leg.index], expanded: expandWalks)
+                        WalkTimelineRow(leg: leg, estimate: calibrated?.walks[leg.index], expanded: expandWalks,
+                                        afterStay: stays.contains { $0.arrivalLeg == leg.index - 1 })
                     } else {
                         VehicleTimeline(leg: leg)
+                        if let stay = stays.first(where: { $0.arrivalLeg == leg.index }) { StayRow(stay: stay) }
                     }
                 }
                 if let last = journey.legs.last {
@@ -117,6 +122,7 @@ struct JourneyTimelineCard: View {
 private struct DetailsHeader: View {
     let journey: Journey
     let calibrated: CalibratedJourney?
+    let via: [ViaStop]
 
     var body: some View {
         let leave = calibrated?.departureFromOrigin ?? journey.departure
@@ -132,7 +138,7 @@ private struct DetailsHeader: View {
             HStack(spacing: 4) {
                 if let leave, let arrive { MinutesText(seconds: Int(arrive.timeIntervalSince(leave))) }
                 Text(verbatim: "·")
-                TransfersText(count: journey.transfers)
+                TransfersText(count: journey.transfers(excludingStaysAt: via))
             }
             .font(.subheadline)
             .foregroundStyle(Color(.labelSecondary))
@@ -279,14 +285,48 @@ private struct VehicleTimeline: View {
     }
 }
 
+/// Aufenthalt am Zwischenstopp statt Umstieg: echte Dauer bis zum naechsten Fahrzeug (Echtzeit), Warnung wenn kuerzer
+/// als gewuenscht.
+private struct StayRow: View {
+    let stay: ViaStay
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            if !typeSize.isAccessibilitySize { Color.clear.frame(width: 56) }
+            Image(systemName: "bag")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .frame(width: 12)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(stay.minutes.map { String(localized: "Aufenthalt \(stay.via.label) · \($0) Min.") }
+                     ?? String(localized: "Aufenthalt \(stay.via.label)"))
+                    .font(.footnote.weight(.semibold))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(Motion.micro, value: stay.minutes)
+                if stay.isShort, let minutes = stay.minutes {
+                    CardHint(text: String(localized: "Aufenthalt nur \(minutes) Min."), symbol: "clock.badge.exclamationmark", tone: .warn)
+                }
+            }
+            .padding(.vertical, 8)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// Fussweg: gepunktete Schiene, kalibrierte Gehzeit, Wegschritte (API v0.3).
 private struct WalkTimelineRow: View {
     let leg: Leg
     let estimate: WalkEstimate?
+    /// Weg nach einem Aufenthalt: gehoert zum Aufenthalt, kein Umstieg.
+    let afterStay: Bool
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var showsAll: Bool
-    init(leg: Leg, estimate: WalkEstimate?, expanded: Bool = false) {
-        self.leg = leg; self.estimate = estimate; _showsAll = State(initialValue: expanded)
+    init(leg: Leg, estimate: WalkEstimate?, expanded: Bool = false, afterStay: Bool = false) {
+        self.leg = leg; self.estimate = estimate; self.afterStay = afterStay; _showsAll = State(initialValue: expanded)
     }
 
     /// "12 Min. · 875 m" mit klarem Trennzeichen; "ca." solange nur die Fahrplanzeit vorliegt.
@@ -318,7 +358,7 @@ private struct WalkTimelineRow: View {
                 let row = ax ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(spacing: 8))
                 row {
                     walkHeader
-                    Text(leg.isTransfer == true ? "Umstieg" : "Fußweg").font(.footnote).foregroundStyle(.secondary)
+                    Text(leg.isTransfer == true && !afterStay ? "Umstieg" : "Fußweg").font(.footnote).foregroundStyle(.secondary)
                 }
                 if estimate != nil {
                     Text("An dein Gehtempo angepasst").font(.caption).foregroundStyle(Color(.labelSecondary))

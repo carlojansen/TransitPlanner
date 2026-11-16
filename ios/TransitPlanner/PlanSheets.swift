@@ -285,7 +285,7 @@ struct NearbyStopRow: View {
     var body: some View {
         if let id = stop.id, let name = stop.name {
             let mode = stop.modes?.first ?? .unknown
-            Button { flow.choose(.stop(id: id, label: name)) } label: {
+            Button { flow.choose(.stop(id: id, label: name), coordinate: stop.coordinate) } label: {
                 ListRow(symbol: mode.symbolName, tint: mode.color, title: name) {
                     if let meters = stop.distanceMeters {
                         let minutes = flow.pace.walkMinutes(meters: meters)
@@ -330,6 +330,7 @@ struct PlanSheet: View {
     @Environment(AppFlow.self) private var flow
     @Environment(\.sheetLevel) private var level
     @FocusState private var focused: Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// Kleinster Detent ohne Eingabe: nur Zusammenfassung und Suchen-Knopf (Formular und Liste haetten dort keinen Platz).
     private var showsPeek: Bool { level == .peek && flow.activeSlot == nil && flow.assigningRole == nil }
@@ -361,6 +362,10 @@ struct PlanSheet: View {
         VStack(spacing: 12) {
             HStack(spacing: 8) {
                 Text(label(of: .origin) ?? String(localized: "Start"))
+                ForEach(flow.via, id: \.id) { stop in
+                    Image(systemName: "arrow.right").foregroundStyle(.secondary).accessibilityHidden(true)
+                    Text(stop.label)
+                }
                 Image(systemName: "arrow.right").foregroundStyle(.secondary).accessibilityHidden(true)
                 Text(label(of: .destination) ?? String(localized: "Ziel"))
             }
@@ -419,21 +424,32 @@ struct PlanSheet: View {
             card {
                 VStack(spacing: 0) {
                     field(.origin)
+                    ForEach(Array(flow.via.enumerated()), id: \.element.id) { index, stop in
+                        Divider().padding(.leading, 16)
+                        viaRow(stop, at: index)
+                    }
+                    if flow.activeSlot == .via {
+                        Divider().padding(.leading, 16)
+                        field(.via)
+                    }
                     Divider().padding(.leading, 16)
                     field(.destination)
                 }
             }
-            Button("Start und Ziel tauschen", systemImage: "arrow.up.arrow.down") { flow.swapEndpoints() }
-                .labelStyle(.iconOnly)
-                .foregroundStyle(Color(.accentBlue))
-                .frame(width: 44, height: 44)
-                .background(Color(.fillTertiary), in: .circle)
-                .contentShape(.circle)
-                .sensoryFeedback(.selection, trigger: flow.origin)
-                .disabled(!flow.canSwap)
-                .accessibilityIdentifier("swapButton")
+            VStack(spacing: 8) {
+                circleButton("Start und Ziel tauschen", systemImage: "arrow.up.arrow.down") { flow.swapEndpoints() }
+                    .sensoryFeedback(.selection, trigger: flow.origin)
+                    .disabled(!flow.canSwap)
+                    .accessibilityIdentifier("swapButton")
+                // Hoechstens 2 Zwischenstopps (Backend-Regel); waehrend der Suche nach einem Stopp kein zweites Plus.
+                if flow.via.count < 2, flow.activeSlot != .via {
+                    circleButton("Zwischenstopp hinzufügen", systemImage: "plus") { flow.send(.editEndpoint(.via)) }
+                        .accessibilityIdentifier("addViaButton")
+                }
+            }
         }
         .animation(Motion.micro, value: flow.origin)
+        .animation(Motion.micro, value: flow.via)
         if !focused { timeRow }
         if !focused { modePills }
         if !focused { StepFreeToggle().font(.subheadline).padding(.horizontal, 6).padding(.top, -6) } // Rand wie die Pillen-Beschriftung
@@ -504,8 +520,56 @@ struct PlanSheet: View {
         .sensoryFeedback(.selection, trigger: flow.modeFilter)
     }
 
+    private func circleButton(_ title: LocalizedStringKey, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(title, systemImage: systemImage, action: action)
+            .labelStyle(.iconOnly)
+            .foregroundStyle(Color(.accentBlue))
+            .frame(width: 44, height: 44)
+            .background(Color(.fillTertiary), in: .circle)
+            .contentShape(.circle)
+    }
+
+    /// Zwischenstopp: Name, Aufenthalt (5 bis 120 Min.) und Entfernen. Bei AX-Groessen Aufenthalt unter dem Namen.
+    private func viaRow(_ stop: ViaStop, at index: Int) -> some View {
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 8))
+        return HStack(spacing: 4) {
+            layout {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Über").font(.caption).foregroundStyle(Color(.labelSecondary)).accessibilityHidden(true)
+                    Text(stop.label).lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Stepper(value: Binding { stop.stayMinutes } set: { flow.setStay($0, at: index) }, in: 5...120, step: 5) {
+                    Text("\(stop.stayMinutes) Min.")
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .animation(Motion.micro, value: stop.stayMinutes)
+                }
+                .fixedSize()
+                .accessibilityLabel(Text("Aufenthalt \(stop.label)"))
+                .accessibilityValue(Text("\(stop.stayMinutes) Minuten"))
+            }
+            Button("Zwischenstopp entfernen", systemImage: "xmark.circle.fill") { flow.removeVia(at: index) }
+                .labelStyle(.iconOnly)
+                .foregroundStyle(.secondary)
+                .frame(width: 44, height: 44)
+                .contentShape(.rect)
+                .buttonStyle(.plain)
+                .accessibilityValue(Text(stop.label))
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 4)
+        .padding(.vertical, 4)
+        .frame(minHeight: 56)
+    }
+
     @ViewBuilder private func field(_ slot: EndpointSlot) -> some View {
-        let title: LocalizedStringKey = slot == .origin ? "Von" : "Nach"
+        let title: LocalizedStringKey = switch slot {
+        case .origin: "Von"
+        case .destination: "Nach"
+        case .via: "Über"
+        }
         if flow.activeSlot == slot {
             fieldContent(slot, title: title)
         } else {
@@ -517,7 +581,7 @@ struct PlanSheet: View {
             .buttonStyle(.plain)
             .accessibilityLabel(Text(title))
             .accessibilityValue(current ?? String(localized: "leer"))
-            .accessibilityIdentifier(slot == .origin ? "originRow" : "destinationRow")
+            .accessibilityIdentifier(slot == .origin ? "originRow" : slot == .via ? "viaRow" : "destinationRow")
         }
     }
 
@@ -532,7 +596,7 @@ struct PlanSheet: View {
                 .accessibilityHidden(true)
             if self.flow.activeSlot == slot {
                 HStack(spacing: 8) {
-                    TextField(title, text: $flow.query, prompt: Text(current ?? String(localized: "Haltestelle oder Adresse")))
+                    TextField(title, text: $flow.query, prompt: Text(current ?? (slot == .via ? String(localized: "Haltestelle") : String(localized: "Haltestelle oder Adresse"))))
                         .autocorrectionDisabled()
                         .submitLabel(.search)
                         .focused($focused)
@@ -579,7 +643,8 @@ struct PlanSheet: View {
 
     @ViewBuilder private var suggestions: some View {
         let isEmpty = flow.favorites.isEmpty && flow.recents.isEmpty && flow.nearby.isEmpty && !flow.locationAllowed
-        if flow.locationAllowed, flow.assigningRole == nil {
+        viaHint
+        if flow.locationAllowed, flow.assigningRole == nil, flow.activeSlot != .via {
             Section { locationRow.listRowBackground(Color(.surfaceCard)) }
         }
         if !flow.favorites.isEmpty {
@@ -639,8 +704,19 @@ struct PlanSheet: View {
             .map { (endpoint: $0.0, symbol: $0.1) }
     }
 
+    /// Zwischenstopps kennt das Backend nur als Haltestelle: Adressen werden nicht angeboten, gewaehlte abgelehnt.
+    @ViewBuilder private var viaHint: some View {
+        if flow.activeSlot == .via {
+            Label("Zwischenstopp: bitte eine Haltestelle wählen", systemImage: "info.circle")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .listRowBackground(Color.clear)
+        }
+    }
+
     @ViewBuilder private var typed: some View {
         let local = localMatches
+        viaHint
         if !local.isEmpty {
             Section {
                 ForEach(local, id: \.endpoint) { match in
@@ -651,7 +727,7 @@ struct PlanSheet: View {
         if flow.scope == .stops {
             serverResults
         } else {
-            if !flow.results.addresses.isEmpty {
+            if !flow.results.addresses.isEmpty, flow.activeSlot != .via {
                 Section {
                     ForEach(flow.results.addresses, id: \.self) { address in
                         Button { flow.choose(.coordinate(address.coordinate, label: address.name)) } label: {
@@ -690,7 +766,7 @@ struct PlanSheet: View {
             ForEach(flow.results.stops, id: \.self) { stop in
                 if let id = stop.id, let name = stop.name {
                     let mode = stop.modes?.first ?? .unknown
-                    Button { flow.choose(.stop(id: id, label: name)) } label: {
+                    Button { flow.choose(.stop(id: id, label: name), coordinate: stop.coordinate) } label: {
                         ListRow(symbol: mode.symbolName, tint: mode.color, title: name, subtitle: stop.area)
                     }
                     .buttonStyle(.plain)
@@ -868,7 +944,7 @@ struct RouteSheet: View {
                     ForEach(Array(rest.enumerated()), id: \.offset) { position, entry in
                         if position > 0 { Divider().padding(.leading, 16) }
                         Button { flow.send(.journeySelected(entry.offset)) } label: {
-                            AlternativeRow(journey: entry.element, calibrated: flow.calibratedJourney(at: entry.offset))
+                            AlternativeRow(journey: entry.element, calibrated: flow.calibratedJourney(at: entry.offset), via: flow.via)
                                 .padding(.horizontal, 16)
                         }
                         .buttonStyle(.plain)
@@ -938,7 +1014,7 @@ struct HeroCard: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(.rect)
                         .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(Spoken.hero(journey, calibrated: calibrated, now: context.date))
+                        .accessibilityLabel(Spoken.hero(journey, calibrated: calibrated, now: context.date, via: flow.via))
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint("Öffnet die Fahrtdetails")
@@ -961,7 +1037,7 @@ struct HeroCard: View {
                 MinutesText(seconds: Int(arrive.timeIntervalSince(leave)))
                 Text(verbatim: "·")
             }
-            TransfersText(count: journey.transfers)
+            TransfersText(count: journey.transfers(excludingStaysAt: flow.via))
         }
     }
 
@@ -1012,6 +1088,8 @@ struct HeroCard: View {
 struct AlternativeRow: View {
     let journey: Journey
     let calibrated: CalibratedJourney?
+    /// Zwischenstopps der Planung: erkannte Aufenthalte zaehlen nicht als Umstieg.
+    var via: [ViaStop] = []
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -1052,7 +1130,7 @@ struct AlternativeRow: View {
             .padding(.vertical, 4)
             .contentShape(.rect)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Spoken.journey(journey, calibrated: calibrated, now: context.date))
+            .accessibilityLabel(Spoken.journey(journey, calibrated: calibrated, now: context.date, via: via))
         }
     }
 
@@ -1089,8 +1167,8 @@ struct AlternativeRow: View {
             DelayBadge(minutes: delay)
         } else if journey.realtime {
             Text("pünktlich").font(.caption).foregroundStyle(Color(.statusOk))
-        } else if journey.transfers > 0 {
-            TransfersText(count: journey.transfers).font(.caption).foregroundStyle(Color(.labelSecondary))
+        } else if journey.transfers(excludingStaysAt: via) > 0 {
+            TransfersText(count: journey.transfers(excludingStaysAt: via)).font(.caption).foregroundStyle(Color(.labelSecondary))
         }
     }
 }
