@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        center.setNotificationCategories([SystemNotifier.category])
+        center.setNotificationCategories([SystemNotifier.category, SystemNotifier.replanCategory])
         TripRefreshHandler.run = { [flow] in await flow.refreshFromActivity() }
         return true
     }
@@ -25,9 +25,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
         let action = response.actionIdentifier
+        // Zuerst die Kategorie: ein Vorschlag geht nie an die Erinnerungen. Gueltig nur zum aktuellen Vorschlag (`showProposal`).
+        let proposal = SystemNotifier.proposalID(of: response.notification)
         let id = SystemNotifier.tripID(of: response.notification)
         Task { @MainActor in
-            if let id {
+            if let proposal {
+                if action == UNNotificationDefaultActionIdentifier { flow.showProposal(proposal) }
+            } else if let id {
                 switch action {
                 case UNNotificationDefaultActionIdentifier, SystemNotifier.startAction: flow.openReminder(id)
                 case SystemNotifier.snoozeAction: await flow.reminders.snooze(id)

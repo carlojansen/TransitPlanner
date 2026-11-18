@@ -157,6 +157,55 @@ struct SystemNotifier: ReminderNotifying {
     }
 }
 
+/// Mitteilung zum Umplanungs-Vorschlag (SPEZIFIKATION 4.4). Feste Kennung: es gibt hoechstens einen Vorschlag, ein neuer
+/// ersetzt den alten. Texte nur aus Fahrplandaten (`AppFlow.replanTexts`).
+struct ReplanAlert: Sendable, Hashable {
+    static let identifier = "replan"
+    let proposalID: UUID
+    let title: String
+    let body: String
+}
+
+/// Mitteilungen der Umplanung hinter einem Protokoll (Tests). Nicht `ReminderNotifying`: eigene Kategorie, eigener Tipp.
+protocol ReplanNotifying: Sendable {
+    func post(_ alert: ReplanAlert) async
+    func remove(_ identifiers: [String])
+}
+
+extension SystemNotifier: ReplanNotifying {
+    static let replanCategoryID = "replan"
+    private static let proposalKey = "proposalID"
+
+    /// Ohne Aktionen: Tippen oeffnet das Blatt, gewechselt wird nur nach Bestaetigung in der App.
+    static var replanCategory: UNNotificationCategory {
+        UNNotificationCategory(identifier: replanCategoryID, actions: [], intentIdentifiers: [])
+    }
+
+    /// Vorschlags-ID nur aus der eigenen Kategorie; Erinnerungen liefern nil.
+    static func proposalID(of notification: UNNotification) -> UUID? {
+        let content = notification.request.content
+        guard content.categoryIdentifier == replanCategoryID else { return nil }
+        return (content.userInfo[proposalKey] as? String).flatMap(UUID.init(uuidString:))
+    }
+
+    /// Sofort, zeitkritisch wie der Aufbruch-Wecker.
+    static func request(for alert: ReplanAlert) -> UNNotificationRequest {
+        let content = UNMutableNotificationContent()
+        content.title = alert.title
+        content.body = alert.body
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        content.categoryIdentifier = replanCategoryID
+        content.userInfo = [proposalKey: alert.proposalID.uuidString]
+        return UNNotificationRequest(identifier: ReplanAlert.identifier, content: content, trigger: nil)
+    }
+
+    /// Scheitert still (Mitteilungen aus): der Vorschlag steht beim naechsten Oeffnen in der App.
+    func post(_ alert: ReplanAlert) async {
+        try? await UNUserNotificationCenter.current().add(Self.request(for: alert))
+    }
+}
+
 /// Mehrere Erinnerungen: Liste, Mitteilungen, Neuberechnung und Aufraeumen. Reine Logik in `ReminderPlan`.
 @Observable @MainActor
 final class ReminderCenter {

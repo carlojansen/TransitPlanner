@@ -3,6 +3,7 @@ import Foundation
 import Synchronization
 import Testing
 import TransitCore
+import UserNotifications
 @testable import TransitPlanner
 
 /// Proaktive Umplanung in AppFlow (SPEZIFIKATION 4.4) mit der Deutz-Fahrt: ICE 47 an Köln Messe/Deutz 07:32, RB 25 ab 07:34
@@ -17,6 +18,7 @@ import TransitCore
         let planner: FakeRoutePlanner
         let refresher = FakeRefresher()
         let activities = FakeTripActivities()
+        let notifier = FakeNotifier()
         let blocked = Mutex<Date?>(nil)
         /// So lange dauert die Abfrage der Rate-Limit-Sperre (Fenster nach einer gescheiterten Suche).
         let blockedDelay: Duration
@@ -66,7 +68,8 @@ import TransitCore
 
     /// Navigation der Deutz-Fahrt, im ICE (07:10); Folgesuchen liefern `alternatives()`.
     func navigating(_ env: Env, via stops: [TripEndpoint] = [], configure: (AppFlow) -> Void = { _ in }) async -> AppFlow {
-        var deps = AppDependencies.fakes(planner: env.planner, onboarding: .withLocation, debounce: .milliseconds(10), refresher: env.refresher)
+        var deps = AppDependencies.fakes(planner: env.planner, onboarding: .withLocation, debounce: .milliseconds(10),
+                                         refresher: env.refresher, notifier: env.notifier)
         deps.now = { env.clock }
         deps.activities = env.activities
         deps.blockedUntil = {
@@ -469,6 +472,155 @@ import TransitCore
         #expect(request.origin == .stop(id: "hansaring"))
         #expect(request.targetTime == Self.at("07:38:00"))
         #expect(request.via?.map(\.id) == ["zuelpicher12"])
+    }
+
+    // MARK: Schritt 5: Banner, Mitteilung, Blatt
+
+    /// Vordergrund: keine Mitteilung. Hintergrund: eine, eigene Kategorie, zeitkritisch, nur Linie, Halt, Zeit und Gleis.
+    @Test func proposalInTheBackgroundPostsATimeSensitiveAlert() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        try await refresh(f, env, iceDelay: 180)
+        let offer = try #require(f.replanOffer)
+        #expect(env.notifier.replanAlert == nil)
+        f.movedToBackground()
+        await f.waitForReplan()
+        let alert = try #require(env.notifier.replanAlert)
+        #expect(alert.proposalID == offer.proposal.id)
+        #expect(alert.title == "Anschluss RB 25 reicht nicht mehr")
+        #expect(alert.body.hasPrefix("Vorschlag: 1 um ") && alert.body.contains("ab Halt deutzTram"))
+        // Ziel-Label des Nutzers ("Weyertal 119a") und Koordinaten nie, keine Emojis
+        #expect(!alert.body.contains("119a") && !alert.body.contains("50.9"))
+        #expect((alert.title + alert.body).unicodeScalars.allSatisfy { !$0.properties.isEmojiPresentation })
+        #expect(env.notifier.alerts.isEmpty) // nicht bei den Erinnerungen
+        let request = SystemNotifier.request(for: alert)
+        #expect(request.content.interruptionLevel == .timeSensitive)
+        #expect(request.content.categoryIdentifier == SystemNotifier.replanCategory.identifier)
+        #expect(request.content.categoryIdentifier != SystemNotifier.category.identifier)
+        #expect(SystemNotifier.replanCategory.actions.isEmpty)
+        #expect(request.content.userInfo.values.contains { $0 as? String == offer.proposal.id.uuidString })
+    }
+
+    enum ReplanEnd: CaseIterable, Sendable { case decline, accept, expire, end, arrive }
+
+    /// Die Mitteilung verschwindet bei Ablehnen, Uebernehmen, Verfall, Beenden und Ankunft.
+    @Test(arguments: ReplanEnd.allCases) func alertIsRemovedWhenTheProposalEnds(_ end: ReplanEnd) async throws {
+        let env = Env()
+        let f = await navigating(env)
+        f.movedToBackground()
+        try await refresh(f, env, iceDelay: 180)
+        let id = try #require(f.replanOffer?.proposal.id)
+        #expect(env.notifier.replanAlert?.proposalID == id)
+        switch end {
+        case .decline: f.declineReplan(id)
+        case .accept: f.acceptReplan(id)
+        case .expire: try await refresh(f, env, iceDelay: -100)
+        case .end: f.send(.back)
+        case .arrive:
+            env.set("08:04:00")
+            f.navigationUpdate(position: GeoCoordinate(latitude: 50.9233, longitude: 6.9200), accuracy: 5, now: env.clock)
+        }
+        await f.waitForReplan()
+        #expect(f.replanOffer == nil)
+        #expect(env.notifier.replanAlert == nil)
+    }
+
+    /// Tipp (Mitteilung oder Banner) oeffnet das Blatt mit der Antwort ab dem Suchstart, ohne neue Suche.
+    @Test func showProposalOpensTheSheetWithTheAnswer() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        try await refresh(f, env, iceDelay: 180)
+        let offer = try #require(f.replanOffer)
+        f.showProposal(offer.proposal.id)
+        guard case .loaded(let response, let walks, _) = f.peek else {
+            Issue.record("Blatt nicht vorbelegt")
+            return
+        }
+        #expect(response.journeys.count == 2 && walks?.count == 2)
+        #expect(env.planner.callCount == 2)
+        #expect(f.peekOrigin == .nextStation)
+        #expect(f.peekStart?.name == "Köln Messe/Deutz" && f.peekStart?.time == Self.at("07:35:00"))
+    }
+
+    /// Gegenproben: fremde ID, Suchstart erreicht, Fahrt beendet. Dann weder Blatt noch Wechsel.
+    @Test func showProposalIgnoresForeignExpiredOrEndedProposals() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        try await refresh(f, env, iceDelay: 180)
+        let id = try #require(f.replanOffer?.proposal.id)
+        f.showProposal(UUID())
+        #expect(f.peek == nil)
+        env.set("07:35:00") // Suchstart (Echtzeit-Ankunft) erreicht, noch kein Tick
+        f.showProposal(id)
+        f.acceptReplan(id)
+        #expect(f.peek == nil && f.pendingSwitch == nil)
+        env.set("07:20:00")
+        f.send(.back)
+        f.showProposal(id)
+        #expect(f.peek == nil)
+    }
+
+    /// Jetzt-Karte: Vorschlag mit Aktionen statt "reicht nicht"; nach "Übernehmen" "Wechsel auf 1 vorgemerkt".
+    @Test func cardShowsProposalThenReservedSwitch() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        try await refresh(f, env, iceDelay: 180)
+        let id = try #require(f.replanOffer?.proposal.id)
+        var input = try #require(f.navInput)
+        var hint = try #require(NavigationPresenter.card(input).hint)
+        #expect(hint.action == .replan(id))
+        #expect(hint.text.hasPrefix("Anschluss RB 25 reicht nicht mehr. Vorschlag: 1 um "))
+        f.acceptReplan(id)
+        input = try #require(f.navInput)
+        hint = try #require(NavigationPresenter.card(input).hint)
+        #expect(hint.text == "Wechsel auf 1 vorgemerkt")
+        #expect(hint.action == nil && !hint.text.contains("reicht nicht"))
+    }
+
+    /// Verfall (Anschluss reicht wieder): kurzer Hinweis, nach `replanNoticeSeconds` weg. Ablehnen zeigt ihn nicht.
+    @Test func expiryShowsAShortNotice() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        try await refresh(f, env, iceDelay: 180)
+        try await refresh(f, env, iceDelay: -100)
+        #expect(f.replanOffer == nil)
+        #expect(f.replanBanner == .expired("Anschluss RB 25 reicht wieder"))
+        let input = try #require(f.navInput)
+        #expect(NavigationPresenter.card(input).hint?.text == "Anschluss RB 25 reicht wieder")
+        await tick(f, env, at: "07:10:59")
+        #expect(f.replanBanner != nil)
+        await tick(f, env, at: "07:11:00")
+        #expect(f.replanBanner == nil)
+        try await refresh(f, env, iceDelay: 180)
+        f.declineReplan(try #require(f.replanOffer?.proposal.id))
+        #expect(f.replanBanner == nil)
+    }
+
+    /// Suchstart erreicht: der Vorschlag endet still, kein Hinweis "reicht wieder" (der gilt nur fuer den Verfall).
+    @Test func reachingTheSearchStartEndsTheProposalSilently() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        try await refresh(f, env, iceDelay: 180)
+        #expect(f.replanOffer != nil)
+        await tick(f, env, at: "07:35:30")
+        #expect(f.replanOffer == nil)
+        #expect(f.replanBanner == nil)
+    }
+
+    /// Wechseln im Blatt aus dem Vorschlag merkt ab dessen Suchstart vor (Hansaring), nicht ab der naechsten Station (Deutz).
+    @Test func choosingInTheProposalSheetReservesFromTheSearchStart() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        env.refresher.set(.success(try Self.shifted(leg: 4, by: -170))) // Tram 12 am Hansaring reicht nicht, im ICE
+        await f.refreshNavigation()
+        await f.waitForReplan()
+        let offer = try #require(f.replanOffer)
+        f.showProposal(offer.proposal.id)
+        #expect(f.peekStart?.name == "Köln Hansaring")
+        f.chooseAlternative(offer.proposal.alternativeIndex)
+        #expect(f.pendingSwitch?.proposal.search.alightingVehicle == 2)
+        #expect(f.pendingSwitch?.proposal.search.key == offer.proposal.search.key)
+        #expect(f.peek == nil && f.replanOffer == nil)
     }
 }
 #endif

@@ -17,7 +17,8 @@ struct NowCard: Sendable, Equatable {
     }
 
     struct Hint: Sendable, Equatable {
-        enum Action: Sendable, Equatable { case nextConnection }
+        /// `replan`: "Übernehmen", "Behalten" und "Alternativen ansehen" zum Vorschlag mit dieser ID.
+        enum Action: Sendable, Equatable { case nextConnection, replan(UUID) }
         let text: String
         let symbol: String
         let tone: Tone
@@ -89,6 +90,16 @@ struct RouteOverview: Sendable, Equatable {
 
 extension Tone: Equatable {}
 
+/// Umplanung in der Jetzt-Karte (SPEZIFIKATION 4.4), abgeleitet in `AppFlow.replanBanner`.
+enum ReplanBanner: Sendable, Equatable {
+    /// "Anschluss RB 25 reicht nicht mehr", darunter nur der beste Vorschlag.
+    case offer(id: UUID, title: String, body: String)
+    /// "Wechsel auf 1 vorgemerkt" statt "reicht nicht".
+    case reserved(String)
+    /// Kurz nach Verfall: "Anschluss RB 25 reicht wieder".
+    case expired(String)
+}
+
 /// Reine Ableitung der Anzeige aus Zustand, Verbindung und Position (ohne SwiftUI, testbar).
 enum NavigationPresenter {
     struct Input {
@@ -104,6 +115,7 @@ enum NavigationPresenter {
         let destinationLabel: String
         let startedAt: Date?
         let expired: Bool
+        var replan: ReplanBanner?
     }
 
     static func card(_ input: Input) -> NowCard {
@@ -115,6 +127,19 @@ enum NavigationPresenter {
         } else if input.expired, input.step != .arrived {
             card.hint = NowCard.Hint(text: String(localized: "Die Verbindung ist nicht mehr aktuell."),
                                      symbol: "clock.arrow.circlepath", tone: .alert, action: .nextConnection)
+        }
+        // Umplanung: vorgemerkt und Vorschlag ersetzen "reicht nicht" (und den Ausfall des verlassenen Anschlusses);
+        // der Hinweis nach Verfall steht nur ohne anderen Hinweis.
+        switch input.replan {
+        case .reserved(let text):
+            card.hint = NowCard.Hint(text: text, symbol: "arrow.triangle.branch", tone: .info)
+        case .offer(let id, let title, let body):
+            card.hint = NowCard.Hint(text: body.isEmpty ? title : "\(title). \(body)", symbol: "xmark.octagon.fill",
+                                     tone: .alert, action: .replan(id))
+        case .expired(let text) where card.hint == nil:
+            card.hint = NowCard.Hint(text: text, symbol: "checkmark.circle.fill", tone: .info)
+        case .expired, nil:
+            break
         }
         return card
     }

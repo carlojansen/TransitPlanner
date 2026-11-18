@@ -8,7 +8,7 @@ extension AppFlow {
         return NavigationPresenter.Input(step: step, journey: journey, geometry: geometry, walks: navWalks,
                                          position: navPosition, now: navNow, pace: pace,
                                          destinationLabel: destination?.label ?? String(localized: "Ziel"),
-                                         startedAt: navStartedAt, expired: navExpired)
+                                         startedAt: navStartedAt, expired: navExpired, replan: replanBanner)
     }
 
     /// Halt, auf den die Navigation zulaeuft (Gleis-Pin auf der Karte).
@@ -55,6 +55,13 @@ struct NowCardView: View {
                             .frame(minHeight: 44)
                             .accessibilityIdentifier("nextConnection")
                     }
+                    if case .replan(let id) = hint.action {
+                        // AX bzw. schmal: untereinander statt abgeschnitten.
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 16) { replanButtons(id) }
+                            VStack(alignment: .leading, spacing: 0) { replanButtons(id) }
+                        }
+                    }
                 }
             }
         }
@@ -73,6 +80,24 @@ struct NowCardView: View {
         .padding(.horizontal, 16)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("nowCard")
+    }
+
+    /// Vorschlag: uebernehmen (Wechsel vormerken), behalten oder alle Alternativen ab dem Suchstart ansehen.
+    @ViewBuilder private func replanButtons(_ id: UUID) -> some View {
+        Button("Übernehmen", systemImage: "checkmark") { withAnimation(Motion.standard) { flow.acceptReplan(id) } }
+            .font(.subheadline.weight(.semibold))
+            .frame(minHeight: 44)
+            .accessibilityHint("Merkt den Wechsel vor, die Fahrt läuft bis zum Umstieg weiter")
+            .accessibilityIdentifier("acceptReplan")
+        Button("Behalten", systemImage: "xmark") { withAnimation(Motion.standard) { flow.declineReplan(id) } }
+            .font(.subheadline.weight(.semibold))
+            .frame(minHeight: 44)
+            .accessibilityHint("Die Fahrt bleibt unverändert")
+            .accessibilityIdentifier("declineReplan")
+        Button("Alternativen ansehen", systemImage: "arrow.triangle.branch") { withAnimation(Motion.standard) { flow.showProposal(id) } }
+            .font(.subheadline.weight(.semibold))
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("showProposal")
     }
 
     private var headline: some View {
@@ -521,7 +546,8 @@ struct AlternativesView: View {
         }
     }
 
-    /// Umschalter: ab aktueller Position oder ab der naechsten Station (z. B. "Köln Messe/Deutz").
+    /// Umschalter: ab aktueller Position oder ab der naechsten Station (z. B. "Köln Messe/Deutz"); aus dem Vorschlag ab
+    /// dessen Suchstart.
     private var originPicker: some View {
         let next = flow.nextStation
         return VStack(alignment: .leading, spacing: 4) {
@@ -534,10 +560,12 @@ struct AlternativesView: View {
             .pickerStyle(.segmented)
             .disabled(next == nil)
             .accessibilityIdentifier("peekOrigin")
-            if flow.peekOrigin == .nextStation, let next {
-                Text("Ab \(next.name), \(next.time, format: .clock)")
+            if flow.peekOrigin == .nextStation, let start = flow.peekStart {
+                Text("Ab \(start.name), \(start.time, format: .clock)")
                     .font(.footnote)
                     .foregroundStyle(Color(.labelSecondary))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
             }
         }
     }

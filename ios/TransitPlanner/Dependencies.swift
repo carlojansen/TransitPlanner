@@ -57,6 +57,8 @@ struct AppDependencies: Sendable {
     /// Erinnerungen (lokal, verschluesselt) und ihre lokalen Mitteilungen.
     var reminders: any ReminderStoring
     var notifier: any ReminderNotifying
+    /// Mitteilung zum Umplanungs-Vorschlag (eigene Kategorie).
+    var replanNotifier: any ReplanNotifying
     /// Naechsten Hintergrund-Lauf anmelden (BGAppRefreshTask); nil = keiner noetig.
     var scheduleBackgroundCheck: @Sendable (Date?) -> Void
     /// Stand fuer Widgets (App Group); Tests und Fakes bleiben ohne echten Container.
@@ -136,6 +138,7 @@ struct AppDependencies: Sendable {
             places: container.map { SwiftDataPlaces(container: $0, sealer: sealer) } ?? MemoryPlaces(),
             reminders: stored.map { SwiftDataReminders(container: $0, sealer: sealer) } ?? MemoryReminders(isDurable: false),
             notifier: SystemNotifier(),
+            replanNotifier: SystemNotifier(),
             scheduleBackgroundCheck: { date in
                 guard let date else {
                     BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: ReminderCenter.backgroundTaskID)
@@ -240,7 +243,7 @@ extension AppDependencies {
                                    guard let nearby = FakeData.nearby else { throw .decodingFailed }
                                    return nearby
                                },
-                               places: places, reminders: reminders, notifier: notifier,
+                               places: places, reminders: reminders, notifier: notifier, replanNotifier: notifier,
                                scheduleBackgroundCheck: { _ in },
                                debounce: debounce, waitingHint: waitingHint)
     }
@@ -285,9 +288,10 @@ final class FakeTripActivities: TripActivityControlling {
     }
 }
 
-/// Fake-Mitteilungen: merkt sich, was iOS gerade einplanen wuerde.
-final class FakeNotifier: ReminderNotifying {
+/// Fake-Mitteilungen: merkt sich, was iOS gerade einplanen wuerde (Erinnerungen und Umplanung).
+final class FakeNotifier: ReminderNotifying, ReplanNotifying {
     let pending = Mutex<[String: ReminderAlert]>([:])
+    let replan = Mutex<[String: ReplanAlert]>([:])
     let granted: Bool
 
     init(granted: Bool = true) { self.granted = granted }
@@ -298,7 +302,13 @@ final class FakeNotifier: ReminderNotifying {
     func add(_ alerts: [ReminderAlert]) async throws(TransitError) {
         pending.withLock { for alert in alerts { $0[alert.identifier] = alert } }
     }
-    func remove(_ identifiers: [String]) { pending.withLock { for id in identifiers { $0[id] = nil } } }
+    func remove(_ identifiers: [String]) {
+        pending.withLock { for id in identifiers { $0[id] = nil } }
+        replan.withLock { for id in identifiers { $0[id] = nil } }
+    }
+
+    var replanAlert: ReplanAlert? { replan.withLock { $0[ReplanAlert.identifier] } }
+    func post(_ alert: ReplanAlert) async { replan.withLock { $0[ReplanAlert.identifier] = alert } }
 }
 
 /// Fake-Refresh: liefert die Verbindung mit gleichem Token aus den Fake-Daten oder einen vorgegebenen Stand/Fehler.

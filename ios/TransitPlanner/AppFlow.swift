@@ -344,9 +344,20 @@ final class AppFlow {
         let answer: ReplanAnswer
     }
     /// Aktueller Vorschlag; alles zur Umplanung nur im RAM, nie in SwiftData oder Logs, mit der Navigation verworfen.
-    private(set) var replanOffer: ReplanOffer?
+    /// Die Mitteilung folgt ihm (`syncReplanAlert`): jedes Ende des Vorschlags entfernt sie.
+    private(set) var replanOffer: ReplanOffer? { didSet { syncReplanAlert() } }
     /// "Uebernehmen": Wechsel vorgemerkt. Die laufende Fahrt bleibt bis zur Ankunft am Suchstart, dort startet die Alternative.
     private(set) var pendingSwitch: ReplanOffer?
+    /// Kurzer Hinweis nach Verfall ("Anschluss RB 25 reicht wieder"), bis `replanExpiredUntil`.
+    private(set) var replanExpired: String?
+    @ObservationIgnored private var replanExpiredUntil = Date.distantPast
+    /// So lange steht der Hinweis nach Verfall (s).
+    nonisolated static let replanNoticeSeconds: TimeInterval = 60
+    /// Mitteilung zu diesem Vorschlag ist gesendet; Senden und Entfernen laufen nacheinander.
+    @ObservationIgnored private var postedProposal: UUID?
+    @ObservationIgnored private var replanAlertTask: Task<Void, Never>?
+    /// Blatt "Alternativen" aus dem Vorschlag: Suchstart der Antwort statt der naechsten Station.
+    private var peekSearch: ReplanSearch?
     /// Letzte Antwort: loest derselbe Anschluss erneut aus, wird sie ohne neue Suche gezeigt.
     @ObservationIgnored private var replanAnswer: ReplanAnswer?
     @ObservationIgnored private var replanMemory = ReplanMemory()
@@ -499,6 +510,8 @@ final class AppFlow {
     /// Hintergrund: nichts Standortbezogenes behalten.
     func movedToBackground() {
         inBackground = true
+        // Ein Vorschlag, der schon im Vordergrund stand, kommt jetzt als Mitteilung.
+        syncReplanAlert()
         reminders.scheduleBackgroundCheck()
         fixTask?.cancel()
         nearbyTask?.cancel()
@@ -1323,6 +1336,7 @@ final class AppFlow {
         let next = nextStation
         // Ohne Standorterlaubnis nie currentFix() anfragen (loest sonst den System-Dialog aus): dann ab der naechsten Station.
         peekOrigin = (source == .nextStation || !locationAllowed) && next != nil ? .nextStation : .position
+        peekSearch = nil
         guard peekOrigin == .nextStation || locationAllowed else { peek = .failed(.locationDenied); return }
         peekTask?.cancel()
         peek = .loading
@@ -1471,14 +1485,23 @@ final class AppFlow {
         peekTask?.cancel()
         peekTask = nil
         peek = nil
+        peekSearch = nil
     }
 
-    /// Wechsel auf eine Alternative: ersetzt die laufende Verbindung. Startet sie an der naechsten Station, waehrend man noch
-    /// im Fahrzeug sitzt, wird der Wechsel wie ein uebernommener Vorschlag vorgemerkt (SPEZIFIKATION 4.4).
+    /// Wo die Alternativen im Blatt starten (Hinweis unter dem Umschalter): Suchstart des Vorschlags, sonst naechste Station.
+    var peekStart: (name: String, time: Date)? {
+        if let search = peekSearch { return (search.start.label, search.time) }
+        return nextStation.map { ($0.name, $0.time) }
+    }
+
+    /// Wechsel auf eine Alternative: ersetzt die laufende Verbindung. Startet sie an der naechsten Station (bzw. am Suchstart
+    /// des Vorschlags), waehrend man noch im Fahrzeug sitzt, wird der Wechsel wie ein uebernommener Vorschlag vorgemerkt
+    /// (SPEZIFIKATION 4.4).
     func chooseAlternative(_ index: Int) {
         guard case .loaded(let response, let walks, let peekVia) = peek, index < response.journeys.count else { return }
+        let now = deps.now()
         if peekOrigin == .nextStation, let walks, walks.indices.contains(index), let journey = navJourney, let step = navStep,
-           let search = ConnectionWatch.chosenSwitch(journey: journey, step: step, now: deps.now()) {
+           let search = peekSearch.flatMap({ now < $0.time ? $0 : nil }) ?? ConnectionWatch.chosenSwitch(journey: journey, step: step, now: now) {
             closeAlternatives()
             reserveSwitch(ReplanOffer(proposal: ReplanProposal(id: UUID(), search: search, alternativeIndex: index),
                                       answer: ReplanAnswer(search: search, response: response, calibrated: walks, via: peekVia)))
@@ -1507,6 +1530,7 @@ final class AppFlow {
     /// Die Regeln stehen in `ConnectionWatch` und `ReplanMemory`; hier nur Zustand und Netz.
     private func evaluateReplan(now: Date) {
         guard case .navigation = phase, let journey = navJourney, let step = navStep, step != .arrived else { return }
+        if replanExpired != nil, now >= replanExpiredUntil { replanExpired = nil }
         if let pending = pendingSwitch {
             let alighting = journey.legs.first { $0.index == pending.proposal.search.alightingVehicle }
             if let arrival = alighting?.arrival ?? alighting?.plannedArrival {
@@ -1534,6 +1558,14 @@ final class AppFlow {
                     replanOffer = ReplanOffer(proposal: ReplanProposal(id: UUID(), search: live, alternativeIndex: index), answer: offer.answer)
                 }
             } else {
+                // Verfall: der Anschluss reicht wieder (eingerastet bis `minimumSlackSeconds`), kurzer Hinweis. Andere Enden
+                // (Suchstart erreicht, Alternative nicht mehr erreichbar) bleiben still.
+                let vehicle = offer.proposal.search.trigger.vehicle
+                if !result.latched.contains(vehicle) {
+                    let line = journey.legs.first { $0.index == vehicle }?.badgeText ?? ""
+                    replanExpired = String(localized: "Anschluss \(line) reicht wieder")
+                    replanExpiredUntil = now.addingTimeInterval(Self.replanNoticeSeconds)
+                }
                 replanOffer = nil
             }
         }
@@ -1598,9 +1630,73 @@ final class AppFlow {
 
     /// "Uebernehmen": Wechsel vormerken. Die laufende Navigation (Zug, Ausstiegshinweis, Refresh) bleibt bis zum Suchstart.
     func acceptReplan(_ id: UUID) {
-        guard case .navigation = phase, let offer = replanOffer, offer.proposal.id == id,
-              ConnectionWatch.isValid(offer.proposal, current: replanSearches, now: deps.now()) else { return }
+        guard let offer = liveOffer(id) else { return }
         reserveSwitch(offer)
+    }
+
+    /// "Alternativen ansehen" (Banner und Tipp auf die Mitteilung): Blatt mit der Antwort des Vorschlags, ohne neue Suche.
+    func showProposal(_ id: UUID) {
+        guard let offer = liveOffer(id) else { return }
+        peekTask?.cancel()
+        peekTask = nil
+        peekOrigin = .nextStation
+        peekSearch = offer.proposal.search
+        peek = .loaded(offer.answer.response, offer.answer.calibrated, via: offer.answer.via)
+    }
+
+    /// Der Vorschlag mit dieser ID, wenn er noch gilt: Phase `.navigation`, aktueller Vorschlag, Suchstart nicht erreicht.
+    /// Nie fuer eine fremde oder beendete Fahrt (Mitteilung aus einer frueheren Fahrt traegt eine andere zufaellige ID).
+    private func liveOffer(_ id: UUID) -> ReplanOffer? {
+        guard case .navigation = phase, let offer = replanOffer, offer.proposal.id == id,
+              ConnectionWatch.isValid(offer.proposal, current: replanSearches, now: deps.now()) else { return nil }
+        return offer
+    }
+
+    /// Was die Jetzt-Karte zur Umplanung zeigt; vorgemerkt geht vor Vorschlag, der vor dem Hinweis nach Verfall.
+    var replanBanner: ReplanBanner? {
+        if let pending = pendingSwitch {
+            let line = pending.answer.calibrated[safe: pending.proposal.alternativeIndex]?.journey.legs.first { !$0.isWalk }?.badgeText
+            return .reserved(line.map { String(localized: "Wechsel auf \($0) vorgemerkt") } ?? String(localized: "Wechsel vorgemerkt"))
+        }
+        if let offer = replanOffer, let journey = navJourney {
+            let texts = Self.replanTexts(offer, in: journey)
+            return .offer(id: offer.proposal.id, title: texts.title, body: texts.body)
+        }
+        return replanExpired.map(ReplanBanner.expired)
+    }
+
+    /// Banner und Mitteilung, eine Regel: betroffene Linie, dann der beste Vorschlag mit Linie, Abfahrt, Halt und Gleis
+    /// (`ReminderText.body`: nur Haltestellennamen aus den Fahrplandaten, nie Adresse oder Position).
+    nonisolated static func replanTexts(_ offer: ReplanOffer, in journey: Journey) -> (title: String, body: String) {
+        let line = journey.legs.first { $0.index == offer.proposal.search.trigger.vehicle }?.badgeText ?? ""
+        let title = if case .tripCancelled = offer.proposal.search.trigger {
+            String(localized: "Anschluss \(line) fällt aus")
+        } else {
+            String(localized: "Anschluss \(line) reicht nicht mehr")
+        }
+        let best = offer.answer.calibrated[safe: offer.proposal.alternativeIndex]?.journey
+        return (title, best.map { String(localized: "Vorschlag: \(ReminderText.body($0))") } ?? "")
+    }
+
+    /// Mitteilung folgt dem Vorschlag: im Hintergrund eine je Vorschlag; weg, sobald er nicht mehr gilt (Verfall, Uebernehmen,
+    /// Behalten, Ankunft, Beenden setzen `replanOffer` auf nil). Nacheinander, damit ein Entfernen kein Senden ueberholt.
+    private func syncReplanAlert() {
+        let current = replanOffer?.proposal.id
+        let remove = postedProposal != nil && postedProposal != current
+        var alert: ReplanAlert?
+        if inBackground, let offer = replanOffer, let journey = navJourney, postedProposal != current {
+            let texts = Self.replanTexts(offer, in: journey)
+            alert = ReplanAlert(proposalID: offer.proposal.id, title: texts.title, body: texts.body)
+        }
+        guard remove || alert != nil else { return }
+        postedProposal = alert?.proposalID
+        let notifier = deps.replanNotifier
+        let previous = replanAlertTask
+        replanAlertTask = Task {
+            await previous?.value
+            if remove { notifier.remove([ReplanAlert.identifier]) }
+            if let alert { await notifier.post(alert) }
+        }
     }
 
     /// Wechsel vormerken ("Uebernehmen" oder "Wechseln" ab der naechsten Station); laufende Suche und Vorschlag entfallen.
@@ -1653,6 +1749,7 @@ final class AppFlow {
         switchTask = nil
         replanOffer = nil
         pendingSwitch = nil
+        replanExpired = nil
         replanAnswer = nil
         replanMemory = ReplanMemory()
         replanLatched = []
@@ -1783,6 +1880,7 @@ final class AppFlow {
     func waitForReplan() async {
         await replanTask?.value
         await switchTask?.value
+        await replanAlertTask?.value
     }
     #endif
 }
