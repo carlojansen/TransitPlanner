@@ -57,11 +57,9 @@ Es werden nur Haltestellen geliefert. `modes`, `area`, `distanceMeters` optional
 | `via` | – | optional, Zwischenstopps in Reihenfolge, max. 2: `[{ "id": "<Stop-ID>", "stayMinutes": 20 }]`. `id` wie bei `type:"stop"`, nicht gleich Start/Ziel, nicht doppelt (geprüft wird nur die exakte ID, Station gegen Bahnsteig nicht). `stayMinutes` ganzzahlig 1–180 (Aufenthalt inkl. Fußwege zum Ziel am Stopp; die App rundet auf 5 Min.). Keine Namen oder Kategorien. Mit `via` gibt es keinen reinen Fußweg-Rückfall (`walkOnly`), sondern `NO_CONNECTIONS`. Antwort: Der Aufenthalt zählt als Umstieg; die Lücke liegt zwischen der Ankunft am Stopp und dem folgenden Umstiegsweg. Die Leg-Grenze trägt oft eine Bahnsteig-ID statt der angefragten Station, und MOTIS liefert dort keinen `parentId` (live geprüft 16.11.2026). Die App erkennt die Grenze daher über das ID-Präfix (`<via-id>:…`) und sonst über die Nähe. Rundtouren (Start nahe Ziel) funktionieren. |
 | `laterThan` / `earlierThan` | – | Paging mit `laterRef`/`earlierRef` der vorherigen Antwort. **Alle übrigen Felder unverändert mitschicken** (MOTIS-Regel). Schließen sich gegenseitig aus. |
 
-Rate-Limit: eigenes, **globales** Limit für Routensuchen (Standard 30/min für alle Clients zusammen), weil Routing für Transitous teuer ist. Davor greift ein Limit pro IP (Standard 8/min); abgewiesene Anfragen verbrauchen das globale Limit nicht.
-
 **Suche in der App:** Die Haltestellensuche wird entprellt (mindestens 300 ms nach der letzten Eingabe, ab 2 Zeichen, oder sofort bei Return). Bei `RATE_LIMITED` zeigt die App ein Inline-Banner statt Dialog. Es werden keine `RateLimit-*`-Header gesendet, nur `Retry-After`.
 
-**Rate-Limits (alle `429 RATE_LIMITED` mit `Retry-After`)**: allgemein 60/min pro IP für alle `/api/*`; zusätzlich pro IP `/api/routes` 8/min, `/api/locations` 20/min, `/api/refresh` 12/min; global `/api/routes` 30/min. Konfigurierbar über `.env` (`RATE_LIMIT_*`).
+**Rate-Limits (alle `429 RATE_LIMITED` mit `Retry-After`)**: Pro IP gelten allgemein 60/min für alle `/api/*`, zusätzlich `/api/routes` 8/min, `/api/locations` 20/min, `/api/refresh` 12/min (`.env`: `RATE_LIMIT_*`). Für `/api/routes` gilt außerdem eine **globale** Grenze für alle Clients zusammen, weil Routing für Transitous teuer ist: die Hälfte der Upstream-Kapazität aus `UPSTREAM_LIMIT`/`UPSTREAM_INTERVAL_MS` (Standard 30/min). Das Limit pro IP greift davor; abgewiesene Anfragen verbrauchen die globale Grenze nicht.
 
 Antwort `200`:
 ```json
@@ -76,8 +74,7 @@ Antwort `200`:
 ```
 Alle Verbindungen enthalten Polylines (auch Fußwege), sofern Transitous sie liefert (`hasPolylines`).
 
-- Fußweg-Vorrang: Ist das Ziel laut MOTIS (`direct`) zu Fuß in höchstens 15 min erreichbar, liefert das Backend nur ÖV-Verbindungen, die kürzer dauern als der Fußweg. Bleibt keine übrig, kommt der reine Fußweg (`walkOnly: true`). Nicht mit `via`.
-- `walkOnly: true`: Start und Ziel liegen so nah (Fußweg bis ca. 5 min), dass MOTIS gar kein ÖV-Routing rechnet. Die einzige Journey ist dann ein reiner Fußweg (`modes: []`), Paging-Referenzen sind `null`.
+- Fußweg-Vorrang und `walkOnly`: Ist das Ziel laut MOTIS (`direct`) zu Fuß in höchstens 15 min erreichbar, liefert das Backend nur ÖV-Verbindungen, die strikt früher ankommen als der Fußweg ab Suchzeit (`targetTime`, sonst jetzt); bei `isArrivalTime` nur solche, die strikt später abfahren als der Fußweg. Wartezeit bis zur Abfahrt zählt also mit, bei Gleichstand gewinnt der Fußweg. Bleibt keine Verbindung übrig oder rechnet MOTIS bei sehr kurzer Distanz (bis ca. 5 min) gar kein ÖV-Routing, ist die einzige Journey der reine Fußweg (`walkOnly: true`, `modes: []`, Paging-Referenzen `null`). Das gilt nur für die erste Seite (MOTIS liefert `direct` nur ohne Cursor) und nie mit `via`.
 - `removedLongDistance`: Anzahl der Verbindungen, die der Nahverkehrsfilter nachträglich verworfen hat (Feeds, die Fernverkehr als Regionalzug/Bus kodieren). Ist sie > 0, können Alternativen fehlen; die App kann „spätere Verbindungen“ anbieten.
 
 ### Journey

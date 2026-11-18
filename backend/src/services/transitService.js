@@ -76,6 +76,20 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 	const searchCache = new TTLCache({maxEntries: 1000, ttlMs: 6 * 60 * 60 * 1000}); // Haltestellennamen aendern sich selten
 	const nearbyCache = new TTLCache({maxEntries: 1000, ttlMs: 10 * 60 * 1000});
 
+	// Gemeinsame MOTIS-Parameter fuer plan und refresh-itinerary, damit der Refresh Fusswege wie die Suche rechnet.
+	// additionalTransferTime setzt nur plan: refresh-itinerary kennt den Parameter nicht (motis-client 2.11.1).
+	function motisParams({accessibility, detailed}) {
+		return {
+			detailedLegs: detailed,
+			detailedTransfers: detailed, // Fusswege mit Geometrie fuer die Karte
+			joinInterlinedLegs: true,
+			language: 'de',
+			maxPreTransitTime: routing.maxPreTransitSeconds ?? 900,
+			maxPostTransitTime: routing.maxPostTransitSeconds ?? 900,
+			...(accessibility === 'stepFree' ? {pedestrianProfile: 'WHEELCHAIR'} : {}),
+		};
+	}
+
 	async function call(fn, {budgetMs = timeoutMs} = {}) {
 		try {
 			return await gate.run(fn, {timeoutMs: budgetMs});
@@ -148,14 +162,9 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 			toPlace: toMotisPlace(destination),
 			arriveBy: isArrivalTime,
 			numItineraries: results,
-			detailedTransfers: true, // Fusswege mit Geometrie fuer die Karte
-			joinInterlinedLegs: true,
-			language: 'de',
-			maxPreTransitTime: routing.maxPreTransitSeconds ?? 900,
-			maxPostTransitTime: routing.maxPostTransitSeconds ?? 900,
+			...motisParams({accessibility, detailed: true}),
 			additionalTransferTime: routing.additionalTransferMinutes ?? 0,
 		};
-		if (accessibility === 'stepFree') query.pedestrianProfile = 'WHEELCHAIR';
 		if (targetTime) query.time = new Date(targetTime).toISOString();
 		if (modes?.length) query.transitModes = joinList([...new Set(modes.map((m) => PILL_MODES[m]))]);
 		else if (onlyNahverkehr) query.transitModes = joinList(NAHVERKEHR_MODES);
@@ -175,6 +184,7 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 		const filterLongDistance = onlyNahverkehr || modes?.length > 0; // API.md: bei modes bleibt der Fernverkehr-Filter
 		const keep = (list) => (filterLongDistance ? list.filter((it) => !isLongDistanceItinerary(it)) : list);
 
+		const searchMs = targetTime ? Date.parse(targetTime) : Date.now();
 		let res = await fetchPlan(query);
 		let itineraries = keep(res.itineraries);
 		let removedLongDistance = res.itineraries.length - itineraries.length;
@@ -184,15 +194,19 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 		if (itineraries.length === 0 && removedLongDistance > 0 && !cursor) {
 			res = await fetchPlan({...query, numItineraries: Math.min(results * 3, 12)});
 			itineraries = keep(res.itineraries);
-			removedLongDistance += res.itineraries.length - itineraries.length;
+			removedLongDistance = res.itineraries.length - itineraries.length; // zweite Antwort enthaelt die erste
 		}
 		itineraries = itineraries.slice(0, results);
 
-		// Ist das Ziel zu Fuss in <= WALK_PREFERRED_SECONDS erreichbar, zeigen wir nur Verbindungen, die schneller sind.
-		// Bleibt keine uebrig, greift unten der Fussweg-Rueckfall (walkOnly). Nicht mit Zwischenstopp.
-		const walkSeconds = via?.length ? undefined : res.direct?.[0]?.duration;
+		// Ist das Ziel zu Fuss in <= WALK_PREFERRED_SECONDS erreichbar, bleiben nur Verbindungen, die strikt frueher
+		// ankommen (bzw. bei Ankunftssuche strikt spaeter abfahren) als der Fussweg ab Suchzeit; Wartezeit zaehlt mit.
+		// Bleibt keine uebrig, greift unten der Fussweg-Rueckfall (walkOnly). Nicht mit Zwischenstopp, nur erste Seite.
+		const walkSeconds = via?.length || cursor ? undefined : res.direct?.[0]?.duration;
 		if (typeof walkSeconds === 'number' && walkSeconds <= WALK_PREFERRED_SECONDS) {
-			itineraries = itineraries.filter((it) => typeof it.duration === 'number' && it.duration < walkSeconds);
+			const walkMs = walkSeconds * 1000;
+			itineraries = itineraries.filter((it) => (isArrivalTime
+				? Date.parse(it.startTime) > searchMs - walkMs
+				: Date.parse(it.endTime) < searchMs + walkMs)); // fehlende Zeit = NaN = verworfen
 		}
 
 		// Bei sehr kurzen Distanzen (Fussweg bis ca. 5 min) rechnet MOTIS gar kein OEV-Routing und liefert
@@ -220,8 +234,7 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 	async function refresh({refreshToken, polylines, accessibility}) {
 		let it;
 		try {
-			it = await call((signal) => client.refreshItinerary({itineraryId: refreshToken, detailedTransfers: true, joinInterlinedLegs: true, language: 'de',
-				...(accessibility === 'stepFree' ? {pedestrianProfile: 'WHEELCHAIR'} : {})}, signal));
+			it = await call((signal) => client.refreshItinerary({itineraryId: refreshToken, ...motisParams({accessibility, detailed: polylines === true})}, signal));
 		} catch (err) {
 			if (err.code === ErrorCode.NOT_FOUND || err.code === ErrorCode.INVALID_REQUEST) {
 				throw new TransitError(ErrorCode.REFRESH_EXPIRED, {cause: err});

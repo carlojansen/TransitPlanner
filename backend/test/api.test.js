@@ -424,6 +424,7 @@ describe('POST /api/routes', () => {
 		expect(client.calls[1][1].numItineraries).toBe(12);
 		expect(client.calls[1][1].via).toBe('de-a'); // zweiter Versuch behaelt den Zwischenstopp
 		expect(r.body.journeys.map((j) => j.refreshToken)).toEqual(['regio']);
+		expect(r.body.removedLongDistance).toBe(1); // nur die zweite Antwort zaehlt, nicht doppelt
 	});
 
 	it('kurze Distanz: MOTIS liefert nur einen direkten Fussweg, der wird ausgeliefert', async () => {
@@ -434,20 +435,74 @@ describe('POST /api/routes', () => {
 		expect(r.body.laterRef).toBeNull();
 	});
 
-	it('Ziel zu Fuss <= 15 min: nur schnellere Verbindungen, sonst Fussweg', async () => {
-		const direct = (sec) => ({...itinerary({id: 'walk', legs: [walk()]}), duration: sec});
-		const trip = (id, sec) => ({...itinerary({id}), duration: sec});
-		build({async plan() { return {itineraries: [trip('slow', 900), trip('fast', 400)], direct: [direct(600)]}; }});
-		let r = await request(app).post('/api/routes').set(auth).send(body).expect(200);
-		expect(r.body.walkOnly).toBe(false);
-		expect(r.body.journeys.map((j) => j.refreshToken)).toEqual(['fast']);
-		build({async plan() { return {itineraries: [trip('slow', 900)], direct: [direct(600)]}; }});
-		r = await request(app).post('/api/routes').set(auth).send(body).expect(200);
-		expect(r.body.walkOnly).toBe(true);
-		build({async plan() { return {itineraries: [trip('slow', 2000)], direct: [direct(1200)]}; }}); // Fussweg 20 min: unveraendert
-		r = await request(app).post('/api/routes').set(auth).send(body).expect(200);
-		expect(r.body.walkOnly).toBe(false);
-		expect(r.body.journeys.map((j) => j.refreshToken)).toEqual(['slow']);
+	describe('Fussweg-Vorrang (Ziel zu Fuss <= 15 min): Vergleich nach Ankunft ab Suchzeit', () => {
+		// Zeiten wie MOTIS: direct beginnt bei Abfahrtssuche zur Suchzeit (endet bei Ankunftssuche dort),
+		// Verbindungen tragen echte start-/endTime, duration passt dazu.
+		const T = Math.ceil(Date.now() / 60_000) * 60_000 + 3600_000;
+		const iso = (ms) => new Date(ms).toISOString();
+		const at = (min, base = T) => iso(base + min * 60_000);
+		const trip = (id, depMin, rideMin, base = T) => itinerary({id, legs: [leg({mode: 'TRAM', displayName: 'STR 4',
+			start: at(depMin, base), end: at(depMin + rideMin, base), schedStart: at(depMin, base), schedEnd: at(depMin + rideMin, base)})]});
+		const direct = (sec, startMs = T) => itinerary({id: 'walk', legs: [walk({start: iso(startMs), end: iso(startMs + sec * 1000)})]});
+		const ids = (r) => r.body.journeys.map((j) => j.refreshToken);
+		const run = (res, extra = {}) => {
+			build({async plan() { return res; }});
+			return request(app).post('/api/routes').set(auth).send({...body, ...extra}).expect(200);
+		};
+		const t = {targetTime: iso(T)};
+
+		it('Tram in 20 min, 7 min Fahrt, Fussweg 10 min (Suchzeit jetzt): verworfen, Fussweg', async () => {
+			const now = Date.now();
+			const res = {itineraries: [trip('tram', 20, 7, now)], direct: [direct(600, now)]};
+			let r = await run(res);
+			expect(r.body.walkOnly).toBe(true);
+			expect(ids(r)).toEqual(['walk']);
+			r = await run(res, {laterThan: 'next'}); // Folgeseiten: kein Vorrang
+			expect([r.body.walkOnly, ids(r)]).toEqual([false, ['tram']]);
+		});
+
+		it('Gehzeit genau 900 s greift, 901 s nicht', async () => {
+			const itineraries = [trip('fast', 2, 10), trip('slow', 10, 10)];
+			let r = await run({itineraries, direct: [direct(900)]}, t);
+			expect([r.body.walkOnly, ids(r)]).toEqual([false, ['fast']]);
+			r = await run({itineraries, direct: [direct(901)]}, t);
+			expect([r.body.walkOnly, ids(r)]).toEqual([false, ['fast', 'slow']]);
+		});
+
+		it('gleiche Ankunft wie zu Fuss: Fussweg gewinnt', async () => {
+			const r = await run({itineraries: [trip('tram', 4, 6)], direct: [direct(600)]}, t);
+			expect(r.body.walkOnly).toBe(true);
+		});
+
+		it('Ankunftssuche: nur Verbindungen, die strikt spaeter abfahren als der Fussweg', async () => {
+			const itineraries = [trip('late', -8, 7), trip('equal', -10, 9), trip('early', -30, 10)];
+			const r = await run({itineraries, direct: [direct(600, T - 600_000)]}, {...t, isArrivalTime: true});
+			expect([r.body.walkOnly, ids(r)]).toEqual([false, ['late']]);
+		});
+
+		it('direct ohne duration: kein Filter', async () => {
+			const {duration, ...noDuration} = direct(600);
+			expect(duration).toBe(600);
+			const r = await run({itineraries: [trip('tram', 20, 7)], direct: [noDuration]}, t);
+			expect([r.body.walkOnly, ids(r)]).toEqual([false, ['tram']]);
+		});
+
+		it('Fussweg 20 min: Verbindungen bleiben unveraendert', async () => {
+			const r = await run({itineraries: [trip('tram', 5, 30)], direct: [direct(1200)]}, t);
+			expect([r.body.walkOnly, ids(r)]).toEqual([false, ['tram']]);
+		});
+
+		it('nur der zweite Versuch liefert den Fussweg: Vorrang greift trotzdem, removedLongDistance nicht doppelt', async () => {
+			const ic = itinerary({id: 'ic', legs: [leg({mode: 'REGIONAL_RAIL', extra: {routeShortName: 'IC 2045'}})]});
+			let n = 0;
+			build({async plan() {
+				n++;
+				return n === 1 ? {itineraries: [ic]} : {itineraries: [ic, trip('tram', 20, 7)], direct: [direct(600)]};
+			}});
+			const r = await request(app).post('/api/routes').set(auth).send({...body, ...t}).expect(200);
+			expect(n).toBe(2);
+			expect([r.body.walkOnly, ids(r), r.body.removedLongDistance]).toEqual([true, ['walk'], 1]);
+		});
 	});
 
 	it('mit Zwischenstopp kein Fussweg-Rueckfall: der wuerde den Stopp ueberspringen', async () => {
@@ -561,6 +616,15 @@ describe('POST /api/refresh', () => {
 	it('laesst Polylines weg, wenn nicht angefordert (spart Datenvolumen)', async () => {
 		const r = await request(app).post('/api/refresh').set(auth).send({refreshToken: 'aXRpbi0xYWJj'}).expect(200);
 		expect(r.body.journey.legs.every((l) => l.polyline === null)).toBe(true);
+	});
+
+	it('Refresh nutzt dieselben Fussweg-Parameter wie plan, Geometrie nur mit polylines', async () => {
+		await request(app).post('/api/refresh').set(auth).send({refreshToken: 'aXRpbi0x'}).expect(200);
+		await request(app).post('/api/refresh').set(auth).send({refreshToken: 'aXRpbi0x', polylines: true, accessibility: 'stepFree'}).expect(200);
+		const [a, b] = client.calls.filter((c) => c[0] === 'refreshItinerary').map((c) => c[1]);
+		expect(a).toMatchObject({detailedLegs: false, detailedTransfers: false, maxPreTransitTime: 900, maxPostTransitTime: 900, joinInterlinedLegs: true});
+		expect(a.pedestrianProfile).toBeUndefined();
+		expect(b).toMatchObject({detailedLegs: true, detailedTransfers: true, pedestrianProfile: 'WHEELCHAIR'});
 	});
 
 	it('akzeptiert Base64-Zeichen im Token', async () => {
