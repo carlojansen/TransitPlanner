@@ -76,6 +76,7 @@ Antwort `200`:
 ```
 Alle Verbindungen enthalten Polylines (auch Fußwege), sofern Transitous sie liefert (`hasPolylines`).
 
+- Fußweg-Vorrang: Ist das Ziel laut MOTIS (`direct`) zu Fuß in höchstens 15 min erreichbar, liefert das Backend nur ÖV-Verbindungen, die kürzer dauern als der Fußweg. Bleibt keine übrig, kommt der reine Fußweg (`walkOnly: true`). Nicht mit `via`.
 - `walkOnly: true`: Start und Ziel liegen so nah (Fußweg bis ca. 5 min), dass MOTIS gar kein ÖV-Routing rechnet. Die einzige Journey ist dann ein reiner Fußweg (`modes: []`), Paging-Referenzen sind `null`.
 - `removedLongDistance`: Anzahl der Verbindungen, die der Nahverkehrsfilter nachträglich verworfen hat (Feeds, die Fernverkehr als Regionalzug/Bus kodieren). Ist sie > 0, können Alternativen fehlen; die App kann „spätere Verbindungen“ anbieten.
 

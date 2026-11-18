@@ -434,6 +434,22 @@ describe('POST /api/routes', () => {
 		expect(r.body.laterRef).toBeNull();
 	});
 
+	it('Ziel zu Fuss <= 15 min: nur schnellere Verbindungen, sonst Fussweg', async () => {
+		const direct = (sec) => ({...itinerary({id: 'walk', legs: [walk()]}), duration: sec});
+		const trip = (id, sec) => ({...itinerary({id}), duration: sec});
+		build({async plan() { return {itineraries: [trip('slow', 900), trip('fast', 400)], direct: [direct(600)]}; }});
+		let r = await request(app).post('/api/routes').set(auth).send(body).expect(200);
+		expect(r.body.walkOnly).toBe(false);
+		expect(r.body.journeys.map((j) => j.refreshToken)).toEqual(['fast']);
+		build({async plan() { return {itineraries: [trip('slow', 900)], direct: [direct(600)]}; }});
+		r = await request(app).post('/api/routes').set(auth).send(body).expect(200);
+		expect(r.body.walkOnly).toBe(true);
+		build({async plan() { return {itineraries: [trip('slow', 2000)], direct: [direct(1200)]}; }}); // Fussweg 20 min: unveraendert
+		r = await request(app).post('/api/routes').set(auth).send(body).expect(200);
+		expect(r.body.walkOnly).toBe(false);
+		expect(r.body.journeys.map((j) => j.refreshToken)).toEqual(['slow']);
+	});
+
 	it('mit Zwischenstopp kein Fussweg-Rueckfall: der wuerde den Stopp ueberspringen', async () => {
 		build({async plan() { return {itineraries: [], direct: [itinerary({id: 'walk', legs: [walk()]})]}; }});
 		const r = await request(app).post('/api/routes').set(auth).send({...body, via: [{id: 'de-a', stayMinutes: 10}]}).expect(404);

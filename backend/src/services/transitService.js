@@ -20,6 +20,7 @@ export const NAHVERKEHR_MODES = Object.freeze([
 const PILL_MODES = Object.freeze({tram: 'TRAM', subway: 'SUBWAY', suburban: 'SUBURBAN', regional: 'REGIONAL_RAIL', bus: 'BUS'});
 
 const NEARBY_RADIUS_M = 500;
+const WALK_PREFERRED_SECONDS = 15 * 60;
 // Transitous-Nutzungsregel: Link auf die Quellen sichtbar anzeigen; dazu OSM-Namensnennung.
 const ATTRIBUTION = Object.freeze({
 	text: 'Fahrplandaten: Transitous und Datenquellen. Wege- und Kartendaten: © OpenStreetMap-Mitwirkende.',
@@ -186,6 +187,13 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 			removedLongDistance += res.itineraries.length - itineraries.length;
 		}
 		itineraries = itineraries.slice(0, results);
+
+		// Ist das Ziel zu Fuss in <= WALK_PREFERRED_SECONDS erreichbar, zeigen wir nur Verbindungen, die schneller sind.
+		// Bleibt keine uebrig, greift unten der Fussweg-Rueckfall (walkOnly). Nicht mit Zwischenstopp.
+		const walkSeconds = !via?.length && Array.isArray(res.direct) ? res.direct[0]?.duration : undefined;
+		if (typeof walkSeconds === 'number' && walkSeconds <= WALK_PREFERRED_SECONDS) {
+			itineraries = itineraries.filter((it) => typeof it.duration === 'number' && it.duration < walkSeconds);
+		}
 
 		// Bei sehr kurzen Distanzen (Fussweg bis ca. 5 min) rechnet MOTIS gar kein OEV-Routing und liefert
 		// nur "direct" (motis src/endpoints/routing.cc). Dann ist Laufen die Antwort.
