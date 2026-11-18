@@ -30,7 +30,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         let id = SystemNotifier.tripID(of: response.notification)
         Task { @MainActor in
             if let proposal {
-                if action == UNNotificationDefaultActionIdentifier { flow.showProposal(proposal) }
+                switch action {
+                case UNNotificationDefaultActionIdentifier: flow.showProposal(proposal)
+                case UNNotificationDismissActionIdentifier: flow.declineReplan(proposal)
+                default: break
+                }
             } else if let id {
                 switch action {
                 case UNNotificationDefaultActionIdentifier, SystemNotifier.startAction: flow.openReminder(id)

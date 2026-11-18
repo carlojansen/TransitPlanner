@@ -16,19 +16,23 @@ public enum ReplanTrigger: Sendable, Hashable {
     }
 }
 
-/// Ein Fahrzeug: Fahrt-ID, sonst Linie, Plan-Abfahrt und Einstiegshalt. Dasselbe Fahrzeug, derselbe Schluessel.
-/// Gespeichert wird je Fahrt; die Fahrt-Identitaet liegt beim Aufrufer (Gedaechtnis und Einrasten enden mit der Navigation).
-/// Gleichheit nur ueber `vehicle`: ein Gleiswechsel (andere `origin.id`) macht aus derselben Fahrt kein neues Fahrzeug.
+/// Ein Fahrzeug: Fahrt-ID, sonst Linie, Plan-Abfahrt und Name des Einstiegshalts (ohne Namen dessen ID). Dasselbe Fahrzeug,
+/// derselbe Schluessel. Gespeichert wird je Fahrt; die Fahrt-Identitaet liegt beim Aufrufer (Gedaechtnis und Einrasten enden
+/// mit der Navigation). Ein Gleiswechsel macht aus derselben Fahrt kein neues Fahrzeug: mit Fahrt-ID ohnehin nicht, ohne sie,
+/// solange der Haltname gleich bleibt (MOTIS liefert je Bahnsteig eine eigene ID, aber den Namen der Station).
 /// `matches` gilt fuer die Weiterfahrt nur mit Fahrt-ID auf beiden Seiten; ohne sie braucht auch die Weiterfahrt Gehweg und Puffer.
 public struct ReplanKey: Sendable, Hashable {
     public let vehicle: String
     private let tripId: String?
     private let fallback: String
+    /// Ersatzschluessel mit der Halt-ID statt des Namens: `matches` laesst beide gelten (lieber ein Fahrzeug zu oft ausschliessen).
+    private let fallbackID: String
 
     init(_ leg: Leg) {
         tripId = leg.tripId
-        fallback = "\(leg.line?.name ?? leg.mode.rawValue)@\((leg.plannedDeparture ?? leg.departure)?.timeIntervalSince1970 ?? 0)"
-            + "@\(leg.origin.id ?? leg.origin.name ?? "")"
+        let base = "\(leg.line?.name ?? leg.mode.rawValue)@\((leg.plannedDeparture ?? leg.departure)?.timeIntervalSince1970 ?? 0)@"
+        fallback = base + (leg.origin.name ?? leg.origin.id ?? "")
+        fallbackID = base + (leg.origin.id ?? leg.origin.name ?? "")
         vehicle = leg.tripId ?? fallback
     }
 
@@ -36,6 +40,7 @@ public struct ReplanKey: Sendable, Hashable {
     private init() {
         tripId = nil
         fallback = ""
+        fallbackID = ""
         vehicle = ""
     }
     static let noVehicle = ReplanKey()
@@ -43,10 +48,11 @@ public struct ReplanKey: Sendable, Hashable {
     public static func == (a: ReplanKey, b: ReplanKey) -> Bool { a.vehicle == b.vehicle }
     public func hash(into h: inout Hasher) { h.combine(vehicle) }
 
-    /// Dasselbe Fahrzeug: Fahrt-ID, wenn beide Seiten eine haben, sonst der Ersatzschluessel.
+    /// Dasselbe Fahrzeug: Fahrt-ID, wenn beide Seiten eine haben, sonst der Ersatzschluessel (Haltname oder Halt-ID).
     func matches(_ leg: Leg) -> Bool {
         if let tripId, let other = leg.tripId { return tripId == other }
-        return fallback == ReplanKey(leg).fallback
+        let other = ReplanKey(leg)
+        return fallback == other.fallback || fallbackID == other.fallbackID
     }
 }
 
@@ -58,6 +64,8 @@ public struct ReplanSearch: Sendable, Hashable {
     public let alightingVehicle: Int
     public let alightingKey: ReplanKey
     public let start: TripEndpoint
+    /// Lage des Suchstarts (Halt aus der Fahrt), fuer den Abgleich mit dem ersten Halt einer Alternative.
+    public let startCoordinate: GeoCoordinate?
     public let time: Date
     /// Puffer des betroffenen Anschlusses in s; `ConnectionWatch.cancelledBuffer` bei Ausfall.
     public let bufferSeconds: Int
@@ -65,7 +73,7 @@ public struct ReplanSearch: Sendable, Hashable {
     /// Dieselbe Suche zur aktuellen Echtzeit-Ankunft am Suchstart (Pruefung der vorgemerkten Alternative beim Wechsel).
     public func at(_ time: Date) -> ReplanSearch {
         ReplanSearch(trigger: trigger, key: key, alightingVehicle: alightingVehicle, alightingKey: alightingKey,
-                     start: start, time: time, bufferSeconds: bufferSeconds)
+                     start: start, startCoordinate: startCoordinate, time: time, bufferSeconds: bufferSeconds)
     }
 }
 
@@ -83,6 +91,15 @@ public struct ReplanProposal: Sendable, Hashable {
     }
 }
 
+/// Was mit einem vorgemerkten Wechsel jetzt geschieht (`ConnectionWatch.pendingSwitch`).
+public enum PendingSwitchStep: Sendable, Equatable {
+    case wait
+    /// Am Suchstart angekommen (Echtzeit-Ankunft des Ausstiegsfahrzeugs): Alternative pruefen und starten.
+    case start(arrival: Date)
+    /// Suchstart nicht mehr sicher erreichbar oder schon vorbei: Vormerkung verwerfen, die Fahrt laeuft normal weiter.
+    case drop
+}
+
 /// Reine Regeln der proaktiven Umplanung: keine Uhr, kein Netz, keine UI (`now` kommt als Parameter).
 public enum ConnectionWatch {
     /// Eine neue Suche zum selben Fahrzeug erst, wenn der Puffer so viel schlechter ist (s).
@@ -95,6 +112,9 @@ public enum ConnectionWatch {
     public static let retryDelay: TimeInterval = 60
     /// Puffer eines ausgefallenen Fahrzeugs: schlechter als jede Verspaetung, aber ohne Ueberlauf beim Vergleich.
     public static let cancelledBuffer = -86_400
+    /// Erster Halt einer Alternative ohne passende ID gilt bis zu dieser Entfernung vom Suchstart als derselbe Halt (m),
+    /// wie bei den Zwischenstopps (`Journey.viaStays`).
+    public static let sameStopMeters: Double = 300
 
     /// Fahrzeug, in dem man bis zum Suchstart sitzt: `onBoardTransit` oder die 120 s vor dem Ausstieg. Am Gleis, beim Gehen
     /// und nach dem Ausstieg nil (dort gilt der bestehende Ablauf).
@@ -158,7 +178,8 @@ public enum ConnectionWatch {
         guard let v = boardedVehicle(step, in: journey, now: now),
               let leg = journey.legs.first(where: { $0.index == v }), let start = endpoint(leg.destination) else { return nil }
         return ReplanSearch(trigger: .chosen(vehicle: v), key: .noVehicle, alightingVehicle: v, alightingKey: ReplanKey(leg),
-                            start: start, time: max(now, leg.arrival ?? leg.plannedArrival ?? now), bufferSeconds: 0)
+                            start: start, startCoordinate: leg.destination.coordinate,
+                            time: max(now, leg.arrival ?? leg.plannedArrival ?? now), bufferSeconds: 0)
     }
 
     private static func endpoint(_ place: Place) -> TripEndpoint? {
@@ -170,27 +191,67 @@ public enum ConnectionWatch {
         guard let start = endpoint(before.destination) else { return nil }
         let trigger: ReplanTrigger = affected.cancelled ? .tripCancelled(vehicle: affected.index) : .connectionBroken(vehicle: affected.index)
         return ReplanSearch(trigger: trigger, key: ReplanKey(affected), alightingVehicle: before.index, alightingKey: ReplanKey(before),
-                            start: start, time: max(now, before.arrival ?? before.plannedArrival ?? now), bufferSeconds: buffer)
+                            start: start, startCoordinate: before.destination.coordinate,
+                            time: max(now, before.arrival ?? before.plannedArrival ?? now), bufferSeconds: buffer)
     }
 
-    /// Beste erreichbare Alternative nach der bestehenden Rangfolge (Ankunft, Umstiege, Gehzeit, Strafen). Erreichbar heisst:
-    /// ohne das betroffene Fahrzeug, ohne Ausfall, kein Umstieg verpasst, und die erste Abfahrt fruehestens
-    /// Suchzeit + Gehweg am Start + `minimumSlackSeconds` (MOTIS liefert Abfahrten ohne Umstiegszeit, live geprueft 18.11.).
-    /// Ausnahme: faehrt man im selben Zug weiter (erstes Fahrzeug = Ausstiegsfahrzeug), zaehlt nur die Abfahrt nach der Ankunft.
-    /// Ergebnis ist der Index in `alternatives`.
-    public static func pick(_ alternatives: [CalibratedJourney], for search: ReplanSearch) -> Int? {
-        let reachable = alternatives.indices.filter { i in
-            let alt = alternatives[i]
-            let vehicles = alt.journey.legs.filter { !$0.isWalk }
-            guard !alt.journey.cancelled, let first = vehicles.first,
-                  !vehicles.contains(where: { $0.cancelled || search.key.matches($0) }),
-                  !alt.transfers.contains(where: { $0.status == .missed }),
-                  let departure = first.departure ?? first.plannedDeparture else { return false }
-            if search.alightingKey.matches(first), alt.journey.legs.first?.isWalk == false { return departure >= search.time }
-            let access = alt.journey.legs.first.flatMap { $0.isWalk ? (alt.walks[$0.index]?.seconds ?? $0.durationSeconds) : nil } ?? 0
-            return departure >= search.time.addingTimeInterval(TimeInterval(access + TransferCheck.minimumSlackSeconds))
-        }
+    /// Beste erreichbare Alternative nach der bestehenden Rangfolge (Ankunft, Umstiege, Gehzeit, Strafen); Index in `alternatives`.
+    /// `keeping`: die bisher vorgeschlagene bleibt, solange sie erreichbar ist (kein Hin und Her, keine zweite Mitteilung).
+    public static func pick(_ alternatives: [CalibratedJourney], for search: ReplanSearch, keeping current: Int? = nil) -> Int? {
+        if let current, alternatives.indices.contains(current), isReachable(alternatives[current], for: search) { return current }
+        let reachable = alternatives.indices.filter { isReachable(alternatives[$0], for: search) }
         return reachable.min { alternatives[$0].rank(arrivalSearch: false) < alternatives[$1].rank(arrivalSearch: false) }
+    }
+
+    /// Erreichbar heisst: beginnt am Suchstart, ohne das betroffene Fahrzeug, ohne Ausfall, kein Umstieg verpasst, und die erste
+    /// Abfahrt fruehestens Suchzeit + Gehweg am Start + `minimumSlackSeconds` (MOTIS liefert Abfahrten ohne Umstiegszeit, live
+    /// geprueft 18.11.). Ausnahme: faehrt man im selben Zug weiter (erstes Fahrzeug = Ausstiegsfahrzeug), zaehlt nur die Abfahrt
+    /// nach der Ankunft.
+    static func isReachable(_ alt: CalibratedJourney, for search: ReplanSearch) -> Bool {
+        let vehicles = alt.journey.legs.filter { !$0.isWalk }
+        guard !alt.journey.cancelled, let first = vehicles.first, startsAtSearchStart(alt.journey, search),
+              !vehicles.contains(where: { $0.cancelled || search.key.matches($0) }),
+              !alt.transfers.contains(where: { $0.status == .missed }),
+              let departure = first.departure ?? first.plannedDeparture else { return false }
+        if search.alightingKey.matches(first), alt.journey.legs.first?.isWalk == false { return departure >= search.time }
+        let access = alt.journey.legs.first.flatMap { $0.isWalk ? (alt.walks[$0.index]?.seconds ?? $0.durationSeconds) : nil } ?? 0
+        return departure >= search.time.addingTimeInterval(TimeInterval(access + TransferCheck.minimumSlackSeconds))
+    }
+
+    /// Beginnt die Alternative dort, wo der Nutzer aussteigt? Gleiche Stop-ID, ein Bahnsteig derselben Station ("<id>:…",
+    /// auch umgekehrt; MOTIS liefert am Start oft einen anderen Bahnsteig) oder hoechstens `sameStopMeters` entfernt.
+    static func startsAtSearchStart(_ journey: Journey, _ search: ReplanSearch) -> Bool {
+        guard let origin = journey.legs.first?.origin else { return false }
+        if case .stop(let id, _) = search.start, let other = origin.id,
+           other == id || other.hasPrefix(id + ":") || id.hasPrefix(other + ":") { return true }
+        guard let a = origin.coordinate, let b = search.startCoordinate else { return false }
+        return a.distance(to: b) <= sameStopMeters
+    }
+
+    /// Vorschlag und Vormerkung haengen am Ausstiegsfahrzeug: bis dorthin laeuft die Fahrt normal weiter und wird normal
+    /// ausgewertet. Faellt dort etwas weg, ist der Suchstart nicht mehr sicher erreichbar: ein Fahrzeug ab dem naechsten bis zum
+    /// Ausstiegsfahrzeug ist in `affected` (eingerastet oder verpasst, nicht abgelehnt), faellt aus oder wird verpasst.
+    public static func isUndercut(_ search: ReplanSearch, affected: Set<Int>, journey: Journey, step: NavigationStep) -> Bool {
+        let first: Int? = if case .onBoardTransit(let v) = step { v + 1 } else { NavigationEngine.targetVehicle(step) }
+        guard let first else { return false }
+        let ahead = { (i: Int) in i >= first && i <= search.alightingVehicle }
+        if case .missedDeparture(let v) = step, ahead(v) { return true }
+        return affected.contains(where: ahead) || journey.legs.contains { !$0.isWalk && $0.cancelled && ahead($0.index) }
+    }
+
+    /// Vorgemerkter Wechsel: gestartet wird erst im Ausstiegsfahrzeug oder danach (der Schritt gilt einem spaeteren Fahrzeug
+    /// oder dem Weg zum Ziel) und ab seiner Echtzeit-Ankunft, nie nach der Uhr allein: steht der Schritt noch vor dem
+    /// Ausstiegsfahrzeug (Gleis, Umstiegsweg dorthin), wird gewartet, eine verpasste Abfahrt bis dorthin verwirft
+    /// (`isUndercut`). Ohne Position folgt der Schritt dem Fahrplan, wie die ganze Navigation.
+    /// Verworfen wird auch ohne Ankunftszeit des Ausstiegsfahrzeugs.
+    public static func pendingSwitch(_ search: ReplanSearch, journey: Journey, step: NavigationStep, affected: Set<Int>,
+                                     now: Date) -> PendingSwitchStep {
+        let last = search.alightingVehicle
+        guard let leg = journey.legs.first(where: { $0.index == last }), let arrival = leg.arrival ?? leg.plannedArrival,
+              !isUndercut(search, affected: affected, journey: journey, step: step) else { return .drop }
+        let target = NavigationEngine.targetVehicle(step)
+        let reached = step == .onBoardTransit(vehicle: last) || (target.map { $0 > last } ?? true)
+        return reached && now >= arrival ? .start(arrival: arrival) : .wait
     }
 
     /// Gilt ein Vorschlag noch? Nur solange derselbe Anschluss weiter betroffen ist (`current` = Ergebnis von `evaluate`)

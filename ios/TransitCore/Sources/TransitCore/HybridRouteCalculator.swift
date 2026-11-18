@@ -100,6 +100,13 @@ public struct CalibratedJourney: Codable, Sendable, Hashable {
     }
 }
 
+extension CalibratedJourney {
+    /// Ohne MKDirections (Antwort noch im Stand `.skeleton`): Fusswege mit der Fahrplandauer.
+    public init(timetable journey: Journey) {
+        self.init(journey: journey, walks: [:], transfers: HybridRouteCalculator.transferChecks(journey, walks: [:]))
+    }
+}
+
 /// Paralleler Hybrid-Rechner: Verbindungen vom Backend, Fusswege per MKDirections (.walking) x WalkingPaceFactor.
 public struct HybridRouteCalculator: Sendable {
     /// Unterhalb dieser Luftlinie wird MKDirections nicht gefragt (gleicher Bahnsteig, Rauschen).

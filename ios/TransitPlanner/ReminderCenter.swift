@@ -158,17 +158,19 @@ struct SystemNotifier: ReminderNotifying {
 }
 
 /// Mitteilung zum Umplanungs-Vorschlag (SPEZIFIKATION 4.4). Feste Kennung: es gibt hoechstens einen Vorschlag, ein neuer
-/// ersetzt den alten. Texte nur aus Fahrplandaten (`AppFlow.replanTexts`).
+/// ersetzt den alten. Texte nur aus Fahrplandaten (`AppFlow.replanTexts`). Ohne `proposalID` ein reiner Hinweis
+/// (Wechsel nicht mehr moeglich): Tippen oeffnet nur die App.
 struct ReplanAlert: Sendable, Hashable {
     static let identifier = "replan"
-    let proposalID: UUID
+    let proposalID: UUID?
     let title: String
     let body: String
 }
 
 /// Mitteilungen der Umplanung hinter einem Protokoll (Tests). Nicht `ReminderNotifying`: eigene Kategorie, eigener Tipp.
 protocol ReplanNotifying: Sendable {
-    func post(_ alert: ReplanAlert) async
+    /// `alerting` false: ersetzt eine stehende Mitteilung still (gleicher Vorschlag, neuer Text).
+    func post(_ alert: ReplanAlert, alerting: Bool) async
     func remove(_ identifiers: [String])
 }
 
@@ -176,9 +178,12 @@ extension SystemNotifier: ReplanNotifying {
     static let replanCategoryID = "replan"
     private static let proposalKey = "proposalID"
 
-    /// Ohne Aktionen: Tippen oeffnet das Blatt, gewechselt wird nur nach Bestaetigung in der App.
+    /// Ohne Aktionen: Tippen oeffnet das Blatt, gewechselt wird nur nach Bestaetigung in der App. Wischen meldet sich
+    /// (`customDismissAction`) und gilt als "Behalten".
     static var replanCategory: UNNotificationCategory {
-        UNNotificationCategory(identifier: replanCategoryID, actions: [], intentIdentifiers: [])
+        UNNotificationCategory(identifier: replanCategoryID, actions: [], intentIdentifiers: [],
+                               hiddenPreviewsBodyPlaceholder: String(localized: "Vorschlag zur laufenden Fahrt"),
+                               options: [.customDismissAction])
     }
 
     /// Vorschlags-ID nur aus der eigenen Kategorie; Erinnerungen liefern nil.
@@ -188,21 +193,21 @@ extension SystemNotifier: ReplanNotifying {
         return (content.userInfo[proposalKey] as? String).flatMap(UUID.init(uuidString:))
     }
 
-    /// Sofort, zeitkritisch wie der Aufbruch-Wecker.
-    static func request(for alert: ReplanAlert) -> UNNotificationRequest {
+    /// Sofort, zeitkritisch wie der Aufbruch-Wecker; als stille Aktualisierung ohne Ton und ohne Banner.
+    static func request(for alert: ReplanAlert, alerting: Bool = true) -> UNNotificationRequest {
         let content = UNMutableNotificationContent()
         content.title = alert.title
         content.body = alert.body
-        content.sound = .default
-        content.interruptionLevel = .timeSensitive
+        content.sound = alerting ? .default : nil
+        content.interruptionLevel = alerting ? .timeSensitive : .passive
         content.categoryIdentifier = replanCategoryID
-        content.userInfo = [proposalKey: alert.proposalID.uuidString]
+        if let id = alert.proposalID { content.userInfo = [proposalKey: id.uuidString] }
         return UNNotificationRequest(identifier: ReplanAlert.identifier, content: content, trigger: nil)
     }
 
     /// Scheitert still (Mitteilungen aus): der Vorschlag steht beim naechsten Oeffnen in der App.
-    func post(_ alert: ReplanAlert) async {
-        try? await UNUserNotificationCenter.current().add(Self.request(for: alert))
+    func post(_ alert: ReplanAlert, alerting: Bool) async {
+        try? await UNUserNotificationCenter.current().add(Self.request(for: alert, alerting: alerting))
     }
 }
 

@@ -370,6 +370,32 @@ private let pace = WalkingPaceFactor()
         #expect(ReplanKey(p1).hashValue == ReplanKey(p2).hashValue)
     }
 
+    /// Ohne Fahrt-ID: ein Gleiswechsel (andere Bahnsteig-ID, gleicher Haltname) bleibt dasselbe Fahrzeug.
+    @Test func keyWithoutTripIdIsStableWhenPlatformChanges() throws {
+        let one = journeyText([L(trip: "X", dep: 40, arr: 50, from: "gleis1", to: "q", noTrip: true)])
+        let two = one.replacingOccurrences(of: #""id":"gleis1""#, with: #""id":"gleis2""#)
+        let a = try TransitJSON.decoder().decode(Journey.self, from: Data(one.utf8)).legs[0]
+        let b = try TransitJSON.decoder().decode(Journey.self, from: Data(two.utf8)).legs[0]
+        #expect(a.origin.id != b.origin.id)
+        #expect(ReplanKey(a) == ReplanKey(b))
+        #expect(ReplanKey(a).matches(b))
+    }
+
+    /// Die Alternative muss am Suchstart beginnen: gleiche ID, Bahnsteig der Station ("<id>:3") oder in der Naehe.
+    /// Ein anderer Halt 2 km weiter ist keine Alternative ab dem Ausstieg.
+    @Test func alternativeMustStartAtTheSearchStart() throws {
+        let s = try search() // Start "deutz" bei 51.0/7.0
+        func from(_ id: String, latitude: String) throws -> CalibratedJourney {
+            let text = journeyText([L(trip: "D", dep: 45, arr: 60, from: id, to: "ziel")])
+                .replacingOccurrences(of: #""id":"\#(id)","name":"Halt \#(id)","latitude":51.0"#,
+                                      with: #""id":"\#(id)","name":"Halt \#(id)","latitude":\#(latitude)"#)
+            return calibrated(try TransitJSON.decoder().decode(Journey.self, from: Data(text.utf8)))
+        }
+        #expect(try ConnectionWatch.pick([from("elsewhere", latitude: "51.02")], for: s) == nil)
+        #expect(try ConnectionWatch.pick([from("deutz:3:1", latitude: "51.02")], for: s) == 0)
+        #expect(try ConnectionWatch.pick([from("gleis4", latitude: "51.001")], for: s) == 0)
+    }
+
     @Test func stayingOnTheSameTrainNeedsNoLeadingWalkAndATripId() throws {
         let s = try search()
         // Gehweg vor dem Ausstiegsfahrzeug: keine Ausnahme, 08:40 liegt vor Suchzeit + Gehweg + 120 s
@@ -400,8 +426,69 @@ private let pace = WalkingPaceFactor()
         #expect(ConnectionWatch.pick([walk], for: s) == nil)
     }
 
+    /// Die bisher vorgeschlagene Alternative bleibt, solange sie erreichbar ist; erst dann wird neu gewaehlt.
+    @Test func keepsTheCurrentAlternativeWhileReachable() throws {
+        let s = try search() // Suchzeit 08:39
+        let list = try [alt("D", dep: 50), alt("E", dep: 46)]
+        #expect(ConnectionWatch.pick(list, for: s) == 1)
+        #expect(ConnectionWatch.pick(list, for: s, keeping: 0) == 0)
+        #expect(ConnectionWatch.pick(list, for: s, keeping: 5) == 1)
+        #expect(try ConnectionWatch.pick([alt("D", dep: 40), alt("E", dep: 46)], for: s, keeping: 0) == 1)
+    }
+
     @Test func nothingWhenEmpty() throws {
         #expect(try ConnectionWatch.pick([], for: search()) == nil)
+    }
+}
+
+/// Vormerkung ab "x" (Ausstieg aus B), betroffen ist C: A 08:00-08:30, B 08:40-09:00, C faellt aus.
+@Suite struct PendingSwitchTests {
+    private func trip(cancelledB: Bool = false) throws -> Journey {
+        try journey([
+            L(trip: "A", dep: 0, arr: 30, from: "start", to: "deutz"),
+            L(walk: true, dep: 30, arr: 32, from: "deutz", to: "gleis9", seconds: 120),
+            L(trip: "B", dep: 40, arr: 60, from: "gleis9", to: "x", cancelled: cancelledB),
+            L(walk: true, dep: 60, arr: 62, from: "x", to: "y", seconds: 120),
+            L(trip: "C", dep: 70, arr: 90, from: "y", to: "ziel", cancelled: true),
+        ])
+    }
+
+    private func reserved() throws -> ReplanSearch {
+        let found = ConnectionWatch.evaluate(journey: try trip(), step: .onBoardTransit(vehicle: 0), latched: [], walks: [:],
+                                             now: at(10), pace: pace).searches
+        let s = try #require(found.first)
+        #expect(s.trigger == .tripCancelled(vehicle: 4) && s.alightingVehicle == 2)
+        return s
+    }
+
+    private func state(_ step: NavigationStep, minute: Int, affected: Set<Int> = [], cancelledB: Bool = false) throws -> PendingSwitchStep {
+        ConnectionWatch.pendingSwitch(try reserved(), journey: try trip(cancelledB: cancelledB), step: step, affected: affected, now: at(minute))
+    }
+
+    @Test func startsOnlyFromTheAlightingVehicleAfterItsArrival() throws {
+        #expect(try state(.onBoardTransit(vehicle: 0), minute: 10) == .wait)
+        #expect(try state(.onBoardTransit(vehicle: 2), minute: 59) == .wait)
+        #expect(try state(.onBoardTransit(vehicle: 2), minute: 60) == .start(arrival: at(60)))
+        #expect(try state(.transferRouting(from: 2, to: 4), minute: 61) == .start(arrival: at(60)))
+        // Anschluss C verpasst (der Grund der Vormerkung) oder am Gleis von C: man ist am Suchstart
+        #expect(try state(.missedDeparture(vehicle: 4), minute: 71) == .start(arrival: at(60)))
+        #expect(try state(.waitingAtPlatform(vehicle: 4), minute: 65) == .start(arrival: at(60)))
+        #expect(try state(.finalWalkToDestination, minute: 95) == .start(arrival: at(60)))
+        // vor der Ankunft nie, auch nicht im Fahrzeug selbst
+        #expect(try state(.transferRouting(from: 2, to: 4), minute: 59) == .wait)
+        // Uhrzeit allein reicht nicht: noch am Gleis bzw. auf dem Weg zu B
+        #expect(try state(.waitingAtPlatform(vehicle: 2), minute: 61) == .wait)
+        #expect(try state(.transferRouting(from: 0, to: 2), minute: 61) == .wait)
+    }
+
+    @Test func droppedWhenAVehicleUpToTheAlightingOneBreaks() throws {
+        #expect(try state(.onBoardTransit(vehicle: 0), minute: 10, cancelledB: true) == .drop)
+        #expect(try state(.waitingAtPlatform(vehicle: 2), minute: 35, cancelledB: true) == .drop)
+        #expect(try state(.onBoardTransit(vehicle: 0), minute: 10, affected: [2]) == .drop)
+        #expect(try state(.missedDeparture(vehicle: 2), minute: 41) == .drop)
+        // spaetere Anschluesse gehoeren zur Vormerkung, schon gefahrene zaehlen nicht
+        #expect(try state(.onBoardTransit(vehicle: 0), minute: 10, affected: [4]) == .wait)
+        #expect(try state(.onBoardTransit(vehicle: 2), minute: 45, affected: [0, 2]) == .wait)
     }
 }
 

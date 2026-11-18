@@ -46,12 +46,24 @@ public enum ReminderText {
     }
 
     public static func body(_ journey: Journey) -> String {
-        guard let first = journey.legs.first(where: { !$0.isWalk }) else {
+        guard journey.legs.contains(where: { !$0.isWalk }) else {
             let time = journey.departure?.clockText ?? ""
             if let stop = stopName(journey.legs.last?.destination) {
                 return String(localized: "Zu Fuß nach \(stop), \(time)", bundle: .module)
             }
             return String(localized: "Zu Fuß, \(time)", bundle: .module)
+        }
+        var parts = [departure(journey)].filter { !$0.isEmpty }
+        if let stop = stopName(journey.legs.last(where: { !$0.isWalk })?.destination) {
+            parts.append(String(localized: "nach \(stop)", bundle: .module))
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    /// Nur die erste Abfahrt: Linie, Zeit, Halt und Gleis eines Halts (Umplanung auf dem Sperrbildschirm, ohne Ausstiegshalt).
+    public static func departure(_ journey: Journey) -> String {
+        guard let first = journey.legs.first(where: { !$0.isWalk }) else {
+            return String(localized: "Zu Fuß, \(journey.departure?.clockText ?? "")", bundle: .module)
         }
         var parts: [String] = []
         if let time = (first.departure ?? first.plannedDeparture)?.clockText {
@@ -69,9 +81,6 @@ public enum ReminderText {
             } else {
                 parts.append(String(localized: "Gleis \(platform)", bundle: .module))
             }
-        }
-        if let stop = stopName(journey.legs.last(where: { !$0.isWalk })?.destination) {
-            parts.append(String(localized: "nach \(stop)", bundle: .module))
         }
         return parts.joined(separator: ", ")
     }

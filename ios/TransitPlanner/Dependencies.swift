@@ -292,6 +292,8 @@ final class FakeTripActivities: TripActivityControlling {
 final class FakeNotifier: ReminderNotifying, ReplanNotifying {
     let pending = Mutex<[String: ReminderAlert]>([:])
     let replan = Mutex<[String: ReplanAlert]>([:])
+    /// Gesendete Umplanungs-Mitteilungen mit Ton (stille Aktualisierungen zaehlen nicht).
+    let replanPosts = Mutex(0)
     let granted: Bool
 
     init(granted: Bool = true) { self.granted = granted }
@@ -308,7 +310,11 @@ final class FakeNotifier: ReminderNotifying, ReplanNotifying {
     }
 
     var replanAlert: ReplanAlert? { replan.withLock { $0[ReplanAlert.identifier] } }
-    func post(_ alert: ReplanAlert) async { replan.withLock { $0[ReplanAlert.identifier] = alert } }
+    var replanPostCount: Int { replanPosts.withLock { $0 } }
+    func post(_ alert: ReplanAlert, alerting: Bool) async {
+        replan.withLock { $0[ReplanAlert.identifier] = alert }
+        if alerting { replanPosts.withLock { $0 += 1 } }
+    }
 }
 
 /// Fake-Refresh: liefert die Verbindung mit gleichem Token aus den Fake-Daten oder einen vorgegebenen Stand/Fehler.
@@ -405,10 +411,13 @@ final class FakeRoutePlanner: RoutePlanning {
     let reversed: Bool
     /// Andere Antwort statt `FakeData.routes` (z. B. `FakeData.deutz()`); umschaltbar fuer Folgeanfragen.
     let response: Mutex<RoutesResponse?>
+    /// Pause zwischen Geruest und kalibrierter Antwort (Blatt im Stand `.skeleton`).
+    let calibrationDelay: Duration
 
     init(failure: TransitError? = nil, delay: Duration = .zero, failAfterFirst: TransitError? = nil, reversed: Bool = false,
-         response: RoutesResponse? = nil) {
+         response: RoutesResponse? = nil, calibrationDelay: Duration = .zero) {
         self.response = Mutex(response)
+        self.calibrationDelay = calibrationDelay
         self.failure = Mutex(failure)
         self.delay = delay
         self.failAfterFirst = failAfterFirst
@@ -426,6 +435,7 @@ final class FakeRoutePlanner: RoutePlanning {
         let delay = self.delay
         let reversed = self.reversed
         let override = self.response.withLock { $0 }
+        let calibrationDelay = self.calibrationDelay
         return AsyncThrowingStream { continuation in
             let task = Task {
                 if delay > .zero {
@@ -436,6 +446,7 @@ final class FakeRoutePlanner: RoutePlanning {
                 let response = reversed ? FakeData.reversed(base) : base
                 continuation.yield(.skeleton(response))
                 do {
+                    if calibrationDelay > .zero { try await Task.sleep(for: calibrationDelay) }
                     // Der Rechner spricht hier nie mit dem Backend: `calibrate` nutzt nur die Fake-Gehzeiten.
                     let calculator = HybridRouteCalculator(api: TransitAPIClient(secrets: InMemorySecretStore()),
                                                            directions: FakeWalking())

@@ -23,21 +23,25 @@ import UserNotifications
         /// So lange dauert die Abfrage der Rate-Limit-Sperre (Fenster nach einer gescheiterten Suche).
         let blockedDelay: Duration
 
-        init(delay: Duration = .zero, blockedDelay: Duration = .zero) {
-            planner = FakeRoutePlanner(delay: delay, response: FakeData.deutz())
+        init(delay: Duration = .zero, blockedDelay: Duration = .zero, calibrationDelay: Duration = .zero) {
+            planner = FakeRoutePlanner(delay: delay, response: FakeData.deutz(), calibrationDelay: calibrationDelay)
             self.blockedDelay = blockedDelay
         }
         func set(_ time: String) { now.withLock { $0 = ReplanFlowTests.at(time) } }
         var clock: Date { now.withLock { $0 } }
     }
 
-    /// Antwort ab Deutz: [0] der betroffene RB 25, [1] Fussweg 120 s und Tram 1 ab `tram` (Token "YWx0").
-    static func alternatives(tram: String = "07:50:00", tramCancelled: Bool = false) -> RoutesResponse? {
+    /// Antwort ab Deutz: [0] der betroffene RB 25, [1] Fussweg 120 s und Tram 1 ab `tram` (Token "YWx0"), mit `early`
+    /// [2] Tram 7 ohne Fussweg ab Deutz (frueher am Ziel). `fromHansaring`: Tram 1 startet am Hansaring (Suchstart dort).
+    static func alternatives(tram: String = "07:50:00", tramCancelled: Bool = false, early: String? = nil,
+                             fromHansaring: Bool = false) -> RoutesResponse? {
         func place(_ id: String, _ lat: Double, _ lon: Double) -> String {
             #"{"kind":"stop","id":"\#(id)","name":"Halt \#(id)","latitude":\#(lat),"longitude":\#(lon)}"#
         }
         let deutz93 = place("deutz93", 50.9409, 6.9750), deutzTram = place("deutzTram", 50.9409, 6.9750)
         let deutz92 = place("deutz92", 50.9406, 6.9745), weyertal = place("weyertal", 50.9258, 6.9218)
+        let tramStart = fromHansaring ? place("hansaring", 50.9483, 6.9431) : deutz93
+        let tramStop = fromHansaring ? place("hansaringTram", 50.9479, 6.9438) : deutzTram
         let goal = #"{"kind":"coordinate","latitude":50.9233,"longitude":6.9200}"#
         func t(_ time: String) -> String { "2026-10-26T\(time)Z" }
         func walk(_ i: Int, _ from: String, _ to: String, _ dep: String, _ arr: String, _ seconds: Int) -> String {
@@ -57,11 +61,18 @@ import UserNotifications
             walk(1, weyertal, goal, "07:58:00", "08:06:00", 480),
         ])
         let tramTrip = journey("YWx0", "07:48:00", "08:16:00", [
-            walk(0, deutz93, deutzTram, "07:48:00", "07:50:00", 120),
-            ride(1, "tram", "1", deutzTram, weyertal, tram, "08:08:00", cancelled: tramCancelled),
+            walk(0, tramStart, tramStop, "07:48:00", "07:50:00", 120),
+            ride(1, "tram", "1", tramStop, weyertal, tram, "08:08:00", cancelled: tramCancelled),
             walk(2, weyertal, goal, "08:08:00", "08:16:00", 480),
         ])
-        let json = #"{"journeys":[\#(rb25),\#(tramTrip)],"earlierRef":null,"laterRef":null,"walkOnly":false,"#
+        let earlyTrip = early.map { dep in
+            journey("ZWFy", dep, "08:08:00", [
+                ride(0, "tram", "7", deutz93, weyertal, dep, "08:00:00", cancelled: false),
+                walk(1, weyertal, goal, "08:00:00", "08:08:00", 480),
+            ])
+        }
+        let list = [rb25, tramTrip] + (earlyTrip.map { [$0] } ?? [])
+        let json = #"{"journeys":[\#(list.joined(separator: ","))],"earlierRef":null,"laterRef":null,"walkOnly":false,"#
             + #""removedLongDistance":0,"fetchedAt":"2026-10-26T07:10:00Z","attribution":\#(FakeData.attributionJSON)}"#
         return try? TransitJSON.decoder().decode(RoutesResponse.self, from: Data(json.utf8))
     }
@@ -180,7 +191,8 @@ import UserNotifications
     }
 
     /// Steht ein Vorschlag, startet auch 5 Min. schlechter keine Suche (die Antwort waere verworfen); er wird gegen die neue
-    /// Suchzeit geprueft und faellt erst, wenn die Alternative nicht mehr erreichbar ist. Dann sucht es neu.
+    /// Suchzeit geprueft (gleiche ID, gleiche Alternative, Suchzeit nachgefuehrt) und faellt erst, wenn keine Alternative mehr
+    /// erreichbar ist. Dann sucht es neu, mit neuem Vorschlag.
     @Test func visibleProposalIsRecheckedInsteadOfSearchingAgain() async throws {
         let env = Env()
         let f = await navigating(env)
@@ -189,6 +201,8 @@ import UserNotifications
         try await refresh(f, env, iceDelay: 480) // Ankunft 07:40, Tram 07:50 reicht noch
         #expect(env.planner.callCount == 2)
         #expect(f.replanOffer?.proposal.id == id)
+        #expect(f.replanOffer?.proposal.alternativeIndex == 1)
+        #expect(f.replanOffer?.proposal.search.time == Self.at("07:40:00"))
         env.planner.setResponse(Self.alternatives(tram: "08:00:00"))
         try await refresh(f, env, iceDelay: 900) // Ankunft 07:47: 07:50 reicht nicht mehr
         #expect(env.planner.callCount == 3)
@@ -491,6 +505,8 @@ import UserNotifications
         #expect(alert.body.hasPrefix("Vorschlag: 1 um ") && alert.body.contains("ab Halt deutzTram"))
         // Ziel-Label des Nutzers ("Weyertal 119a") und Koordinaten nie, keine Emojis
         #expect(!alert.body.contains("119a") && !alert.body.contains("50.9"))
+        // Sperrbildschirm: nur ein Halt (Abfahrt), nicht der letzte Ausstiegshalt der Alternative
+        #expect(!alert.body.contains("weyertal") && !alert.body.contains("nach"))
         #expect((alert.title + alert.body).unicodeScalars.allSatisfy { !$0.properties.isEmojiPresentation })
         #expect(env.notifier.alerts.isEmpty) // nicht bei den Erinnerungen
         let request = SystemNotifier.request(for: alert)
@@ -611,6 +627,7 @@ import UserNotifications
     @Test func choosingInTheProposalSheetReservesFromTheSearchStart() async throws {
         let env = Env()
         let f = await navigating(env)
+        env.planner.setResponse(Self.alternatives(fromHansaring: true))
         env.refresher.set(.success(try Self.shifted(leg: 4, by: -170))) // Tram 12 am Hansaring reicht nicht, im ICE
         await f.refreshNavigation()
         await f.waitForReplan()
@@ -621,6 +638,187 @@ import UserNotifications
         #expect(f.pendingSwitch?.proposal.search.alightingVehicle == 2)
         #expect(f.pendingSwitch?.proposal.search.key == offer.proposal.search.key)
         #expect(f.peek == nil && f.replanOffer == nil)
+    }
+    // MARK: Review-Befunde
+
+    /// Vorgemerkt ab Hansaring (Tram 12 reicht nicht), danach faellt der RB 25 davor aus: der Ausfall gilt wie ohne Vormerkung
+    /// (Vorschlag ab Deutz, Problem "Anschluss"), die Vormerkung entfaellt, gewechselt wird nicht.
+    @Test func reservedSwitchAtALaterStationKeepsWatchingTheVehiclesBefore() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        env.planner.setResponse(Self.alternatives(fromHansaring: true))
+        env.refresher.set(.success(try Self.shifted(leg: 4, by: -170)))
+        await f.refreshNavigation()
+        await f.waitForReplan()
+        let offer = try #require(f.replanOffer)
+        #expect(offer.proposal.search.alightingVehicle == 2)
+        f.acceptReplan(offer.proposal.id)
+        #expect(f.pendingSwitch != nil)
+        #expect(problem(env) != .connection)
+        env.planner.setResponse(Self.alternatives())
+        env.refresher.set(.success(try ViaFlowTests.changed(Self.shifted(leg: 4, by: -170)) { legs in legs[2]["cancelled"] = true }))
+        await f.refreshNavigation()
+        await f.waitForReplan()
+        #expect(f.pendingSwitch == nil)
+        #expect(f.replanOffer?.proposal.search.trigger == .tripCancelled(vehicle: 2))
+        let hint = try #require(f.navInput.map(NavigationPresenter.card)?.hint)
+        #expect(hint.text.hasPrefix("Anschluss RB 25 fällt aus"))
+        #expect(problem(env) == .connection)
+        env.refresher.set(.success(try #require(Self.alternatives(fromHansaring: true)?.journeys[1])))
+        await tick(f, env, at: "07:39:00")
+        #expect(f.navJourney?.legs.contains { $0.line?.name == "ICE 47" } == true)
+    }
+
+    /// Vorgemerkt ab Hansaring, aber der Nutzer steht nach der Abfahrt des RB 25 noch in Deutz: die Uhrzeit allein startet
+    /// den Wechsel nicht, nur der Schritt im bzw. nach dem Ausstiegsfahrzeug.
+    @Test func reservedSwitchStartsOnlyFromTheAlightingVehicle() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        env.planner.setResponse(Self.alternatives(fromHansaring: true))
+        env.refresher.set(.success(try Self.shifted(leg: 4, by: -170)))
+        await f.refreshNavigation()
+        await f.waitForReplan()
+        f.acceptReplan(try #require(f.replanOffer).proposal.id)
+        env.refresher.set(.success(try #require(Self.alternatives(fromHansaring: true)?.journeys[1])))
+        env.set("07:37:00") // RB 25 ist 07:34 abgefahren, der Nutzer ist noch 200 m vom Gleis in Deutz
+        f.navigationUpdate(position: GeoCoordinate(latitude: 50.9425, longitude: 6.9760), accuracy: 5, now: env.clock)
+        #expect(f.navStep == .missedDeparture(vehicle: 2))
+        await tick(f, env, at: "07:39:00") // RB 25 haette Hansaring um 07:38 erreicht
+        #expect(f.pendingSwitch == nil)
+        #expect(f.navJourney?.legs.contains { $0.line?.name == "ICE 47" } == true)
+    }
+
+    /// Der Puffer zittert, die beste Alternative wechselt: derselbe Vorschlag (ID), die bisherige bleibt, solange sie
+    /// erreichbar ist, und im Hintergrund kommt nur eine Mitteilung mit Ton.
+    @Test func flappingBestAlternativeKeepsTheProposalAndAlertsOnce() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        env.planner.setResponse(Self.alternatives(early: "07:37:30"))
+        f.movedToBackground()
+        try await refresh(f, env, iceDelay: 180) // Suchzeit 07:35: Tram 7 um 07:37:30 erreichbar und beste
+        let offer = try #require(f.replanOffer)
+        #expect(offer.proposal.alternativeIndex == 2)
+        for delay in [360, 180, 360] { try await refresh(f, env, iceDelay: delay) }
+        #expect(f.replanOffer?.proposal.id == offer.proposal.id)
+        #expect(f.replanOffer?.proposal.alternativeIndex == 1)
+        #expect(env.notifier.replanPostCount == 1)
+        #expect(env.planner.callCount == 2)
+    }
+
+    /// "Wechseln" im Blatt, solange die Gehzeiten noch rechnen (`.skeleton`): auch dann vorgemerkt, nicht sofort.
+    @Test func choosingWhileTheSheetIsStillCalibratingIsReservedToo() async throws {
+        let env = Env(calibrationDelay: .milliseconds(400))
+        let f = await navigating(env)
+        f.openAlternatives(from: .nextStation)
+        for _ in 0..<40 {
+            if case .loaded = f.peek { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        guard case .loaded(_, nil, _) = f.peek else {
+            Issue.record("Blatt sollte noch ohne Gehzeiten sein")
+            return
+        }
+        f.chooseAlternative(1)
+        #expect(f.pendingSwitch?.proposal.alternativeIndex == 1)
+        #expect(f.navJourney?.legs.contains { $0.line?.name == "ICE 47" } == true)
+    }
+
+    /// Die Suchzeit des sichtbaren Vorschlags folgt der Echtzeit-Ankunft (Blatt und Pruefung am Suchstart).
+    @Test func visibleProposalFollowsTheRealtimeArrival() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        try await refresh(f, env, iceDelay: 180)
+        let id = try #require(f.replanOffer?.proposal.id)
+        try await refresh(f, env, iceDelay: 300) // Ankunft 07:37, keine neue Suche
+        #expect(env.planner.callCount == 2)
+        #expect(f.replanOffer?.proposal.id == id)
+        #expect(f.replanOffer?.proposal.search.time == Self.at("07:37:00"))
+        f.showProposal(id)
+        #expect(f.peekStart?.time == Self.at("07:37:00"))
+    }
+
+    /// Rate-Limit aktiv: am Suchstart kein Refresh, der gemerkte Stand zaehlt.
+    @Test func switchDuringRateLimitSkipsTheRefresh() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        try await refresh(f, env, iceDelay: 180)
+        f.acceptReplan(try #require(f.replanOffer).proposal.id)
+        env.refresher.set(.failure(.rateLimited))
+        env.blocked.withLock { $0 = Self.at("07:50:00") }
+        await f.refreshNavigation()
+        #expect(f.blockedUntil != nil)
+        let calls = env.refresher.callCount
+        await tick(f, env, at: "07:36:00")
+        #expect(env.refresher.callCount == calls)
+        #expect(f.navJourney?.legs.first { $0.line?.name == "1" }?.departure == Self.at("07:50:00"))
+    }
+
+    /// Antwortet der Refresh am Suchstart mit Rate-Limit, gilt die Sperre danach fuer die ganze App.
+    @Test func rateLimitOfTheSwitchRefreshIsAdopted() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        try await refresh(f, env, iceDelay: 180)
+        f.acceptReplan(try #require(f.replanOffer).proposal.id)
+        env.refresher.set(.failure(.rateLimited))
+        env.blocked.withLock { $0 = Self.at("07:50:00") }
+        await tick(f, env, at: "07:36:00")
+        #expect(f.blockedUntil == Self.at("07:50:00"))
+        #expect(f.navJourney?.legs.contains { $0.line?.name == "1" } == true)
+    }
+
+    /// Verwirft die Pruefung am Suchstart die vorgemerkte Alternative: kurzer Hinweis, im Hintergrund eine Mitteilung.
+    @Test func droppedSwitchShowsANoticeAndAlertsInTheBackground() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        try await refresh(f, env, iceDelay: 180)
+        f.acceptReplan(try #require(f.replanOffer).proposal.id)
+        f.movedToBackground()
+        env.refresher.set(.success(try #require(Self.alternatives(tramCancelled: true)?.journeys[1])))
+        await tick(f, env, at: "07:36:00")
+        #expect(f.pendingSwitch == nil)
+        #expect(f.replanBanner == .expired("Wechsel auf 1 nicht mehr möglich"))
+        #expect(env.notifier.replanAlert?.title == "Wechsel auf 1 nicht mehr möglich")
+    }
+
+    /// Wischen der Mitteilung = "Behalten", aber nur fuer den laufenden, noch gueltigen Vorschlag.
+    @Test func dismissingTheAlertDeclinesOnlyTheLiveProposal() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        try await refresh(f, env, iceDelay: 180)
+        let id = try #require(f.replanOffer?.proposal.id)
+        #expect(SystemNotifier.replanCategory.options.contains(.customDismissAction))
+        f.declineReplan(UUID())
+        #expect(f.replanOffer != nil)
+        env.set("07:35:00") // Suchstart erreicht, noch kein Tick
+        f.declineReplan(id)
+        #expect(f.replanOffer != nil)
+    }
+
+    /// Bestaetigt wird die angetippte Fahrt, nicht die Zeile: hat sich die Liste veraendert, zaehlt dieselbe Verbindung.
+    @Test func choosingByJourneyFindsTheSameTrip() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        f.openAlternatives(from: .nextStation)
+        await f.waitForPeek()
+        let tram = try #require(Self.alternatives()?.journeys[1])
+        f.chooseAlternative(tram)
+        #expect(f.pendingSwitch?.proposal.alternativeIndex == 1)
+    }
+
+    /// Vorgemerkt ab Hansaring, am Gleis des RB 25 faellt er aus: "fällt aus" bleibt stehen, "vorgemerkt" ersetzt nur
+    /// "reicht nicht" eines Anschlusses nach dem Ausstieg.
+    @Test func reservedReplacesOnlyTheBrokenConnectionAfterAlighting() throws {
+        let base = try RouteOverviewTests.journey()
+        let cancelled = try ViaFlowTests.changed(base) { legs in legs[2]["cancelled"] = true }
+        func hint(_ journey: Journey, _ step: NavigationStep, at time: String) -> NowCard.Hint? {
+            NavigationPresenter.card(NavigationPresenter.Input(
+                step: step, journey: journey, geometry: base, walks: [:], position: nil, now: Self.at(time), pace: WalkingPaceFactor(),
+                destinationLabel: "Weyertal 119a", startedAt: nil, expired: false,
+                replan: .reserved("Wechsel auf 1 vorgemerkt", alighting: 2))).hint
+        }
+        #expect(hint(cancelled, .waitingAtPlatform(vehicle: 2), at: "07:33:00")?.text == "RB 25 fällt aus.")
+        let broken = try Self.shifted(leg: 4, by: -170) // Tram 12 am Hansaring reicht nicht
+        #expect(hint(broken, .onBoardTransit(vehicle: 0), at: "07:20:00")?.text == "Wechsel auf 1 vorgemerkt")
     }
 }
 #endif

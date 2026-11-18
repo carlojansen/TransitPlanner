@@ -23,6 +23,7 @@ extension AppFlow {
 struct NowCardView: View {
     @Environment(AppFlow.self) private var flow
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let card: NowCard
     /// AX: hoechstens dieser Anteil des Bildschirms, darueber scrollt die Karte (Sheet und Karte bleiben sichtbar).
     let maxScrollHeight: CGFloat
@@ -83,21 +84,27 @@ struct NowCardView: View {
     }
 
     /// Vorschlag: uebernehmen (Wechsel vormerken), behalten oder alle Alternativen ab dem Suchstart ansehen.
+    /// Treffflaeche 44 pt im Label, damit auch der Rand um den Text zaehlt; bei "Bewegung reduzieren" ohne Feder.
     @ViewBuilder private func replanButtons(_ id: UUID) -> some View {
-        Button("Übernehmen", systemImage: "checkmark") { withAnimation(Motion.standard) { flow.acceptReplan(id) } }
-            .font(.subheadline.weight(.semibold))
-            .frame(minHeight: 44)
+        replanButton("Übernehmen", symbol: "checkmark") { flow.acceptReplan(id) }
             .accessibilityHint("Merkt den Wechsel vor, die Fahrt läuft bis zum Umstieg weiter")
             .accessibilityIdentifier("acceptReplan")
-        Button("Behalten", systemImage: "xmark") { withAnimation(Motion.standard) { flow.declineReplan(id) } }
-            .font(.subheadline.weight(.semibold))
-            .frame(minHeight: 44)
+        replanButton("Behalten", symbol: "xmark") { flow.declineReplan(id) }
             .accessibilityHint("Die Fahrt bleibt unverändert")
             .accessibilityIdentifier("declineReplan")
-        Button("Alternativen ansehen", systemImage: "arrow.triangle.branch") { withAnimation(Motion.standard) { flow.showProposal(id) } }
-            .font(.subheadline.weight(.semibold))
-            .frame(minHeight: 44)
+        replanButton("Alternativen ansehen", symbol: "arrow.triangle.branch") { flow.showProposal(id) }
             .accessibilityIdentifier("showProposal")
+    }
+
+    private func replanButton(_ title: LocalizedStringKey, symbol: String, action: @escaping () -> Void) -> some View {
+        Button {
+            withAnimation(reduceMotion ? nil : Motion.standard) { action() }
+        } label: {
+            Label(title, systemImage: symbol)
+                .font(.subheadline.weight(.semibold))
+                .frame(minHeight: 44)
+                .contentShape(.rect)
+        }
     }
 
     private var headline: some View {
@@ -514,7 +521,8 @@ private struct OverviewRowView: View {
 /// naechsten Station (Umschalter). "Zurück zur Fahrt" bringt die laufende Fahrt wieder; ein Wechsel braucht eine Bestaetigung.
 struct AlternativesView: View {
     @Environment(AppFlow.self) private var flow
-    @State private var chosen: Int?
+    /// Gemerkt wird die Fahrt, nicht die Zeile: die Liste kann sich bis zur Bestaetigung aendern (Geruest -> kalibriert).
+    @State private var chosen: Journey?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -597,7 +605,7 @@ struct AlternativesView: View {
                 Text("Keine Verbindung gefunden").foregroundStyle(.secondary)
             }
             ForEach(Array(response.journeys.enumerated()), id: \.offset) { index, journey in
-                Button { chosen = index } label: {
+                Button { chosen = journey } label: {
                     ContentCard {
                         VStack(alignment: .leading, spacing: 4) {
                             AlternativeRow(journey: journey, calibrated: walks?[safe: index], via: via)

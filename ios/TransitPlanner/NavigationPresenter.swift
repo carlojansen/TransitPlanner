@@ -23,6 +23,8 @@ struct NowCard: Sendable, Equatable {
         let symbol: String
         let tone: Tone
         var action: Action?
+        /// "Reicht nicht" zu diesem Fahrzeug (Leg-Index); nur das ersetzt ein vorgemerkter Wechsel danach.
+        var brokenVehicle: Int?
     }
 
     enum Variant: Sendable, Equatable { case waiting, walk, platform, onBoard, transfer, replacement, finalWalk, arrived }
@@ -94,8 +96,8 @@ extension Tone: Equatable {}
 enum ReplanBanner: Sendable, Equatable {
     /// "Anschluss RB 25 reicht nicht mehr", darunter nur der beste Vorschlag.
     case offer(id: UUID, title: String, body: String)
-    /// "Wechsel auf 1 vorgemerkt" statt "reicht nicht".
-    case reserved(String)
+    /// "Wechsel auf 1 vorgemerkt" statt "reicht nicht" der Anschluesse nach dem Ausstiegsfahrzeug (`alighting`).
+    case reserved(String, alighting: Int)
     /// Kurz nach Verfall: "Anschluss RB 25 reicht wieder".
     case expired(String)
 }
@@ -128,17 +130,18 @@ enum NavigationPresenter {
             card.hint = NowCard.Hint(text: String(localized: "Die Verbindung ist nicht mehr aktuell."),
                                      symbol: "clock.arrow.circlepath", tone: .alert, action: .nextConnection)
         }
-        // Umplanung: vorgemerkt und Vorschlag ersetzen "reicht nicht" (und den Ausfall des verlassenen Anschlusses);
-        // der Hinweis nach Verfall steht nur ohne anderen Hinweis.
+        // Umplanung: der Vorschlag ersetzt "reicht nicht" (und den Ausfall des verlassenen Anschlusses). Vorgemerkt ersetzt nur
+        // "reicht nicht" nach dem Ausstiegsfahrzeug; bis dorthin bleiben Ausfall, Meldung und "reicht nicht" sichtbar.
+        // Der Hinweis nach Verfall steht nur ohne anderen Hinweis.
         switch input.replan {
-        case .reserved(let text):
+        case .reserved(let text, let alighting) where card.hint.map({ ($0.brokenVehicle ?? .min) > alighting }) ?? true:
             card.hint = NowCard.Hint(text: text, symbol: "arrow.triangle.branch", tone: .info)
         case .offer(let id, let title, let body):
             card.hint = NowCard.Hint(text: body.isEmpty ? title : "\(title). \(body)", symbol: "xmark.octagon.fill",
                                      tone: .alert, action: .replan(id))
         case .expired(let text) where card.hint == nil:
             card.hint = NowCard.Hint(text: text, symbol: "checkmark.circle.fill", tone: .info)
-        case .expired, nil:
+        case .expired, .reserved, nil:
             break
         }
         return card
@@ -264,7 +267,7 @@ enum NavigationPresenter {
                                                           now: input.now, pace: input.pace),
            let next = leg(broken, input.journey) {
             card.hint = NowCard.Hint(text: String(localized: "Anschluss \(next.badgeText) in \(next.origin.name ?? "") reicht nicht mehr."),
-                                     symbol: "xmark.octagon.fill", tone: .alert, action: .nextConnection)
+                                     symbol: "xmark.octagon.fill", tone: .alert, action: .nextConnection, brokenVehicle: broken)
         }
         return card
     }
@@ -353,7 +356,7 @@ enum NavigationPresenter {
                                                    position: input.position, now: input.now, pace: input.pace),
               buffer.status == .missed else { return nil }
         return NowCard.Hint(text: String(localized: "Das reicht nicht mehr."), symbol: "figure.walk.motion",
-                            tone: .alert, action: .nextConnection)
+                            tone: .alert, action: .nextConnection, brokenVehicle: vehicle)
     }
 
     /// Gleiswechsel: "nicht Gleis 10".
