@@ -142,6 +142,14 @@ F. Tests: `TransitCoreTests/ConnectionWatchTests.swift` (Abnahmeliste aus 4.4), 
 
 **Offene Entscheidungen (Standard in Klammern, gilt ohne Gegenwort):** Mitteilung als `timeSensitive` (ja, wie der Aufbruch-Wecker); Schwelle für einen neuen Vorschlag nach Ablehnen (5 Minuten); nur bester Vorschlag im Banner, Rest über das Alternativen-Blatt (ja).
 
+## Fußweg-Vorrang im Backend (18.11., Wunsch Carlo)
+
+Regel in `routes()` (`transitService.js`): Ist das Ziel laut MOTIS (`direct`) zu Fuß in höchstens 15 min erreichbar, liefert das Backend nur ÖV-Verbindungen, die kürzer dauern als der Fußweg. Bleibt keine übrig, kommt der reine Fußweg (`walkOnly: true`). Nicht mit `via`. Keine zusätzliche Anfrage; `docs/API.md` ergänzt.
+
+Tests: Backend 94/0 (ein neuer Test mit drei Fällen: Fußweg 10 min mit schneller und langsamer Bahn, Fußweg 20 min unverändert). Commit `c642d29`, gepusht. Kein Review durch `security-hig-reviewer`.
+
+**Offen:** Deployment auf den Server (Carlo macht es selbst). Die App-Seite ist nicht angepasst: sie zeigt bei `walkOnly` weiter nur den Fußweg, prüfen am Gerät. Schwelle 15 min ist als Konstante `WALK_PREFERRED_SECONDS` fest; "15" wurde als Minuten gelesen.
+
 ## Ideen (nicht geplant, nicht begonnen)
 
 ### Engel-Modus (10.11., Idee Carlo)
