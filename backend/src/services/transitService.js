@@ -190,7 +190,7 @@ export function createTransitService({client, gate = createUpstreamGate(), timeo
 
 		// Ist das Ziel zu Fuss in <= WALK_PREFERRED_SECONDS erreichbar, zeigen wir nur Verbindungen, die schneller sind.
 		// Bleibt keine uebrig, greift unten der Fussweg-Rueckfall (walkOnly). Nicht mit Zwischenstopp.
-		const walkSeconds = !via?.length && Array.isArray(res.direct) ? res.direct[0]?.duration : undefined;
+		const walkSeconds = via?.length ? undefined : res.direct?.[0]?.duration;
 		if (typeof walkSeconds === 'number' && walkSeconds <= WALK_PREFERRED_SECONDS) {
 			itineraries = itineraries.filter((it) => typeof it.duration === 'number' && it.duration < walkSeconds);
 		}
