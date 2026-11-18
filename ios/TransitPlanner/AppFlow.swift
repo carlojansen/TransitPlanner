@@ -1082,6 +1082,10 @@ final class AppFlow {
            warnedVehicles.insert(target).inserted {
             navWarnings += 1
         }
+        // Verpasst mit Position rastet ein, bevor die Umplanung auswertet (Vormerkung verwerfen im selben Tick).
+        if currentBuffer?.status == .missed, navPosition != nil, let target = NavigationEngine.targetVehicle(step) {
+            navMissedVehicles.insert(target)
+        }
         evaluateReplan(now: now)
         if step == .arrived { send(.arrived) }
         syncActivities()
@@ -1115,7 +1119,7 @@ final class AppFlow {
     }
 
     /// Problem "Anschluss": Puffer zum Zielfahrzeug jetzt verpasst oder ein Fahrzeug ab dort eingerastet.
-    /// Zielfahrzeug: rastet nur mit Position ein (GPS-Spruenge um Puffer 0; ohne Fix rechnet `currentBuffer` mit dem ganzen
+    /// Zielfahrzeug: rastet in `navigationUpdate` nur mit Position ein (GPS-Spruenge um Puffer 0; ohne Fix rechnet `currentBuffer` mit dem ganzen
     /// Fussweg, das zaehlt nur bis zum ersten Fix). Spaetere Anschluesse: dieselbe Einrast-Regel wie der Vorschlag
     /// (`replanLatched`). Mit vorgemerktem Wechsel endet die alte Fahrt am Suchstart: Anschluesse danach zaehlen nicht mehr,
     /// bis zum Ausstiegsfahrzeug alles wie sonst. Nach dem Ausstieg entscheidet fuer das Zielfahrzeug nur `live` (mit Position);
@@ -1133,9 +1137,7 @@ final class AppFlow {
         default: break
         }
         let target = NavigationEngine.targetVehicle(step)
-        let missed = currentBuffer?.status == .missed
-        if missed, navPosition != nil, let target { navMissedVehicles.insert(target) }
-        let live = missed && (target ?? .max) <= limit
+        let live = currentBuffer?.status == .missed && (target ?? .max) <= limit
         return live || navMissedVehicles.contains { $0 >= ahead && $0 <= limit } || replanLatched.contains { $0 >= later && $0 <= limit }
     }
 
@@ -1511,10 +1513,11 @@ final class AppFlow {
     func chooseAlternative(_ index: Int) {
         guard case .loaded(let response, let walks, let peekVia) = peek, index < response.journeys.count else { return }
         let now = deps.now()
-        // Noch ohne Gehzeiten (`.skeleton`): mit den Fahrplanzeiten vormerken, die Pruefung am Suchstart rechnet ebenso.
-        let calibrated = walks ?? response.journeys.map(CalibratedJourney.init(timetable:))
+        // Noch ohne Gehzeiten (`.skeleton`): mit den Fahrplanzeiten und dem Gehtempo vormerken, die Pruefung am Suchstart
+        // rechnet ebenso.
+        let calibrated = walks ?? response.journeys.map { CalibratedJourney(timetable: $0, pace: pace) }
         if peekOrigin == .nextStation, calibrated.indices.contains(index), let journey = navJourney, let step = navStep,
-           let search = peekSearch.flatMap({ now < $0.time ? $0 : nil }) ?? ConnectionWatch.chosenSwitch(journey: journey, step: step, now: now) {
+           let search = peekSearch.flatMap({ now < $0.time ? $0 : nil }) ?? ConnectionWatch.chosenSwitch(journey: journey, step: step, now: now, pace: pace) {
             closeAlternatives()
             reserveSwitch(ReplanOffer(proposal: ReplanProposal(id: UUID(), search: search, alternativeIndex: index),
                                       answer: ReplanAnswer(search: search, response: response, calibrated: calibrated, via: peekVia)))
@@ -1554,10 +1557,12 @@ final class AppFlow {
         let result = ConnectionWatch.evaluate(journey: journey, step: step, latched: replanLatched, walks: navWalks, now: now, pace: pace)
         replanLatched = result.latched
         replanSearches = result.searches
-        // Betroffen: eingerastet oder verpasst, ohne abgelehnte. Bis zum Ausstiegsfahrzeug eines Vorschlags oder einer
-        // Vormerkung laeuft alles wie sonst; bricht dort etwas weg, entfallen sie (`ConnectionWatch.isUndercut`).
-        let declined = Set(result.searches.filter(replanMemory.isDeclined).map(\.trigger.vehicle))
-        let affected = result.latched.union(navMissedVehicles).subtracting(declined)
+        // Betroffen: eingerastet oder verpasst, ohne abgelehnte (auch nach dem Aussteigen, wenn es keine Suchen mehr gibt).
+        // Bis zum Ausstiegsfahrzeug eines Vorschlags oder einer Vormerkung laeuft alles wie sonst; bricht dort etwas weg,
+        // entfallen sie (`ConnectionWatch.isUndercut`).
+        let candidates = result.latched.union(navMissedVehicles)
+        let affected = candidates.subtracting(ConnectionWatch.declined(candidates, memory: replanMemory, journey: journey,
+                                                                       walks: navWalks, now: now, pace: pace))
         if let pending = pendingSwitch {
             switch ConnectionWatch.pendingSwitch(pending.proposal.search, journey: journey, step: step, affected: affected, now: now) {
             case .wait: return
@@ -1772,7 +1777,8 @@ final class AppFlow {
             guard case .navigation = phase, pendingSwitch?.proposal.id == pending.proposal.id,
                   navJourney?.isSameTrip(as: journey) == true else { return }
             pendingSwitch = nil
-            guard ConnectionWatch.pick([fresh], for: pending.proposal.search.at(arrival)) != nil else {
+            // Spaeter Tick oder langsamer Refresh: ab jetzt muss die Alternative noch erreichbar sein, nicht ab der Ankunft.
+            guard ConnectionWatch.pick([fresh], for: pending.proposal.search.at(max(arrival, deps.now()))) != nil else {
                 let text = Self.switchLine(pending).map { String(localized: "Wechsel auf \($0) nicht mehr möglich") }
                     ?? String(localized: "Wechsel nicht mehr möglich")
                 replanExpired = text

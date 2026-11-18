@@ -266,12 +266,12 @@ private let pace = WalkingPaceFactor()
 
     @Test func chosenSwitchOnlyWhileBoardedFromTheAlightingStop() throws {
         let j = try base(delay: 9)
-        let s = try #require(ConnectionWatch.chosenSwitch(journey: j, step: .onBoardTransit(vehicle: 0), now: at(10)))
+        let s = try #require(ConnectionWatch.chosenSwitch(journey: j, step: .onBoardTransit(vehicle: 0), now: at(10), pace: pace))
         #expect(s.trigger == .chosen(vehicle: 0) && s.alightingVehicle == 0)
         #expect(s.start == .stop(id: "deutz", label: "Halt deutz"))
         #expect(s.time == at(39))
-        #expect(ConnectionWatch.chosenSwitch(journey: j, step: .transferRouting(from: 0, to: 2), now: at(40)) == nil)
-        #expect(ConnectionWatch.chosenSwitch(journey: j, step: .approachingFirstStop(vehicle: 0), now: at(0)) == nil)
+        #expect(ConnectionWatch.chosenSwitch(journey: j, step: .transferRouting(from: 0, to: 2), now: at(40), pace: pace) == nil)
+        #expect(ConnectionWatch.chosenSwitch(journey: j, step: .approachingFirstStop(vehicle: 0), now: at(0), pace: pace) == nil)
         // kein betroffenes Fahrzeug: auch eine Alternative mit B ist erlaubt, Gehweg und Puffer gelten weiter
         let withB = try calibrated(journey([L(trip: "B", dep: 41, arr: 60, from: "gleis9", to: "ziel")]))
         #expect(ConnectionWatch.pick([withB], for: s) == 0)
@@ -385,15 +385,45 @@ private let pace = WalkingPaceFactor()
     /// Ein anderer Halt 2 km weiter ist keine Alternative ab dem Ausstieg.
     @Test func alternativeMustStartAtTheSearchStart() throws {
         let s = try search() // Start "deutz" bei 51.0/7.0
-        func from(_ id: String, latitude: String) throws -> CalibratedJourney {
-            let text = journeyText([L(trip: "D", dep: 45, arr: 60, from: id, to: "ziel")])
-                .replacingOccurrences(of: #""id":"\#(id)","name":"Halt \#(id)","latitude":51.0"#,
-                                      with: #""id":"\#(id)","name":"Halt \#(id)","latitude":\#(latitude)"#)
-            return calibrated(try TransitJSON.decoder().decode(Journey.self, from: Data(text.utf8)))
-        }
         #expect(try ConnectionWatch.pick([from("elsewhere", latitude: "51.02")], for: s) == nil)
-        #expect(try ConnectionWatch.pick([from("deutz:3:1", latitude: "51.02")], for: s) == 0)
+        // 2,2 km Luftlinie zum Bahnsteig: rund 29 Min. Weg, darum spaete Abfahrt
+        #expect(try ConnectionWatch.pick([from("deutz:3:1", latitude: "51.02", dep: 75)], for: s) == 0)
         #expect(try ConnectionWatch.pick([from("gleis4", latitude: "51.001")], for: s) == 0)
+    }
+
+    /// Alternative, die ohne Fussweg-Abschnitt an einem anderen Halt beginnt: die Luftlinie vom Suchstart zaehlt mit Gehtempo
+    /// als Weg (vorher 0 s); bei gleicher Halt-ID kein Weg.
+    @Test func accessWithoutWalkLegUsesTheStraightLineAndPace() throws {
+        let s = try search() // Suchzeit 08:39, ohne Weg reicht 08:41
+        // 111 m: 86 s Weg -> fruehestens 08:42:26
+        #expect(try ConnectionWatch.pick([from("gleis4", latitude: "51.001", dep: 42)], for: s) == nil)
+        #expect(try ConnectionWatch.pick([from("gleis4", latitude: "51.001", dep: 43)], for: s) == 0)
+        #expect(try ConnectionWatch.pick([from("deutz", latitude: "51.001", dep: 41)], for: s) == 0)
+        // doppelt so langsam: 172 s -> fruehestens 08:43:52
+        let slow = try #require(ConnectionWatch.evaluate(journey: base(delay: 9), step: .onBoardTransit(vehicle: 0), latched: [],
+                                                         walks: [:], now: at(10), pace: WalkingPaceFactor(learned: 2)).searches.first)
+        #expect(try ConnectionWatch.pick([from("gleis4", latitude: "51.001", dep: 43)], for: slow) == nil)
+    }
+
+    /// Blatt noch ohne Gehzeiten (`.skeleton`): die Fahrplan-Gehzeit zaehlt mit Gehtempo, wie der Rueckfall der Kalibrierung.
+    @Test func timetableWalksUseThePace() throws {
+        let s = try search() // Suchzeit 08:39
+        // 120 s Zugangsweg, Abfahrt 08:43: mit Tempo 1.0 genau erreichbar (08:39 + 120 s + 120 s), mit 1.5 (180 s) nicht
+        let j = try journey([
+            L(walk: true, dep: 40, arr: 43, from: "deutz", to: "gleis4", seconds: 120),
+            L(trip: "D", dep: 43, arr: 60, from: "gleis4", to: "ziel"),
+        ])
+        #expect(ConnectionWatch.pick([CalibratedJourney(timetable: j, pace: WalkingPaceFactor())], for: s) == 0)
+        #expect(ConnectionWatch.pick([CalibratedJourney(timetable: j, pace: WalkingPaceFactor(learned: 1.5))], for: s) == nil)
+        #expect(CalibratedJourney(timetable: j, pace: WalkingPaceFactor(learned: 1.5)).walks[0]?.seconds == 180)
+    }
+
+    /// Alternative mit einem Fahrzeug ab `id` (Koordinate mit anderer Breite als der Suchstart bei 51.0).
+    private func from(_ id: String, latitude: String, dep: Int = 45) throws -> CalibratedJourney {
+        let text = journeyText([L(trip: "D", dep: dep, arr: dep + 15, from: id, to: "ziel")])
+            .replacingOccurrences(of: #""id":"\#(id)","name":"Halt \#(id)","latitude":51.0"#,
+                                  with: #""id":"\#(id)","name":"Halt \#(id)","latitude":\#(latitude)"#)
+        return calibrated(try TransitJSON.decoder().decode(Journey.self, from: Data(text.utf8)))
     }
 
     @Test func stayingOnTheSameTrainNeedsNoLeadingWalkAndATripId() throws {
@@ -473,12 +503,31 @@ private let pace = WalkingPaceFactor()
         // Anschluss C verpasst (der Grund der Vormerkung) oder am Gleis von C: man ist am Suchstart
         #expect(try state(.missedDeparture(vehicle: 4), minute: 71) == .start(arrival: at(60)))
         #expect(try state(.waitingAtPlatform(vehicle: 4), minute: 65) == .start(arrival: at(60)))
-        #expect(try state(.finalWalkToDestination, minute: 95) == .start(arrival: at(60)))
         // vor der Ankunft nie, auch nicht im Fahrzeug selbst
         #expect(try state(.transferRouting(from: 2, to: 4), minute: 59) == .wait)
         // Uhrzeit allein reicht nicht: noch am Gleis bzw. auf dem Weg zu B
         #expect(try state(.waitingAtPlatform(vehicle: 2), minute: 61) == .wait)
         #expect(try state(.transferRouting(from: 0, to: 2), minute: 61) == .wait)
+    }
+
+    /// Schritt schon hinter dem Suchstart, bevor die Echtzeit-Ankunft von B erreicht ist: die Ankunft war zu spaet geschaetzt,
+    /// der Nutzer ist schon weiter (im Anschluss C bzw. auf dem Weg zum Ziel). Verworfen, kein Wechsel an der falschen Station.
+    /// Nach der Ankunft ist derselbe Schritt eine Fahrplan-Annahme (C faellt hier sogar aus, der Nutzer steht noch am
+    /// Suchstart): gewechselt wird wie bisher.
+    @Test func stepBeyondTheSearchStartBeforeTheArrivalDrops() throws {
+        #expect(try state(.onBoardTransit(vehicle: 4), minute: 59) == .drop)
+        #expect(try state(.finalWalkToDestination, minute: 59) == .drop)
+        #expect(try state(.onBoardTransit(vehicle: 4), minute: 75) == .start(arrival: at(60)))
+        #expect(try state(.finalWalkToDestination, minute: 95) == .start(arrival: at(60)))
+        #expect(try state(.arrived, minute: 95) == .drop)
+    }
+
+    /// Weg zum Ziel gehoert nur zum Suchstart, wenn das Ausstiegsfahrzeug das letzte ist (Wechseln im letzten Fahrzeug).
+    @Test func finalWalkIsTheSearchStartOnlyAfterTheLastVehicle() throws {
+        let j = try trip()
+        let s = try #require(ConnectionWatch.chosenSwitch(journey: j, step: .onBoardTransit(vehicle: 4), now: at(75), pace: pace))
+        #expect(ConnectionWatch.pendingSwitch(s, journey: j, step: .finalWalkToDestination, affected: [], now: at(89)) == .wait)
+        #expect(ConnectionWatch.pendingSwitch(s, journey: j, step: .finalWalkToDestination, affected: [], now: at(90)) == .start(arrival: at(90)))
     }
 
     @Test func droppedWhenAVehicleUpToTheAlightingOneBreaks() throws {
@@ -591,6 +640,21 @@ private let pace = WalkingPaceFactor()
         #expect(memory.isDeclined(s))
         #expect(try !memory.maySearch(search(buffer: -300), now: at(10)))
         #expect(try memory.maySearch(search(buffer: -360), now: at(10)))
+    }
+
+    /// Nach dem Aussteigen entstehen keine Suchen mehr; ein abgelehntes Fahrzeug bleibt trotzdem abgelehnt (Vormerkung
+    /// dahinter bleibt), bis es 5 Min. schlechter steht.
+    @Test func declinedSurvivesAlightingWithoutSearches() throws {
+        var memory = ReplanMemory()
+        memory.decline(try search(buffer: -60)) // B, A an 08:39
+        let j = try base(delay: 9)
+        let afterAlighting = at(39, seconds: 30)
+        #expect(ConnectionWatch.evaluate(journey: j, step: .transferRouting(from: 0, to: 2), latched: [2], walks: [:],
+                                         now: afterAlighting, pace: pace).searches.isEmpty)
+        #expect(ConnectionWatch.declined([2], memory: memory, journey: j, walks: [:], now: afterAlighting, pace: pace) == [2])
+        #expect(ConnectionWatch.declined([2], memory: ReplanMemory(), journey: j, walks: [:], now: afterAlighting, pace: pace).isEmpty)
+        // A erst 08:44 an: Puffer -360 s, 5 Min. schlechter als beim Ablehnen
+        #expect(try ConnectionWatch.declined([2], memory: memory, journey: base(delay: 14), walks: [:], now: afterAlighting, pace: pace).isEmpty)
     }
 
     @Test func declinedVehicleDoesNotSuppressAnotherVehicle() throws {

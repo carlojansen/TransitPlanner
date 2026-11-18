@@ -343,6 +343,9 @@ enum NavigationPresenter {
         return NowCard.Metric(label: String(localized: "Fahrt"), value: .minutes(Int((Double(seconds) / 60).rounded(.up))))
     }
 
+    /// Bewusst immer der Puffer der laufenden Fahrt, auch mit vorgemerktem Wechsel: bis zum Suchstart laeuft die Fahrt
+    /// unveraendert, und bis der Wechsel dort geprueft ist, kann die Zahl noch den alten, nicht mehr reichenden Anschluss
+    /// zeigen. Der Hinweis darunter sagt dann "vorgemerkt" statt "reicht nicht".
     private static func bufferMetric(_ input: Input, _ vehicle: Int) -> NowCard.Metric {
         let buffer = NavigationEngine.buffer(journey: input.journey, geometry: input.geometry, vehicle: vehicle, walks: input.walks,
                                              position: input.position, now: input.now, pace: input.pace)

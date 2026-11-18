@@ -17,9 +17,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         return true
     }
 
-    /// Auch im Vordergrund zeigen: wer die App offen hat, soll das Losgehen nicht verpassen.
+    /// Auch im Vordergrund zeigen: wer die App offen hat, soll das Losgehen nicht verpassen. Vorschlaege nur still
+    /// (`SystemNotifier.foregroundPresentation`).
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
+        SystemNotifier.foregroundPresentation(category: notification.request.content.categoryIdentifier)
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,

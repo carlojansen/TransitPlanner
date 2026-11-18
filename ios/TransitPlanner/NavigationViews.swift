@@ -64,6 +64,9 @@ struct NowCardView: View {
                         }
                     }
                 }
+                // "Bewegung reduzieren": neuer Hinweis blendet ueber den alten statt zu morphen.
+                .id(reduceMotion ? hint.text : nil)
+                .transition(.opacity)
             }
         }
         .padding(16)
@@ -84,7 +87,8 @@ struct NowCardView: View {
     }
 
     /// Vorschlag: uebernehmen (Wechsel vormerken), behalten oder alle Alternativen ab dem Suchstart ansehen.
-    /// Treffflaeche 44 pt im Label, damit auch der Rand um den Text zaehlt; bei "Bewegung reduzieren" ohne Feder.
+    /// Treffflaeche 44 pt im Label, damit auch der Rand um den Text zaehlt. Der Hinweis blendet ueber (`.opacity`), auch
+    /// bei "Bewegung reduzieren" (AGENT.md 4.3); die Feder ohne Ueberschwingen bewegt nur die Kartenhoehe.
     @ViewBuilder private func replanButtons(_ id: UUID) -> some View {
         replanButton("Übernehmen", symbol: "checkmark") { flow.acceptReplan(id) }
             .accessibilityHint("Merkt den Wechsel vor, die Fahrt läuft bis zum Umstieg weiter")
@@ -98,7 +102,7 @@ struct NowCardView: View {
 
     private func replanButton(_ title: LocalizedStringKey, symbol: String, action: @escaping () -> Void) -> some View {
         Button {
-            withAnimation(reduceMotion ? nil : Motion.standard) { action() }
+            withAnimation(Motion.standard) { action() }
         } label: {
             Label(title, systemImage: symbol)
                 .font(.subheadline.weight(.semibold))

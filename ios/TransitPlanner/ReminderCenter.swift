@@ -175,7 +175,7 @@ protocol ReplanNotifying: Sendable {
 }
 
 extension SystemNotifier: ReplanNotifying {
-    static let replanCategoryID = "replan"
+    nonisolated static let replanCategoryID = "replan"
     private static let proposalKey = "proposalID"
 
     /// Ohne Aktionen: Tippen oeffnet das Blatt, gewechselt wird nur nach Bestaetigung in der App. Wischen meldet sich
@@ -184,6 +184,12 @@ extension SystemNotifier: ReplanNotifying {
         UNNotificationCategory(identifier: replanCategoryID, actions: [], intentIdentifiers: [],
                                hiddenPreviewsBodyPlaceholder: String(localized: "Vorschlag zur laufenden Fahrt"),
                                options: [.customDismissAction])
+    }
+
+    /// Im Vordergrund: Erinnerungen als Banner mit Ton (das Losgehen nicht verpassen). Ein Vorschlag steht schon in der
+    /// Jetzt-Karte; seine Mitteilung wird nur still in der Mitteilungsliste aktualisiert, ohne Banner und Ton.
+    nonisolated static func foregroundPresentation(category: String) -> UNNotificationPresentationOptions {
+        category == replanCategoryID ? [.list] : [.banner, .list, .sound]
     }
 
     /// Vorschlags-ID nur aus der eigenen Kategorie; Erinnerungen liefern nil.

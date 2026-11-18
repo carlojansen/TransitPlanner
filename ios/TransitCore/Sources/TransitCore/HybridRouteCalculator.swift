@@ -101,9 +101,13 @@ public struct CalibratedJourney: Codable, Sendable, Hashable {
 }
 
 extension CalibratedJourney {
-    /// Ohne MKDirections (Antwort noch im Stand `.skeleton`): Fusswege mit der Fahrplandauer.
-    public init(timetable journey: Journey) {
-        self.init(journey: journey, walks: [:], transfers: HybridRouteCalculator.transferChecks(journey, walks: [:]))
+    /// Ohne MKDirections (Antwort noch im Stand `.skeleton`): Fusswege mit der Fahrplandauer und dem Gehtempo, wie der
+    /// Rueckfall in `HybridRouteCalculator.calibrate`.
+    public init(timetable journey: Journey, pace: WalkingPaceFactor) {
+        let walks = Dictionary(uniqueKeysWithValues: journey.legs.filter(\.isWalk).map {
+            ($0.index, HybridRouteCalculator.timetableWalk($0, in: journey, pace: pace))
+        })
+        self.init(journey: journey, walks: walks, transfers: HybridRouteCalculator.transferChecks(journey, walks: walks))
     }
 }
 
@@ -197,24 +201,24 @@ public struct HybridRouteCalculator: Sendable {
         return journeys.map { journey in
             var walks: [Int: WalkEstimate] = [:]
             for leg in journey.legs where leg.isWalk {
-                let motis = Double(leg.durationSeconds ?? 0)
-                // Umstiegsweg: nur MOTIS kennt den Weg im Bahnhof (Treppen, Ebenen); nie schneller als der Fahrplan.
-                if Self.isTransferWalk(leg, in: journey) {
-                    walks[leg.index] = WalkEstimate(legIndex: leg.index, seconds: max(Int(motis.rounded(.up)), pace.apply(to: motis)),
-                                                    distanceMeters: leg.distanceMeters, source: .timetable)
-                    continue
-                }
-                let eta = segment(for: leg, in: journey, origin: origin, destination: destination).flatMap { etas[$0] }
-                if let eta {
+                if !Self.isTransferWalk(leg, in: journey),
+                   let eta = segment(for: leg, in: journey, origin: origin, destination: destination).flatMap({ etas[$0] }) {
                     walks[leg.index] = WalkEstimate(legIndex: leg.index, seconds: pace.apply(to: eta.seconds),
                                                     distanceMeters: Int(eta.distanceMeters.rounded()), source: .appleMaps)
                 } else {
-                    walks[leg.index] = WalkEstimate(legIndex: leg.index, seconds: pace.apply(to: Double(leg.durationSeconds ?? 0)),
-                                                    distanceMeters: leg.distanceMeters, source: .timetable)
+                    walks[leg.index] = Self.timetableWalk(leg, in: journey, pace: pace)
                 }
             }
             return CalibratedJourney(journey: journey, walks: walks, transfers: Self.transferChecks(journey, walks: walks))
         }
+    }
+
+    /// Fahrplan-Gehzeit mit Gehtempo. Umstiegsweg: nur MOTIS kennt den Weg im Bahnhof (Treppen, Ebenen); nie schneller als
+    /// der Fahrplan.
+    static func timetableWalk(_ leg: Leg, in journey: Journey, pace: WalkingPaceFactor) -> WalkEstimate {
+        let motis = Double(leg.durationSeconds ?? 0)
+        let seconds = isTransferWalk(leg, in: journey) ? max(Int(motis.rounded(.up)), pace.apply(to: motis)) : pace.apply(to: motis)
+        return WalkEstimate(legIndex: leg.index, seconds: seconds, distanceMeters: leg.distanceMeters, source: .timetable)
     }
 
     /// Umstiegsweg: Umstieg laut MOTIS (`isTransfer`) oder Fussweg zwischen zwei Fahrzeugen. MKDirections kennt keine

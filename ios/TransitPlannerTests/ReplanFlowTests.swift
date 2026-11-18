@@ -820,5 +820,73 @@ import UserNotifications
         let broken = try Self.shifted(leg: 4, by: -170) // Tram 12 am Hansaring reicht nicht
         #expect(hint(broken, .onBoardTransit(vehicle: 0), at: "07:20:00")?.text == "Wechsel auf 1 vorgemerkt")
     }
+
+    // MARK: Re-Review
+
+    /// RB 25 (B) abgelehnt, Ausfall Tram 12 (C) uebernommen: nach dem Aussteigen aus dem ICE gibt es keine Suchen mehr, B bleibt
+    /// trotzdem abgelehnt. Die Vormerkung ab Hansaring bleibt, keine weitere Mitteilung.
+    @Test func declinedEarlierVehicleKeepsTheReservationAfterAlighting() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        f.movedToBackground()
+        // ICE an 07:33:30, RB 25 ab 07:34: Puffer -70 s; Tram 12 faellt aus
+        env.refresher.set(.success(try ViaFlowTests.changed(RouteOverviewTests.journey(iceDelay: 90)) { legs in
+            legs[4]["cancelled"] = true
+        }))
+        await f.refreshNavigation()
+        await f.waitForReplan()
+        let first = try #require(f.replanOffer)
+        #expect(first.proposal.search.trigger == .connectionBroken(vehicle: 2))
+        f.declineReplan(first.proposal.id)
+        env.planner.setResponse(Self.alternatives(fromHansaring: true))
+        await tick(f, env, at: "07:11:00")
+        let second = try #require(f.replanOffer)
+        #expect(second.proposal.search.trigger == .tripCancelled(vehicle: 4))
+        f.acceptReplan(second.proposal.id)
+        await f.waitForReplan()
+        let posts = env.notifier.replanPostCount
+        await tick(f, env, at: "07:33:40")
+        #expect(f.navStep == .transferRouting(from: 0, to: 2))
+        #expect(f.pendingSwitch?.proposal.id == second.proposal.id)
+        #expect(env.notifier.replanPostCount == posts)
+    }
+
+    /// Spaeter Tick am Suchstart (Hintergrund, langsamer Refresh): die Alternative muss ab jetzt erreichbar sein, nicht ab der
+    /// Ankunft. 07:48 + 120 s Weg + 120 s Puffer liegt nach der Tram um 07:50.
+    @Test func switchIsCheckedFromNowWhenTheTickComesLate() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        try await refresh(f, env, iceDelay: 180) // Ankunft Deutz 07:35
+        f.acceptReplan(try #require(f.replanOffer).proposal.id)
+        env.refresher.set(.success(try #require(Self.alternatives()?.journeys[1])))
+        await tick(f, env, at: "07:48:00")
+        #expect(f.pendingSwitch == nil)
+        #expect(f.replanBanner == .expired("Wechsel auf 1 nicht mehr möglich"))
+        #expect(f.navJourney?.legs.contains { $0.line?.name == "ICE 47" } == true)
+    }
+
+    /// Auf dem Weg zum RB 25 (Ausstiegsfahrzeug der Vormerkung ab Hansaring) zeigt die Position: reicht nicht mehr. Die
+    /// Vormerkung entfaellt im selben Tick, nicht erst im naechsten.
+    @Test func liveMissOnTheWayToTheAlightingVehicleDropsTheReservationAtOnce() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        env.planner.setResponse(Self.alternatives(fromHansaring: true))
+        env.refresher.set(.success(try Self.shifted(leg: 4, by: -170))) // Tram 12 am Hansaring reicht nicht, im ICE
+        await f.refreshNavigation()
+        await f.waitForReplan()
+        f.acceptReplan(try #require(f.replanOffer).proposal.id)
+        #expect(f.pendingSwitch != nil)
+        env.set("07:33:00") // ICE an 07:32, RB 25 ab 07:34; 200 m vom Gleis
+        f.navigationUpdate(position: GeoCoordinate(latitude: 50.9425, longitude: 6.9760), accuracy: 5, now: env.clock)
+        #expect(f.navStep == .transferRouting(from: 0, to: 2))
+        #expect(f.pendingSwitch == nil)
+    }
+
+    /// Im Vordergrund steht der Vorschlag in der Jetzt-Karte: Mitteilung nur still in der Liste. Erinnerungen weiter mit
+    /// Banner und Ton.
+    @Test func replanAlertIsSilentInTheForeground() {
+        #expect(SystemNotifier.foregroundPresentation(category: SystemNotifier.replanCategoryID) == [.list])
+        #expect(SystemNotifier.foregroundPresentation(category: SystemNotifier.category.identifier) == [.banner, .list, .sound])
+    }
 }
 #endif
