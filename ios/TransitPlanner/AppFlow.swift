@@ -1557,14 +1557,15 @@ final class AppFlow {
         let result = ConnectionWatch.evaluate(journey: journey, step: step, latched: replanLatched, walks: navWalks, now: now, pace: pace)
         replanLatched = result.latched
         replanSearches = result.searches
-        // Betroffen: eingerastet oder verpasst, ohne abgelehnte (auch nach dem Aussteigen, wenn es keine Suchen mehr gibt).
+        // Betroffen: eingerastet ohne abgelehnte (auch nach dem Aussteigen, wenn es keine Suchen mehr gibt), und per Position
+        // verpasste immer: Ablehnen galt der Echtzeit-Lage, nicht dem tatsaechlich verpassten Fahrzeug.
         // Bis zum Ausstiegsfahrzeug eines Vorschlags oder einer Vormerkung laeuft alles wie sonst; bricht dort etwas weg,
         // entfallen sie (`ConnectionWatch.isUndercut`).
-        let candidates = result.latched.union(navMissedVehicles)
-        let affected = candidates.subtracting(ConnectionWatch.declined(candidates, memory: replanMemory, journey: journey,
-                                                                       walks: navWalks, now: now, pace: pace))
+        let affected = result.latched.subtracting(ConnectionWatch.declined(result.latched, memory: replanMemory, journey: journey,
+                                                                           walks: navWalks, now: now, pace: pace)).union(navMissedVehicles)
         if let pending = pendingSwitch {
-            switch ConnectionWatch.pendingSwitch(pending.proposal.search, journey: journey, step: step, affected: affected, now: now) {
+            switch ConnectionWatch.pendingSwitch(pending.proposal.search, journey: journey, step: step, affected: affected,
+                                                 fix: navFix, now: now) {
             case .wait: return
             case .start(let arrival):
                 if switchTask == nil { startSwitch(pending, from: journey, arrival: arrival) }
@@ -1776,9 +1777,16 @@ final class AppFlow {
             switchTask = nil
             guard case .navigation = phase, pendingSwitch?.proposal.id == pending.proposal.id,
                   navJourney?.isSameTrip(as: journey) == true else { return }
+            // Neuer Fix waehrend des Refresh fern vom Suchstart: wie im Tick warten (noch im Ausstiegsfahrzeug) oder still verwerfen.
+            if let step = navStep,
+               let away = ConnectionWatch.awayFromStart(pending.proposal.search, step: step, fix: navFix, now: deps.now()) {
+                if away == .drop { pendingSwitch = nil }
+                return
+            }
             pendingSwitch = nil
-            // Spaeter Tick oder langsamer Refresh: ab jetzt muss die Alternative noch erreichbar sein, nicht ab der Ankunft.
-            guard ConnectionWatch.pick([fresh], for: pending.proposal.search.at(max(arrival, deps.now()))) != nil else {
+            // Spaeter Tick oder langsamer Refresh: ab jetzt muss die Alternative noch erreichbar sein, nicht ab der Ankunft
+            // (Weiterfahrt im selben Zug: ab der Ankunft).
+            guard ConnectionWatch.pick([fresh], for: pending.proposal.search.at(arrival: arrival, now: deps.now())) != nil else {
                 let text = Self.switchLine(pending).map { String(localized: "Wechsel auf \($0) nicht mehr möglich") }
                     ?? String(localized: "Wechsel nicht mehr möglich")
                 replanExpired = text

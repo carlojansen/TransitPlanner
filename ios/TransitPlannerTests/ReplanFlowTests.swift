@@ -882,6 +882,51 @@ import UserNotifications
         #expect(f.pendingSwitch == nil)
     }
 
+    // MARK: Re-Review 2
+
+    /// Wie oben, aber der RB 25 wurde vorher behalten (Echtzeit -70 s): das Ablehnen galt der Echtzeit-Lage. Zeigt die
+    /// Position, dass er wirklich verpasst ist, entfaellt die Vormerkung ab Hansaring trotzdem sofort.
+    @Test func liveMissDropsTheReservationEvenWhenTheVehicleWasDeclined() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        // ICE an 07:33:30, RB 25 ab 07:34: Puffer -70 s; Tram 12 faellt aus
+        env.refresher.set(.success(try ViaFlowTests.changed(RouteOverviewTests.journey(iceDelay: 90)) { legs in
+            legs[4]["cancelled"] = true
+        }))
+        await f.refreshNavigation()
+        await f.waitForReplan()
+        let first = try #require(f.replanOffer)
+        #expect(first.proposal.search.trigger == .connectionBroken(vehicle: 2))
+        f.declineReplan(first.proposal.id)
+        env.planner.setResponse(Self.alternatives(fromHansaring: true))
+        await tick(f, env, at: "07:11:00")
+        let second = try #require(f.replanOffer)
+        f.acceptReplan(second.proposal.id)
+        #expect(f.pendingSwitch != nil)
+        env.set("07:33:40") // 200 m vom Gleis, 20 s bis zur Abfahrt
+        f.navigationUpdate(position: GeoCoordinate(latitude: 50.9425, longitude: 6.9760), accuracy: 5, now: env.clock)
+        #expect(f.navStep == .transferRouting(from: 0, to: 2))
+        #expect(f.pendingSwitch == nil)
+    }
+
+    /// Wechsel ab Deutz gewaehlt, am Suchstart startet der Wechsel; waehrend des Refresh kommt ein Fix 1 km von Deutz bei
+    /// noch laufendem Umstiegsschritt aus dem ICE (Zug spaeter als geschaetzt). Gewechselt wird nicht, die Vormerkung bleibt.
+    @Test func switchWaitsWhenAFixDuringTheRefreshIsFarFromTheSearchStart() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        f.openAlternatives(from: .nextStation)
+        await f.waitForPeek()
+        f.chooseAlternative(1)
+        env.refresher.set(.success(try #require(Self.alternatives()?.journeys[1])))
+        env.set("07:33:00") // ICE an 07:32, RB 25 ab 07:34
+        f.navigationUpdate(position: nil, now: env.clock)
+        f.navigationUpdate(position: GeoCoordinate(latitude: 50.9499, longitude: 6.9750), accuracy: 5, now: env.clock)
+        await f.waitForReplan()
+        #expect(f.navStep == .transferRouting(from: 0, to: 2))
+        #expect(f.pendingSwitch != nil)
+        #expect(f.navJourney?.legs.contains { $0.line?.name == "ICE 47" } == true)
+    }
+
     /// Im Vordergrund steht der Vorschlag in der Jetzt-Karte: Mitteilung nur still in der Liste. Erinnerungen weiter mit
     /// Banner und Ton.
     @Test func replanAlertIsSilentInTheForeground() {

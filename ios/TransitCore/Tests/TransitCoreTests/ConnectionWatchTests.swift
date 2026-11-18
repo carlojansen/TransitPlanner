@@ -313,8 +313,19 @@ private let pace = WalkingPaceFactor()
     @Test func searchAtLaterArrivalRejectsFormerlyReachable() throws {
         let s = try search() // Suchzeit 08:39
         #expect(try ConnectionWatch.pick([alt("D", dep: 41)], for: s) == 0)
-        #expect(try ConnectionWatch.pick([alt("D", dep: 41)], for: s.at(at(40))) == nil)
-        #expect(s.at(at(40)).key == s.key && s.at(at(40)).alightingVehicle == s.alightingVehicle)
+        let later = s.at(arrival: at(40), now: at(40))
+        #expect(try ConnectionWatch.pick([alt("D", dep: 41)], for: later) == nil)
+        #expect(later.key == s.key && later.alightingVehicle == s.alightingVehicle)
+    }
+
+    /// Spaeter Tick am Wechsel (Suchzeit = jetzt, nach der Abfahrt vom Suchstart): die Weiterfahrt im selben Zug zaehlt weiter
+    /// gegen die Ankunft, man sitzt ja drin. Jedes andere Fahrzeug muss ab jetzt erreichbar sein.
+    @Test func stayingOnTheSameTrainIsCheckedAgainstTheArrivalWhenTheTickComesLate() throws {
+        let late = try search().at(arrival: at(39), now: at(42))
+        let stay = try calibrated(journey([L(trip: "A", dep: 40, arr: 70, from: "deutz", to: "ziel")]))
+        #expect(ConnectionWatch.pick([stay], for: late) == 0)
+        #expect(try ConnectionWatch.pick([alt("D", dep: 43)], for: late) == nil)
+        #expect(try ConnectionWatch.pick([alt("D", dep: 44)], for: late) == 0)
     }
 
     @Test func accessWalkAtStartCounts() throws {
@@ -471,15 +482,16 @@ private let pace = WalkingPaceFactor()
     }
 }
 
-/// Vormerkung ab "x" (Ausstieg aus B), betroffen ist C: A 08:00-08:30, B 08:40-09:00, C faellt aus.
+/// Vormerkung ab "x" (Ausstieg aus B, bei 51.0/7.0), betroffen ist C: A 08:00-08:30, B 08:40-09:00, C faellt aus
+/// (vorgemerkt bei Ausfall; `cancelledC: false` = C faehrt doch).
 @Suite struct PendingSwitchTests {
-    private func trip(cancelledB: Bool = false) throws -> Journey {
+    private func trip(cancelledB: Bool = false, cancelledC: Bool = true) throws -> Journey {
         try journey([
             L(trip: "A", dep: 0, arr: 30, from: "start", to: "deutz"),
             L(walk: true, dep: 30, arr: 32, from: "deutz", to: "gleis9", seconds: 120),
             L(trip: "B", dep: 40, arr: 60, from: "gleis9", to: "x", cancelled: cancelledB),
             L(walk: true, dep: 60, arr: 62, from: "x", to: "y", seconds: 120),
-            L(trip: "C", dep: 70, arr: 90, from: "y", to: "ziel", cancelled: true),
+            L(trip: "C", dep: 70, arr: 90, from: "y", to: "ziel", cancelled: cancelledC),
         ])
     }
 
@@ -491,8 +503,35 @@ private let pace = WalkingPaceFactor()
         return s
     }
 
-    private func state(_ step: NavigationStep, minute: Int, affected: Set<Int> = [], cancelledB: Bool = false) throws -> PendingSwitchStep {
-        ConnectionWatch.pendingSwitch(try reserved(), journey: try trip(cancelledB: cancelledB), step: step, affected: affected, now: at(minute))
+    private func state(_ step: NavigationStep, minute: Int, affected: Set<Int> = [], cancelledB: Bool = false,
+                       cancelledC: Bool = true, fix: LocationFix? = nil) throws -> PendingSwitchStep {
+        ConnectionWatch.pendingSwitch(try reserved(), journey: try trip(cancelledB: cancelledB, cancelledC: cancelledC), step: step,
+                                      affected: affected, fix: fix, now: at(minute))
+    }
+
+    private func fix(latitude: Double, minute: Int) -> LocationFix {
+        LocationFix(coordinate: GeoCoordinate(latitude: latitude, longitude: 7.0), horizontalAccuracy: 10, timestamp: at(minute))
+    }
+
+    /// C faellt nicht aus und der Nutzer sitzt nach der Ankunft von B wirklich in C (bzw. die Abfahrt von C gilt als verpasst):
+    /// ein frischer Fix 1 km vom Suchstart verwirft, statt an der falschen Station zu wechseln. Am Halt "x" wird gewechselt.
+    @Test func freshFixAwayFromTheSearchStartDropsInsteadOfSwitching() throws {
+        let far = fix(latitude: 51.009, minute: 75)
+        let atStop = fix(latitude: 51.0, minute: 75)
+        for step in [NavigationStep.onBoardTransit(vehicle: 4), .missedDeparture(vehicle: 4)] {
+            #expect(try state(step, minute: 75, cancelledC: false, fix: far) == .drop)
+            #expect(try state(step, minute: 75, cancelledC: false, fix: atStop) == .start(arrival: at(60)))
+            // ohne Fix oder mit altem Fix wie bisher (Fahrplan-Annahme)
+            #expect(try state(step, minute: 75, cancelledC: false) == .start(arrival: at(60)))
+            #expect(try state(step, minute: 75, cancelledC: false, fix: fix(latitude: 51.009, minute: 74)) == .start(arrival: at(60)))
+        }
+    }
+
+    /// Fern vom Suchstart, aber noch im Ausstiegsfahrzeug B: der Zug kommt spaeter als geschaetzt, warten.
+    @Test func freshFixAwayFromTheSearchStartWaitsInTheAlightingVehicle() throws {
+        let far = fix(latitude: 51.009, minute: 61)
+        #expect(try state(.onBoardTransit(vehicle: 2), minute: 61, cancelledC: false, fix: far) == .wait)
+        #expect(try state(.transferRouting(from: 2, to: 4), minute: 61, cancelledC: false, fix: far) == .wait)
     }
 
     @Test func startsOnlyFromTheAlightingVehicleAfterItsArrival() throws {

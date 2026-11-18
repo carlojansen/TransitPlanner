@@ -67,15 +67,17 @@ public struct ReplanSearch: Sendable, Hashable {
     /// Lage des Suchstarts (Halt aus der Fahrt), fuer den Abgleich mit dem ersten Halt einer Alternative.
     public let startCoordinate: GeoCoordinate?
     public let time: Date
+    /// Echtzeit-Ankunft des Ausstiegsfahrzeugs am Suchstart: die Weiterfahrt im selben Zug zaehlt ab hier, nicht ab `time`.
+    public let arrival: Date
     /// Puffer des betroffenen Anschlusses in s; `ConnectionWatch.cancelledBuffer` bei Ausfall.
     public let bufferSeconds: Int
     /// Gehtempo fuer den Weg vom Suchstart zum ersten Halt einer Alternative ohne eigenen Fussweg-Abschnitt.
     public let pace: WalkingPaceFactor
 
-    /// Dieselbe Suche zur aktuellen Echtzeit-Ankunft am Suchstart (Pruefung der vorgemerkten Alternative beim Wechsel).
-    public func at(_ time: Date) -> ReplanSearch {
-        ReplanSearch(trigger: trigger, key: key, alightingVehicle: alightingVehicle, alightingKey: alightingKey,
-                     start: start, startCoordinate: startCoordinate, time: time, bufferSeconds: bufferSeconds, pace: pace)
+    /// Dieselbe Suche zur aktuellen Echtzeit-Ankunft am Suchstart, Suchzeit nie vor `now` (Pruefung beim Wechsel).
+    public func at(arrival: Date, now: Date) -> ReplanSearch {
+        ReplanSearch(trigger: trigger, key: key, alightingVehicle: alightingVehicle, alightingKey: alightingKey, start: start,
+                     startCoordinate: startCoordinate, time: max(arrival, now), arrival: arrival, bufferSeconds: bufferSeconds, pace: pace)
     }
 }
 
@@ -188,9 +190,10 @@ public enum ConnectionWatch {
     public static func chosenSwitch(journey: Journey, step: NavigationStep, now: Date, pace: WalkingPaceFactor) -> ReplanSearch? {
         guard let v = boardedVehicle(step, in: journey, now: now),
               let leg = journey.legs.first(where: { $0.index == v }), let start = endpoint(leg.destination) else { return nil }
+        let arrival = leg.arrival ?? leg.plannedArrival ?? now
         return ReplanSearch(trigger: .chosen(vehicle: v), key: .noVehicle, alightingVehicle: v, alightingKey: ReplanKey(leg),
                             start: start, startCoordinate: leg.destination.coordinate,
-                            time: max(now, leg.arrival ?? leg.plannedArrival ?? now), bufferSeconds: 0, pace: pace)
+                            time: max(now, arrival), arrival: arrival, bufferSeconds: 0, pace: pace)
     }
 
     private static func endpoint(_ place: Place) -> TripEndpoint? {
@@ -201,9 +204,10 @@ public enum ConnectionWatch {
     private static func search(before: Leg, affected: Leg, buffer: Int, now: Date, pace: WalkingPaceFactor) -> ReplanSearch? {
         guard let start = endpoint(before.destination) else { return nil }
         let trigger: ReplanTrigger = affected.cancelled ? .tripCancelled(vehicle: affected.index) : .connectionBroken(vehicle: affected.index)
+        let arrival = before.arrival ?? before.plannedArrival ?? now
         return ReplanSearch(trigger: trigger, key: ReplanKey(affected), alightingVehicle: before.index, alightingKey: ReplanKey(before),
                             start: start, startCoordinate: before.destination.coordinate,
-                            time: max(now, before.arrival ?? before.plannedArrival ?? now), bufferSeconds: buffer, pace: pace)
+                            time: max(now, arrival), arrival: arrival, bufferSeconds: buffer, pace: pace)
     }
 
     /// Beste erreichbare Alternative nach der bestehenden Rangfolge (Ankunft, Umstiege, Gehzeit, Strafen); Index in `alternatives`.
@@ -217,14 +221,15 @@ public enum ConnectionWatch {
     /// Erreichbar heisst: beginnt am Suchstart, ohne das betroffene Fahrzeug, ohne Ausfall, kein Umstieg verpasst, und die erste
     /// Abfahrt fruehestens Suchzeit + Gehweg am Start + `minimumSlackSeconds` (MOTIS liefert Abfahrten ohne Umstiegszeit, live
     /// geprueft 18.11.). Ausnahme: faehrt man im selben Zug weiter (erstes Fahrzeug = Ausstiegsfahrzeug), zaehlt nur die Abfahrt
-    /// nach der Ankunft. Ohne Fussweg-Abschnitt am Anfang zaehlt bei anderer Halt-ID die Luftlinie vom Suchstart mit Gehtempo.
+    /// nach der Ankunft (`search.arrival`, auch wenn die Suchzeit bei spaetem Tick schon spaeter liegt: man sitzt ja drin).
+    /// Ohne Fussweg-Abschnitt am Anfang zaehlt bei anderer Halt-ID die Luftlinie vom Suchstart mit Gehtempo.
     static func isReachable(_ alt: CalibratedJourney, for search: ReplanSearch) -> Bool {
         let vehicles = alt.journey.legs.filter { !$0.isWalk }
         guard !alt.journey.cancelled, let first = vehicles.first, startsAtSearchStart(alt.journey, search),
               !vehicles.contains(where: { $0.cancelled || search.key.matches($0) }),
               !alt.transfers.contains(where: { $0.status == .missed }),
               let departure = first.departure ?? first.plannedDeparture else { return false }
-        if search.alightingKey.matches(first), alt.journey.legs.first?.isWalk == false { return departure >= search.time }
+        if search.alightingKey.matches(first), alt.journey.legs.first?.isWalk == false { return departure >= search.arrival }
         let access = alt.journey.legs.first.flatMap { $0.isWalk ? (alt.walks[$0.index]?.seconds ?? $0.durationSeconds) : nil }
             ?? accessSeconds(to: first.origin, for: search)
         return departure >= search.time.addingTimeInterval(TimeInterval(access + TransferCheck.minimumSlackSeconds))
@@ -267,9 +272,10 @@ public enum ConnectionWatch {
     /// zu spaet geschaetzt und der Nutzer ist schon unterwegs: verwerfen, nie an der falschen Station wechseln. Nach der Ankunft
     /// gilt ein weiterer Schritt als Fahrplan-Annahme (ohne Position, oder am Gleis nach der Abfahrt) und startet wie bisher:
     /// der Schritt kann dort nicht zwischen "eingestiegen" und "steht noch am Suchstart" unterscheiden, und der gebrochene
-    /// Anschluss ist der Grund der Vormerkung. Verworfen wird auch ohne Ankunftszeit des Ausstiegsfahrzeugs.
+    /// Anschluss ist der Grund der Vormerkung. Ein frischer Fix fern vom Suchstart widerspricht der Annahme (`awayFromStart`).
+    /// Verworfen wird auch ohne Ankunftszeit des Ausstiegsfahrzeugs.
     public static func pendingSwitch(_ search: ReplanSearch, journey: Journey, step: NavigationStep, affected: Set<Int>,
-                                     now: Date) -> PendingSwitchStep {
+                                     fix: LocationFix? = nil, now: Date) -> PendingSwitchStep {
         let last = search.alightingVehicle
         guard step != .arrived, let leg = journey.legs.first(where: { $0.index == last }), let arrival = leg.arrival ?? leg.plannedArrival,
               !isUndercut(search, affected: affected, journey: journey, step: step) else { return .drop }
@@ -284,7 +290,21 @@ public enum ConnectionWatch {
         case .arrived: nil
         }
         guard now >= arrival else { return reached == nil ? .drop : .wait }
-        return reached == false ? .wait : .start(arrival: arrival)
+        guard reached != false else { return .wait }
+        return awayFromStart(search, step: step, fix: fix, now: now) ?? .start(arrival: arrival)
+    }
+
+    /// Positionsblick vor dem Wechsel: ein frischer Fix (hoechstens `NavigationEngine.freshFix` alt) sicher weiter als
+    /// `sameStopMeters` (abzueglich Genauigkeit) vom Suchstart heisst, der Nutzer ist nicht dort. Im Ausstiegsfahrzeug kommt der
+    /// Zug spaeter als geschaetzt: warten. Sonst sitzt er schon in einem anderen Fahrzeug (etwa im urspruenglichen Anschluss):
+    /// verwerfen. nil ohne Einwand (am Suchstart, ohne frischen Fix, ohne Lage des Suchstarts).
+    public static func awayFromStart(_ search: ReplanSearch, step: NavigationStep, fix: LocationFix?, now: Date) -> PendingSwitchStep? {
+        guard let fix, now.timeIntervalSince(fix.timestamp) <= NavigationEngine.freshFix, let start = search.startCoordinate,
+              fix.coordinate.distance(to: start) - fix.horizontalAccuracy > sameStopMeters else { return nil }
+        switch step {
+        case .onBoardTransit(search.alightingVehicle), .transferRouting(search.alightingVehicle, _): return .wait
+        default: return .drop
+        }
     }
 
     /// Gilt ein Vorschlag noch? Nur solange derselbe Anschluss weiter betroffen ist (`current` = Ergebnis von `evaluate`)
