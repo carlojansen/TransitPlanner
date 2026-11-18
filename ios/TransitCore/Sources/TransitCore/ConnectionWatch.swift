@@ -212,7 +212,7 @@ public enum ConnectionWatch {
 
     /// Beste erreichbare Alternative nach der bestehenden Rangfolge (Ankunft, Umstiege, Gehzeit, Strafen); Index in `alternatives`.
     /// `keeping`: die bisher vorgeschlagene bleibt, solange sie erreichbar ist (kein Hin und Her, keine zweite Mitteilung).
-    public static func pick(_ alternatives: [CalibratedJourney], for search: ReplanSearch, keeping current: Int? = nil) -> Int? {
+    public static func pick(_ alternatives: [CalibratedJourney], for search: ReplanSearch, keeping current: Int?) -> Int? {
         if let current, alternatives.indices.contains(current), isReachable(alternatives[current], for: search) { return current }
         let reachable = alternatives.indices.filter { isReachable(alternatives[$0], for: search) }
         return reachable.min { alternatives[$0].rank(arrivalSearch: false) < alternatives[$1].rank(arrivalSearch: false) }
@@ -223,10 +223,12 @@ public enum ConnectionWatch {
     /// geprueft 18.11.). Ausnahme: faehrt man im selben Zug weiter (erstes Fahrzeug = Ausstiegsfahrzeug), zaehlt nur die Abfahrt
     /// nach der Ankunft (`search.arrival`, auch wenn die Suchzeit bei spaetem Tick schon spaeter liegt: man sitzt ja drin).
     /// Ohne Fussweg-Abschnitt am Anfang zaehlt bei anderer Halt-ID die Luftlinie vom Suchstart mit Gehtempo.
+    /// Ein reiner Fussweg (Backend-Fussweg-Vorrang, Ziel nah) ist erreichbar, wenn er am Suchstart beginnt.
     static func isReachable(_ alt: CalibratedJourney, for search: ReplanSearch) -> Bool {
         let vehicles = alt.journey.legs.filter { !$0.isWalk }
-        guard !alt.journey.cancelled, let first = vehicles.first, startsAtSearchStart(alt.journey, search),
-              !vehicles.contains(where: { $0.cancelled || search.key.matches($0) }),
+        guard !alt.journey.cancelled, startsAtSearchStart(alt.journey, search) else { return false }
+        guard let first = vehicles.first else { return true }
+        guard !vehicles.contains(where: { $0.cancelled || search.key.matches($0) }),
               !alt.transfers.contains(where: { $0.status == .missed }),
               let departure = first.departure ?? first.plannedDeparture else { return false }
         if search.alightingKey.matches(first), alt.journey.legs.first?.isWalk == false { return departure >= search.arrival }
@@ -275,7 +277,7 @@ public enum ConnectionWatch {
     /// Anschluss ist der Grund der Vormerkung. Ein frischer Fix fern vom Suchstart widerspricht der Annahme (`awayFromStart`).
     /// Verworfen wird auch ohne Ankunftszeit des Ausstiegsfahrzeugs.
     public static func pendingSwitch(_ search: ReplanSearch, journey: Journey, step: NavigationStep, affected: Set<Int>,
-                                     fix: LocationFix? = nil, now: Date) -> PendingSwitchStep {
+                                     fix: LocationFix?, now: Date) -> PendingSwitchStep {
         let last = search.alightingVehicle
         guard step != .arrived, let leg = journey.legs.first(where: { $0.index == last }), let arrival = leg.arrival ?? leg.plannedArrival,
               !isUndercut(search, affected: affected, journey: journey, step: step) else { return .drop }

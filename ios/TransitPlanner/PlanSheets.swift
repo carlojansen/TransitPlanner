@@ -987,15 +987,15 @@ struct HeroCard: View {
         TimelineView(.everyMinute) { context in
             let leave = calibrated?.departureFromOrigin ?? journey.departure
             let arrive = calibrated?.arrivalAtDestination ?? journey.arrival
-            let firstTransit = journey.legs.first { !$0.isWalk }
             ContentCard {
                 VStack(alignment: .leading, spacing: 12) {
                     Button { flow.send(.journeySelected(0)) } label: {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
-                                Text("BESTE VERBINDUNG").font(.caption2.weight(.semibold)).foregroundStyle(Color(.labelSecondary))
+                                Text(journey.isWalkOnly ? "ZU FUSS" : "BESTE VERBINDUNG")
+                                    .font(.caption2.weight(.semibold)).foregroundStyle(Color(.labelSecondary))
                                 Spacer()
-                                if let delay = firstTransit?.departureDelayMinutes, !flow.isStale { DelayBadge(minutes: delay) }
+                                if let delay = journey.maxDelayMinutes, !flow.isStale { DelayBadge(minutes: delay) }
                             }
                             countdown(leave: leave, now: context.date)
                             // AX: Uhrzeiten und Dauer untereinander statt gequetscht in einer Zeile.
@@ -1045,11 +1045,11 @@ struct HeroCard: View {
 
     private func summary(leave: Date?, arrive: Date?) -> some View {
         HStack(spacing: 4) {
-            if let leave, let arrive {
-                MinutesText(seconds: Int(arrive.timeIntervalSince(leave)))
-                Text(verbatim: "·")
+            if let leave, let arrive { MinutesText(seconds: Int(arrive.timeIntervalSince(leave))) }
+            if !journey.isWalkOnly {
+                if leave != nil && arrive != nil { Text(verbatim: "·") }
+                TransfersText(count: journey.transfers(excludingStaysAt: flow.via))
             }
-            TransfersText(count: journey.transfers(excludingStaysAt: flow.via))
         }
     }
 
@@ -1176,9 +1176,9 @@ struct AlternativeRow: View {
             Text("Umstieg reicht nicht").font(.caption.weight(.semibold)).foregroundStyle(Color(.statusAlert))
         } else if journey.legs.contains(where: \.replacement) {
             Text("Ersatzverkehr").font(.caption.weight(.semibold)).foregroundStyle(Color(.modeBus))
-        } else if let delay = journey.legs.first(where: { !$0.isWalk })?.departureDelayMinutes {
+        } else if let delay = journey.maxDelayMinutes {
             DelayBadge(minutes: delay)
-        } else if journey.realtime {
+        } else if journey.isPunctual {
             Text("pünktlich").font(.caption).foregroundStyle(Color(.statusOk))
         } else if transfers > 0 {
             TransfersText(count: transfers).font(.caption).foregroundStyle(Color(.labelSecondary))

@@ -156,5 +156,28 @@ import TransitCore
         #expect(f.navWarnings == warnings) // Haptik nur einmal je Anschluss
         #expect(NavigationPresenter.card(try #require(f.navInput)).hint?.action == .nextConnection)
     }
+
+    /// Status der Zeile und Hero Card: groesste Verspaetung aller Fahrzeuge; "puenktlich" nur mit Echtzeit ueberall.
+    @Test func statusUsesTheLargestDelayAndNeedsRealtimeEverywhere() throws {
+        func edited(_ edit: @escaping (inout [String: Any]) -> Void) throws -> Journey {
+            try ViaFlowTests.changed(Self.journey()) { legs in
+                for i in legs.indices where legs[i]["mode"] as? String != "walk" {
+                    legs[i]["realtime"] = true
+                    legs[i]["departureDelaySeconds"] = 0
+                    if i == 4 { edit(&legs[i]) }
+                }
+            }
+        }
+        let punctual = try edited { _ in }
+        #expect(punctual.isPunctual && punctual.maxDelayMinutes == nil && !punctual.isWalkOnly)
+        let late = try edited { $0["departureDelaySeconds"] = 300 }
+        #expect(late.maxDelayMinutes == 5 && !late.isPunctual)
+        let unknown = try edited { $0["departureDelaySeconds"] = nil }
+        #expect(unknown.maxDelayMinutes == nil && !unknown.isPunctual)
+        let walk = try #require(ReplanFlowTests.alternatives(walkOnly: true)?.journeys[1])
+        #expect(walk.isWalkOnly && !walk.isPunctual)
+        #expect(!Spoken.journey(walk, calibrated: nil, now: Self.at("07:00:00")).contains("Direkt"))
+        #expect(Spoken.hero(walk, calibrated: nil, now: Self.at("07:00:00")).hasPrefix("Zu Fuß:"))
+    }
 }
 #endif

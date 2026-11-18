@@ -613,7 +613,7 @@ struct AlternativesView: View {
                     ContentCard {
                         VStack(alignment: .leading, spacing: 4) {
                             AlternativeRow(journey: journey, calibrated: walks?[safe: index], via: via)
-                            delta(journey)
+                            delta(walks?[safe: index]?.arrivalAtDestination ?? journey.arrival)
                         }
                     }
                 }
@@ -629,13 +629,12 @@ struct AlternativesView: View {
         }
     }
 
-    /// Ankunft im Vergleich zur laufenden Fahrt: frueher in Gruen, spaeter in Orange.
-    @ViewBuilder private func delta(_ journey: Journey) -> some View {
-        if let mine = flow.navJourney?.arrival, let other = journey.arrival {
+    /// Ankunft im Vergleich zur laufenden Fahrt: frueher in Gruen, spaeter in Orange. `other` ist dieselbe (an das Gehtempo
+    /// angepasste) Ankunft wie in `AlternativeRow`; die Uhrzeit steht dort schon.
+    @ViewBuilder private func delta(_ other: Date?) -> some View {
+        if let mine = flow.navJourney?.arrival, let other {
             let minutes = Int((other.timeIntervalSince(mine) / 60).rounded())
-            HStack(spacing: 4) {
-                Text("Ankunft \(other, format: .clock)")
-                Text(verbatim: "·")
+            Group {
                 if minutes == 0 {
                     Text("gleich schnell")
                 } else if minutes < 0 {
@@ -646,6 +645,7 @@ struct AlternativesView: View {
             }
             .font(.footnote.weight(.semibold))
             .monospacedDigit()
+            .contentTransition(.numericText())
             .foregroundStyle(Color(.labelSecondary))
         }
     }

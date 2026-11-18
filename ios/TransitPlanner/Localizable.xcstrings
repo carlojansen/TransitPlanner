@@ -363,6 +363,9 @@
     "Alternativen ab" : {
 
     },
+    "Alternativen ansehen" : {
+
+    },
     "Alternativen vergleichen" : {
 
     },
@@ -399,10 +402,16 @@
     "Ankunft %@" : {
 
     },
+    "Ankunft %@ (+%lld Min.)" : {
+
+    },
     "Ankunft %@." : {
 
     },
     "Ankunft um" : {
+
+    },
+    "Anschluss %@ fällt aus" : {
 
     },
     "Anschluss %@ in %@ reicht nicht mehr." : {
@@ -414,6 +423,12 @@
           }
         }
       }
+    },
+    "Anschluss %@ reicht nicht mehr" : {
+
+    },
+    "Anschluss %@ reicht wieder" : {
+
     },
     "Anweisung" : {
 
@@ -459,6 +474,9 @@
 
     },
     "Beenden" : {
+
+    },
+    "Behalten" : {
 
     },
     "Beim Verwenden" : {
@@ -519,6 +537,9 @@
 
     },
     "Die App fragt Fahrpläne über deinen eigenen Server ab. Der Schlüssel zeigt dem Server, dass die Anfrage von dir kommt." : {
+
+    },
+    "Die Fahrt bleibt unverändert" : {
 
     },
     "Die Verbindung ist nicht mehr aktuell." : {
@@ -891,6 +912,9 @@
     "Meldungen des Betreibers" : {
 
     },
+    "Merkt den Wechsel vor, die Fahrt läuft bis zum Umstieg weiter" : {
+
+    },
     "Mitteilungen sind aus. Erlaube sie in den iOS-Einstellungen." : {
 
     },
@@ -1132,6 +1156,9 @@
     "Über %@" : {
 
     },
+    "Übernehmen" : {
+
+    },
     "Umstieg" : {
 
     },
@@ -1215,10 +1242,28 @@
         }
       }
     },
+    "Vorschlag zur laufenden Fahrt" : {
+
+    },
+    "Vorschlag: %@" : {
+
+    },
     "Vorwarnen" : {
 
     },
     "Warte auf Verbindung" : {
+
+    },
+    "Wechsel auf %@ nicht mehr möglich" : {
+
+    },
+    "Wechsel auf %@ vorgemerkt" : {
+
+    },
+    "Wechsel nicht mehr möglich" : {
+
+    },
+    "Wechsel vorgemerkt" : {
 
     },
     "Wechseln" : {
@@ -1294,6 +1339,12 @@
 
     },
     "Zu Fuß" : {
+
+    },
+    "ZU FUSS" : {
+
+    },
+    "Zu Fuß:" : {
 
     },
     "Zu Fuß zu %@" : {

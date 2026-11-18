@@ -353,7 +353,15 @@ final class AppFlow {
         }
     }
     /// "Uebernehmen": Wechsel vorgemerkt. Die laufende Fahrt bleibt bis zur Ankunft am Suchstart, dort startet die Alternative.
-    private(set) var pendingSwitch: ReplanOffer?
+    /// Faellt die Vormerkung weg (Verwerfen, Wechsel, Ende), endet auch ein laufender Wechsel-Refresh.
+    private(set) var pendingSwitch: ReplanOffer? {
+        didSet {
+            if pendingSwitch == nil {
+                switchTask?.cancel()
+                switchTask = nil
+            }
+        }
+    }
     /// Kurzer Hinweis nach Verfall ("Anschluss RB 25 reicht wieder") oder gescheitertem Wechsel, bis `replanExpiredUntil`.
     private(set) var replanExpired: String?
     @ObservationIgnored private var replanExpiredUntil = Date.distantPast
@@ -1652,7 +1660,7 @@ final class AppFlow {
         guard pendingSwitch == nil, replanOffer == nil,
               let live = replanSearches.first(where: { !replanMemory.isDeclined($0) }),
               let answer = replanAnswers[live.key], now < live.time else { return }
-        if let index = ConnectionWatch.pick(answer.calibrated, for: live) {
+        if let index = ConnectionWatch.pick(answer.calibrated, for: live, keeping: nil) {
             replanOffer = ReplanOffer(proposal: ReplanProposal(id: UUID(), search: live, alternativeIndex: index), answer: answer)
         } else {
             replanMemory.decline(live)
@@ -1702,7 +1710,8 @@ final class AppFlow {
     }
 
     /// Banner und Mitteilung, eine Regel: betroffene Linie, dann der beste Vorschlag mit Linie, Abfahrt, Halt und Gleis eines
-    /// Halts (`ReminderText.departure`: nur Fahrplandaten, kein Ausstiegshalt, nie Adresse oder Position; Sperrbildschirm).
+    /// Halts (`ReminderText.departure`: nur Fahrplandaten, kein Ausstiegshalt, nie Adresse oder Position; Sperrbildschirm),
+    /// dazu die Ankunft (an das Gehtempo angepasst) und wie viel spaeter als die laufende Fahrt, nur als Uhrzeit.
     nonisolated static func replanTexts(_ offer: ReplanOffer, in journey: Journey) -> (title: String, body: String) {
         let line = journey.legs.first { $0.index == offer.proposal.search.trigger.vehicle }?.badgeText ?? ""
         let title = if case .tripCancelled = offer.proposal.search.trigger {
@@ -1710,8 +1719,13 @@ final class AppFlow {
         } else {
             String(localized: "Anschluss \(line) reicht nicht mehr")
         }
-        let best = offer.answer.calibrated[safe: offer.proposal.alternativeIndex]?.journey
-        return (title, best.map { String(localized: "Vorschlag: \(ReminderText.departure($0))") } ?? "")
+        guard let best = offer.answer.calibrated[safe: offer.proposal.alternativeIndex] else { return (title, "") }
+        let proposal = String(localized: "Vorschlag: \(ReminderText.departure(best.journey))")
+        guard let arrival = best.arrivalAtDestination ?? best.journey.arrival else { return (title, proposal) }
+        let later = journey.arrival.map { Int((arrival.timeIntervalSince($0) / 60).rounded()) } ?? 0
+        let time = later > 0 ? String(localized: "Ankunft \(arrival.clockText) (+\(later) Min.)")
+            : String(localized: "Ankunft \(arrival.clockText)")
+        return (title, "\(proposal), \(time)")
     }
 
     /// Mitteilung folgt dem Vorschlag (ohne ihn dem Hinweis nach gescheitertem Wechsel): im Hintergrund eine mit Ton je
@@ -1763,7 +1777,9 @@ final class AppFlow {
             pendingSwitch = nil
             return
         }
-        let token = blockedUntil == nil ? chosen.journey.refreshToken : nil
+        // Reiner Fussweg: keine Echtzeit, die ein Refresh aendern koennte.
+        let walkOnly = !chosen.journey.legs.contains { !$0.isWalk }
+        let token = blockedUntil == nil && !walkOnly ? chosen.journey.refreshToken : nil
         switchTask = Task {
             var fresh = chosen
             if let token {
@@ -1786,7 +1802,7 @@ final class AppFlow {
             pendingSwitch = nil
             // Spaeter Tick oder langsamer Refresh: ab jetzt muss die Alternative noch erreichbar sein, nicht ab der Ankunft
             // (Weiterfahrt im selben Zug: ab der Ankunft).
-            guard ConnectionWatch.pick([fresh], for: pending.proposal.search.at(arrival: arrival, now: deps.now())) != nil else {
+            guard ConnectionWatch.pick([fresh], for: pending.proposal.search.at(arrival: arrival, now: deps.now()), keeping: nil) != nil else {
                 let text = Self.switchLine(pending).map { String(localized: "Wechsel auf \($0) nicht mehr möglich") }
                     ?? String(localized: "Wechsel nicht mehr möglich")
                 replanExpired = text
@@ -1807,8 +1823,6 @@ final class AppFlow {
     private func resetReplan() {
         replanTask?.cancel()
         replanTask = nil
-        switchTask?.cancel()
-        switchTask = nil
         replanNotice = nil
         replanOffer = nil
         pendingSwitch = nil

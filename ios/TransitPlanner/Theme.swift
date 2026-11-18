@@ -79,6 +79,20 @@ extension Leg {
     }
 }
 
+extension Journey {
+    /// Reiner Fussweg (Backend-Fussweg-Vorrang): keine Fahrzeuge, kein Umstieg.
+    var isWalkOnly: Bool { !legs.contains { !$0.isWalk } }
+
+    /// Groesste Verspaetung aller Fahrzeuge (Min.), nicht nur die des ersten.
+    var maxDelayMinutes: Int? { legs.compactMap { $0.isWalk ? nil : $0.departureDelayMinutes }.max() }
+
+    /// "puenktlich" nur, wenn jedes Fahrzeug Echtzeit hat und keines verspaetet ist; ein reiner Fussweg nie.
+    var isPunctual: Bool {
+        let vehicles = legs.filter { !$0.isWalk }
+        return !vehicles.isEmpty && maxDelayMinutes == nil && vehicles.allSatisfy { $0.realtime && $0.departureDelaySeconds != nil }
+    }
+}
+
 extension Step {
     /// Ebenenwechsel ohne ausdrueckliche Treppe/Aufzug (Rampe, unbekannt) bekommt das Treppensymbol.
     var symbolName: String {

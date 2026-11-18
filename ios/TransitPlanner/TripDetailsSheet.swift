@@ -137,8 +137,10 @@ private struct DetailsHeader: View {
             .fontDesign(.rounded)
             HStack(spacing: 4) {
                 if let leave, let arrive { MinutesText(seconds: Int(arrive.timeIntervalSince(leave))) }
-                Text(verbatim: "·")
-                TransfersText(count: journey.transfers(excludingStaysAt: via))
+                if !journey.isWalkOnly {
+                    Text(verbatim: "·")
+                    TransfersText(count: journey.transfers(excludingStaysAt: via))
+                }
             }
             .font(.subheadline)
             .foregroundStyle(Color(.labelSecondary))
@@ -347,7 +349,7 @@ private struct WalkTimelineRow: View {
         .foregroundStyle(Color(.modeWalk))
         .fixedSize()
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("\(estimate == nil ? String(localized: "Etwa ") : "")\(minutes) Minuten Fußweg"))
+        .accessibilityLabel(Text(estimate == nil ? "Etwa \(minutes) Minuten Fußweg" : "\(minutes) Minuten Fußweg"))
     }
 
     var body: some View {

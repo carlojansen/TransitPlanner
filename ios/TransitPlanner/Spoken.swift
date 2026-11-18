@@ -10,7 +10,8 @@ enum Spoken {
 
     /// "Beste Verbindung: In 7 Minuten losgehen. 6 Minuten Fußweg, dann RE 5 Richtung Koblenz, 3 Minuten verspätet. Gleis 7."
     static func hero(_ journey: Journey, calibrated: CalibratedJourney?, now: Date, via: [ViaStop] = []) -> String {
-        String(localized: "Beste Verbindung:") + " " + Spoken.journey(journey, calibrated: calibrated, now: now, via: via)
+        (journey.isWalkOnly ? String(localized: "Zu Fuß:") : String(localized: "Beste Verbindung:")) + " "
+            + Spoken.journey(journey, calibrated: calibrated, now: now, via: via)
     }
 
     /// `via`: Aufenthalte an Zwischenstopps zaehlen nicht als Umstieg.
@@ -45,7 +46,9 @@ enum Spoken {
             parts.append(String(localized: "Ankunft \(arrive.clockText)."))
         }
         let transfers = journey.transfers(excludingStaysAt: via)
-        parts.append(transfers == 0 ? String(localized: "Direkt.") : String(localized: "\(transfers) Umstiege") + ".")
+        if !journey.isWalkOnly {
+            parts.append(transfers == 0 ? String(localized: "Direkt.") : String(localized: "\(transfers) Umstiege") + ".")
+        }
         if let sev = sev(journey) { parts.append(sev) }
         if calibrated?.transfers.contains(where: { $0.status == .missed }) == true {
             parts.append(String(localized: "Umstieg reicht nicht."))

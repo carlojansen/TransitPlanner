@@ -33,8 +33,9 @@ import UserNotifications
 
     /// Antwort ab Deutz: [0] der betroffene RB 25, [1] Fussweg 120 s und Tram 1 ab `tram` (Token "YWx0"), mit `early`
     /// [2] Tram 7 ohne Fussweg ab Deutz (frueher am Ziel). `fromHansaring`: Tram 1 startet am Hansaring (Suchstart dort).
+    /// `walkOnly`: [1] ist ein reiner Fussweg ab Deutz (Backend-Fussweg-Vorrang), ohne Tram.
     static func alternatives(tram: String = "07:50:00", tramCancelled: Bool = false, early: String? = nil,
-                             fromHansaring: Bool = false) -> RoutesResponse? {
+                             fromHansaring: Bool = false, walkOnly: Bool = false) -> RoutesResponse? {
         func place(_ id: String, _ lat: Double, _ lon: Double) -> String {
             #"{"kind":"stop","id":"\#(id)","name":"Halt \#(id)","latitude":\#(lat),"longitude":\#(lon)}"#
         }
@@ -71,7 +72,8 @@ import UserNotifications
                 walk(1, weyertal, goal, "08:00:00", "08:08:00", 480),
             ])
         }
-        let list = [rb25, tramTrip] + (earlyTrip.map { [$0] } ?? [])
+        let walkTrip = journey("d2Fsaw==", "07:35:00", "08:20:00", [walk(0, deutz93, goal, "07:35:00", "08:20:00", 2700)])
+        let list = [rb25, walkOnly ? walkTrip : tramTrip] + (earlyTrip.map { [$0] } ?? [])
         let json = #"{"journeys":[\#(list.joined(separator: ","))],"earlierRef":null,"laterRef":null,"walkOnly":false,"#
             + #""removedLongDistance":0,"fetchedAt":"2026-10-26T07:10:00Z","attribution":\#(FakeData.attributionJSON)}"#
         return try? TransitJSON.decoder().decode(RoutesResponse.self, from: Data(json.utf8))
@@ -456,6 +458,40 @@ import UserNotifications
         #expect(f.navJourney?.legs.contains { $0.line?.name == "ICE 47" } == true)
     }
 
+    /// Reiner Fussweg als Vorschlag (Backend-Fussweg-Vorrang): wird vorgeschlagen und startet am Suchstart direkt im
+    /// Schritt "zu Fuss zum Ziel", ohne Refresh.
+    @Test func walkOnlyAlternativeIsProposedAndSwitchesWithoutRefresh() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        env.planner.setResponse(Self.alternatives(walkOnly: true))
+        try await refresh(f, env, iceDelay: 180)
+        let offer = try #require(f.replanOffer)
+        #expect(offer.proposal.alternativeIndex == 1)
+        f.acceptReplan(offer.proposal.id)
+        let calls = env.refresher.callCount
+        await tick(f, env, at: "07:36:00")
+        #expect(f.pendingSwitch == nil)
+        #expect(env.refresher.callCount == calls)
+        #expect(f.navJourney?.legs.allSatisfy(\.isWalk) == true)
+        #expect(f.navStep == .finalWalkToDestination)
+    }
+
+    /// Der Wechsel-Refresh laeuft erst am Suchstart (.start), nicht waehrend des Wartens (.wait), und nur einmal.
+    @Test func switchRefreshesOnlyAtTheSearchStart() async throws {
+        let env = Env()
+        let f = await navigating(env)
+        try await refresh(f, env, iceDelay: 180)
+        f.acceptReplan(try #require(f.replanOffer).proposal.id)
+        let calls = env.refresher.callCount
+        await tick(f, env, at: "07:20:00")
+        #expect(f.pendingSwitch != nil && env.refresher.callCount == calls)
+        env.refresher.set(.success(try #require(Self.alternatives()?.journeys[1])))
+        await tick(f, env, at: "07:36:00")
+        #expect(f.pendingSwitch == nil && env.refresher.callCount == calls + 1)
+        await tick(f, env, at: "07:37:00")
+        #expect(env.refresher.callCount == calls + 1)
+    }
+
     /// Ankunft mit vorgemerktem Wechsel: der Wechsel laeuft nicht mehr, kein Zustand bleibt.
     @Test func arrivalClearsPendingSwitch() async throws {
         let env = Env()
@@ -503,6 +539,8 @@ import UserNotifications
         #expect(alert.proposalID == offer.proposal.id)
         #expect(alert.title == "Anschluss RB 25 reicht nicht mehr")
         #expect(alert.body.hasPrefix("Vorschlag: 1 um ") && alert.body.contains("ab Halt deutzTram"))
+        // Ankunft der Alternative (kalibrierter Zielweg) und wie viel spaeter als die laufende Fahrt, nur als Uhrzeit
+        #expect(alert.body.contains(", Ankunft ") && alert.body.hasSuffix(" (+9 Min.)"), "\(alert.body)")
         // Ziel-Label des Nutzers ("Weyertal 119a") und Koordinaten nie, keine Emojis
         #expect(!alert.body.contains("119a") && !alert.body.contains("50.9"))
         // Sperrbildschirm: nur ein Halt (Abfahrt), nicht der letzte Ausstiegshalt der Alternative
