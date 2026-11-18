@@ -110,6 +110,8 @@ Spezifikation: `docs/SPEZIFIKATION.md` 4.4. Kein API-Vertrag betroffen (nur best
 6. Review (Security und HIG) über den ganzen Diff, Befunde beheben, `xcodebuild test` und `npm test` grün.
 7. STATUS aktualisieren, **Stopp: Gerätetest und Freigabe durch Carlo** (Fahrt mit echter Verspätung oder Simulation).
 
+**Stand 18.11.:** Schritt 0 erledigt (live, `npm run smoke:replan`): Suche ab Bahnsteig-ID mit Echtzeit-Ankunft liefert Alternativen, MOTIS liefert Abfahrten ohne Umstiegszeit (Filter in `pick` nötig) und die betroffene Fahrt selbst (muss ausgeschlossen werden), Gleiswechsel am Knoten möglich, `via` hinter dem Suchstart hält den Aufenthalt ein. Schritt 1 und 2 erledigt: `ConnectionWatch` und `ReplanMemory` in TransitCore, 27 neue Tests (TransitCore 200/0), 18 Gegenproben alle rot (Regel entfernt, Test schlägt an; eine Lücke beim Warten am Gleis gefunden und per Test geschlossen). Nicht abgedeckt: Suchzeit nie vor `now` (nur mit späterer Ankunft prüfbar). Noch nicht reviewt, nichts in der App eingebaut.
+
 **Bestandteile und Einbau (Entwurf 18.11., vor Review):**
 
 A. `TransitCore/ConnectionWatch.swift` (neu, rein, Sendable, ohne UI/Netz/Uhr; `now` kommt als Parameter)
