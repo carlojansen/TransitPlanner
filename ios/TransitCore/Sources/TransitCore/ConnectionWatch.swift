@@ -6,10 +6,12 @@ public enum ReplanTrigger: Sendable, Hashable {
     case connectionBroken(vehicle: Int)
     /// Das spaetere Fahrzeug faellt aus.
     case tripCancelled(vehicle: Int)
+    /// "Wechseln" aus dem Blatt "Alternativen" mit Start an der naechsten Station; `vehicle` ist hier das Ausstiegsfahrzeug.
+    case chosen(vehicle: Int)
 
     public var vehicle: Int {
         switch self {
-        case .connectionBroken(let v), .tripCancelled(let v): v
+        case .connectionBroken(let v), .tripCancelled(let v), .chosen(let v): v
         }
     }
 }
@@ -29,6 +31,14 @@ public struct ReplanKey: Sendable, Hashable {
             + "@\(leg.origin.id ?? leg.origin.name ?? "")"
         vehicle = leg.tripId ?? fallback
     }
+
+    /// Kein betroffenes Fahrzeug (Wechsel aus dem Blatt): passt auf kein Leg, der Ersatzschluessel eines Legs ist nie leer.
+    private init() {
+        tripId = nil
+        fallback = ""
+        vehicle = ""
+    }
+    static let noVehicle = ReplanKey()
 
     public static func == (a: ReplanKey, b: ReplanKey) -> Bool { a.vehicle == b.vehicle }
     public func hash(into h: inout Hasher) { h.combine(vehicle) }
@@ -51,6 +61,12 @@ public struct ReplanSearch: Sendable, Hashable {
     public let time: Date
     /// Puffer des betroffenen Anschlusses in s; `ConnectionWatch.cancelledBuffer` bei Ausfall.
     public let bufferSeconds: Int
+
+    /// Dieselbe Suche zur aktuellen Echtzeit-Ankunft am Suchstart (Pruefung der vorgemerkten Alternative beim Wechsel).
+    public func at(_ time: Date) -> ReplanSearch {
+        ReplanSearch(trigger: trigger, key: key, alightingVehicle: alightingVehicle, alightingKey: alightingKey,
+                     start: start, time: time, bufferSeconds: bufferSeconds)
+    }
 }
 
 /// Vorschlag fuer den Nutzer: die Suche und der Index der gewaehlten Alternative in der Antwort (die liegt in der App).
@@ -82,7 +98,7 @@ public enum ConnectionWatch {
 
     /// Fahrzeug, in dem man bis zum Suchstart sitzt: `onBoardTransit` oder die 120 s vor dem Ausstieg. Am Gleis, beim Gehen
     /// und nach dem Ausstieg nil (dort gilt der bestehende Ablauf).
-    static func boardedVehicle(_ step: NavigationStep, in journey: Journey, now: Date) -> Int? {
+    public static func boardedVehicle(_ step: NavigationStep, in journey: Journey, now: Date) -> Int? {
         switch step {
         case .onBoardTransit(let v): return v
         case .transferRouting(let from, _):
@@ -96,10 +112,17 @@ public enum ConnectionWatch {
     /// Ein Auswertungsschritt: neuer Anschlussbruch oder Ausfall rastet ein (Puffer-Zittern um 0 s schaltet nicht um) und
     /// faellt erst, wenn der Anschluss mit mindestens `TransferCheck.minimumSlackSeconds` wieder erreichbar ist.
     /// Alle betroffenen Fahrzeuge, frueheste zuerst: lehnt der Nutzer das erste ab, bleibt das zweite sichtbar.
-    /// `latched` gehoert dem Aufrufer (RAM) und wird mit dem Ergebnis zurueckgegeben.
+    /// Gesucht wird nur im Fahrzeug (`boardedVehicle`). Auf dem Umstiegsweg und am Gleis rasten spaetere Anschluesse weiter
+    /// ein und frei (Live-Activity-Problem "Anschluss"), ohne Suche. `latched` gehoert dem Aufrufer (RAM).
     public static func evaluate(journey: Journey, step: NavigationStep, latched: Set<Int>, walks: [Int: WalkEstimate],
                                 now: Date, pace: WalkingPaceFactor) -> (searches: [ReplanSearch], latched: Set<Int>) {
-        guard let last = boardedVehicle(step, in: journey, now: now) else { return ([], latched) }
+        let boarded = boardedVehicle(step, in: journey, now: now)
+        let anchor: Int? = switch step {
+        case .transferRouting(_, let to): boarded ?? to
+        case .waitingAtPlatform(let v): v
+        default: boarded
+        }
+        guard let last = anchor else { return ([], latched) }
         var latched = latched
         let vehicles = journey.legs.filter { !$0.isWalk }
         if let broken = NavigationEngine.brokenConnection(after: last, journey: journey, walks: walks, now: now, pace: pace) {
@@ -121,7 +144,7 @@ public enum ConnectionWatch {
                 latched.remove(index)
                 continue
             }
-            if let before = vehicles.last(where: { $0.index < index }),
+            if boarded != nil, let before = vehicles.last(where: { $0.index < index }),
                let search = search(before: before, affected: affected, buffer: buffer, now: now) {
                 searches.append(search)
             }
@@ -129,16 +152,22 @@ public enum ConnectionWatch {
         return (searches, latched)
     }
 
+    /// "Wechseln" aus dem Blatt mit Start an der naechsten Station, waehrend man noch im Fahrzeug sitzt: wird wie ein
+    /// uebernommener Vorschlag vorgemerkt und am Ausstieg mit `pick` geprueft. Ohne betroffenes Fahrzeug. Sonst nil.
+    public static func chosenSwitch(journey: Journey, step: NavigationStep, now: Date) -> ReplanSearch? {
+        guard let v = boardedVehicle(step, in: journey, now: now),
+              let leg = journey.legs.first(where: { $0.index == v }), let start = endpoint(leg.destination) else { return nil }
+        return ReplanSearch(trigger: .chosen(vehicle: v), key: .noVehicle, alightingVehicle: v, alightingKey: ReplanKey(leg),
+                            start: start, time: max(now, leg.arrival ?? leg.plannedArrival ?? now), bufferSeconds: 0)
+    }
+
+    private static func endpoint(_ place: Place) -> TripEndpoint? {
+        if let id = place.id { return .stop(id: id, label: place.name ?? "") }
+        return place.coordinate.map { .coordinate($0, label: place.name ?? "") }
+    }
+
     private static func search(before: Leg, affected: Leg, buffer: Int, now: Date) -> ReplanSearch? {
-        let place = before.destination
-        let start: TripEndpoint
-        if let id = place.id {
-            start = .stop(id: id, label: place.name ?? "")
-        } else if let coordinate = place.coordinate {
-            start = .coordinate(coordinate, label: place.name ?? "")
-        } else {
-            return nil
-        }
+        guard let start = endpoint(before.destination) else { return nil }
         let trigger: ReplanTrigger = affected.cancelled ? .tripCancelled(vehicle: affected.index) : .connectionBroken(vehicle: affected.index)
         return ReplanSearch(trigger: trigger, key: ReplanKey(affected), alightingVehicle: before.index, alightingKey: ReplanKey(before),
                             start: start, time: max(now, before.arrival ?? before.plannedArrival ?? now), bufferSeconds: buffer)

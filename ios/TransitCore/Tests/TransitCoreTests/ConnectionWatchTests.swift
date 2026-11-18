@@ -242,6 +242,43 @@ private let pace = WalkingPaceFactor()
         #expect(recovered.latched.isEmpty)
     }
 
+    /// Nach dem Ausstieg und am Gleis rasten spaetere Anschluesse weiter ein und frei (Live Activity), gesucht wird nicht.
+    @Test func laterConnectionLatchesAndReleasesAfterAlightingWithoutSearch() throws {
+        func trip(delayB: Int) throws -> Journey {
+            try journey([
+                L(trip: "A", dep: 0, arr: 30, from: "start", to: "deutz"),
+                L(walk: true, dep: 30, arr: 32, from: "deutz", to: "gleis9", seconds: 120),
+                L(trip: "B", dep: 40, arr: 60, from: "gleis9", to: "x", delay: delayB),
+                L(walk: true, dep: 60, arr: 62, from: "x", to: "y", seconds: 120),
+                L(trip: "C", dep: 70, arr: 90, from: "y", to: "ziel"),
+            ])
+        }
+        // B 9 min spaet: C reicht nicht (-60 s)
+        let walking = try evaluate(trip(delayB: 9), .transferRouting(from: 0, to: 2), minute: 31)
+        #expect(walking.latched == [4])
+        #expect(walking.searches.isEmpty)
+        let platform = try evaluate(trip(delayB: 9), .waitingAtPlatform(vehicle: 2), minute: 35)
+        #expect(platform.latched == [4] && platform.searches.isEmpty)
+        // B wieder puenktlich: frei, auch ohne im Fahrzeug zu sitzen
+        #expect(try evaluate(trip(delayB: 0), .transferRouting(from: 0, to: 2), minute: 31, latched: [4]).latched.isEmpty)
+        #expect(try evaluate(trip(delayB: 0), .waitingAtPlatform(vehicle: 2), minute: 35, latched: [4]).latched.isEmpty)
+    }
+
+    @Test func chosenSwitchOnlyWhileBoardedFromTheAlightingStop() throws {
+        let j = try base(delay: 9)
+        let s = try #require(ConnectionWatch.chosenSwitch(journey: j, step: .onBoardTransit(vehicle: 0), now: at(10)))
+        #expect(s.trigger == .chosen(vehicle: 0) && s.alightingVehicle == 0)
+        #expect(s.start == .stop(id: "deutz", label: "Halt deutz"))
+        #expect(s.time == at(39))
+        #expect(ConnectionWatch.chosenSwitch(journey: j, step: .transferRouting(from: 0, to: 2), now: at(40)) == nil)
+        #expect(ConnectionWatch.chosenSwitch(journey: j, step: .approachingFirstStop(vehicle: 0), now: at(0)) == nil)
+        // kein betroffenes Fahrzeug: auch eine Alternative mit B ist erlaubt, Gehweg und Puffer gelten weiter
+        let withB = try calibrated(journey([L(trip: "B", dep: 41, arr: 60, from: "gleis9", to: "ziel")]))
+        #expect(ConnectionWatch.pick([withB], for: s) == 0)
+        let tooEarly = try calibrated(journey([L(trip: "B", dep: 40, arr: 60, from: "gleis9", to: "ziel")]))
+        #expect(ConnectionWatch.pick([tooEarly], for: s) == nil)
+    }
+
     @Test func latchOfEarlierVehicleIsIgnoredOnceBoarded() throws {
         // eingerastet fuer Fahrzeug 0, im Fahrzeug 2 gilt es nicht mehr
         let j = try base(delay: 0)
@@ -270,6 +307,14 @@ private let pace = WalkingPaceFactor()
         let s = try search() // Suchzeit 08:39, Grenze 08:41
         #expect(try ConnectionWatch.pick([alt("C", dep: 39), alt("D", dep: 40)], for: s) == nil)
         #expect(try ConnectionWatch.pick([alt("C", dep: 39), alt("D", dep: 41)], for: s) == 1)
+    }
+
+    /// Beim Wechsel am Suchstart zaehlt die neue Echtzeit-Ankunft: kam der Zug spaeter an, reicht die Alternative nicht mehr.
+    @Test func searchAtLaterArrivalRejectsFormerlyReachable() throws {
+        let s = try search() // Suchzeit 08:39
+        #expect(try ConnectionWatch.pick([alt("D", dep: 41)], for: s) == 0)
+        #expect(try ConnectionWatch.pick([alt("D", dep: 41)], for: s.at(at(40))) == nil)
+        #expect(s.at(at(40)).key == s.key && s.at(at(40)).alightingVehicle == s.alightingVehicle)
     }
 
     @Test func accessWalkAtStartCounts() throws {

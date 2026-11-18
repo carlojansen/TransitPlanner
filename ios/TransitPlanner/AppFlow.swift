@@ -310,7 +310,8 @@ final class AppFlow {
     @ObservationIgnored private var inBackground = false
     /// Seit wann die Fahrt verpasst ist und niemand hinsieht (`NavigationEngine.missedGrace`).
     @ObservationIgnored private var navMissedSince: Date?
-    /// Fahrzeuge, die laut Puffer nicht mehr reichen; eingerastet bis zum naechsten neuen Stand (DESIGN: einmal je Anschluss).
+    /// Fahrzeug, zu dem man geht, dessen Puffer mit Position nicht mehr reicht; eingerastet bis zum naechsten besseren Stand
+    /// (GPS-Spruenge um 0 s). Spaetere Anschluesse rasten in `replanLatched` ein.
     @ObservationIgnored private var navMissedVehicles: Set<Int> = []
     @ObservationIgnored private var navRefreshing = false
     @ObservationIgnored private var lastNavRefresh: Date?
@@ -329,6 +330,32 @@ final class AppFlow {
     enum Peek { case loading, loaded(RoutesResponse, [CalibratedJourney]?, via: [ViaStop]), failed(TransitError) }
     private(set) var peek: Peek?
     @ObservationIgnored private var peekTask: Task<Void, Never>?
+
+    /// Proaktive Umplanung (SPEZIFIKATION 4.4): Antwort einer Suche ab dem Suchstart, mit Gehzeiten und den gesendeten Stopps.
+    struct ReplanAnswer: Sendable {
+        let search: ReplanSearch
+        let response: RoutesResponse
+        let calibrated: [CalibratedJourney]
+        let via: [ViaStop]
+    }
+    /// Vorschlag (zufaellige ID) mit der Antwort, aus der er stammt.
+    struct ReplanOffer: Sendable {
+        let proposal: ReplanProposal
+        let answer: ReplanAnswer
+    }
+    /// Aktueller Vorschlag; alles zur Umplanung nur im RAM, nie in SwiftData oder Logs, mit der Navigation verworfen.
+    private(set) var replanOffer: ReplanOffer?
+    /// "Uebernehmen": Wechsel vorgemerkt. Die laufende Fahrt bleibt bis zur Ankunft am Suchstart, dort startet die Alternative.
+    private(set) var pendingSwitch: ReplanOffer?
+    /// Letzte Antwort: loest derselbe Anschluss erneut aus, wird sie ohne neue Suche gezeigt.
+    @ObservationIgnored private var replanAnswer: ReplanAnswer?
+    @ObservationIgnored private var replanMemory = ReplanMemory()
+    /// Eingerastete spaetere Fahrzeuge (`ConnectionWatch.evaluate`): Vorschlag, Live Activity und Haptik lesen dasselbe Set.
+    @ObservationIgnored private var replanLatched: Set<Int> = []
+    /// Ausloeser des letzten Ticks, frueheste zuerst.
+    @ObservationIgnored private var replanSearches: [ReplanSearch] = []
+    @ObservationIgnored private var replanTask: Task<Void, Never>?
+    @ObservationIgnored private var switchTask: Task<Void, Never>?
     var showsSettings = false
     /// Index der Verbindung, fuer die das Erinnerungs-Sheet offen ist (D1).
     var reminderJourneyIndex: Int?
@@ -541,6 +568,7 @@ final class AppFlow {
             // Angekommen: Live-Standort sofort verwerfen (AGENT.md 3.1.2), die Zusammenfassung braucht ihn nicht.
             closeAlternatives()
             stopNavigationTasks()
+            resetReplan()
             navPosition = nil
             navFix = nil
         }
@@ -824,7 +852,7 @@ final class AppFlow {
         startWaitingHint()
         let time = customTime ?? deps.now()
         let arrival = isArrivalTime
-        let modes: [ModeFilter]? = modeFilter.count == ModeFilter.allCases.count ? nil : ModeFilter.allCases.filter(modeFilter.contains)
+        let modes = modesParameter
         let via = self.via
         work = Task {
             do throws(TransitError) {
@@ -942,6 +970,7 @@ final class AppFlow {
         let key = reminders.reminder(for: journey)?.id.uuidString ?? UUID().uuidString
         navActivityKey = key
         navMissedVehicles = []
+        resetReplan()
         deps.activities.forgive(key)
         // Gleiswechsel schon beim Start: Hinweis und Haptik
         if journey.legs.contains(where: { $0.platformChanged == true }) { navWarnings += 1 }
@@ -1032,12 +1061,7 @@ final class AppFlow {
            warnedVehicles.insert(target).inserted {
             navWarnings += 1
         }
-        // Im Fahrzeug: spaeterer Anschluss reicht nach Verspaetung nicht mehr -> einmal Haptik je Anschluss.
-        if case .onBoardTransit(let v) = step,
-           let broken = NavigationEngine.brokenConnection(after: v, journey: journey, walks: navWalks, now: now, pace: pace),
-           warnedVehicles.insert(broken).inserted {
-            navWarnings += 1
-        }
+        evaluateReplan(now: now)
         if step == .arrived { send(.arrived) }
         syncActivities()
     }
@@ -1048,7 +1072,7 @@ final class AppFlow {
         var desired: [TripActivityDesire] = []
         if phase.isGuiding, let journey = navJourney, let step = navStep, let key = navActivityKey {
             let state = TripActivityState(journey: journey, step: step, leaveAt: reminders.reminder(for: journey)?.plan.leaveAt,
-                                          broken: connectionBroken(journey, step, now: now), now: now)
+                                          broken: connectionBroken(step, journey: journey, now: now), now: now)
             desired.append(TripActivityPlanner.navigation(key: key, state: state, now: now))
         }
         let others = reminders.rows.map { (key: $0.id.uuidString, plan: $0.plan) }.filter { $0.key != navActivityKey }
@@ -1069,26 +1093,26 @@ final class AppFlow {
         }
     }
 
-    /// Rastet je Fahrzeug ein: GPS-Spruenge um Puffer 0 duerfen den Ausfall nicht wiederholt an- und abschalten. Nur mit
-    /// Position: ohne Fix rechnet `currentBuffer` mit dem ganzen Fussweg, das zaehlt nur bis zum ersten Fix.
-    /// Das Zielfahrzeug im Umstieg kennt nur `currentBuffer`: `brokenConnection` rechnet ohne Position mit dem ganzen Fussweg.
-    private func connectionBroken(_ journey: Journey, _ step: NavigationStep, now: Date) -> Bool {
+    /// Problem "Anschluss": Puffer zum Zielfahrzeug jetzt verpasst oder ein Fahrzeug ab dort eingerastet.
+    /// Zielfahrzeug: rastet nur mit Position ein (GPS-Spruenge um Puffer 0; ohne Fix rechnet `currentBuffer` mit dem ganzen
+    /// Fussweg, das zaehlt nur bis zum ersten Fix). Spaetere Anschluesse: dieselbe Einrast-Regel wie der Vorschlag
+    /// (`replanLatched`). Mit vorgemerktem Wechsel endet die alte Fahrt am Suchstart, ihre Anschluesse zaehlen nicht mehr.
+    /// Nach dem Ausstieg entscheidet fuer das Zielfahrzeug nur `live` (mit Position); eingerastet zaehlen dann nur spaetere.
+    private func connectionBroken(_ step: NavigationStep, journey: Journey, now: Date) -> Bool {
+        guard pendingSwitch == nil else { return false }
         var ahead = NavigationEngine.targetVehicle(step) ?? .max
-        var last: Int?
+        var later = ahead
         switch step {
-        case .onBoardTransit(let v):
-            last = v
+        case .onBoardTransit(let v), .waitingAtPlatform(let v): // im Fahrzeug oder am Gleis: dieses ist erreicht
             ahead = v + 1
-        case .transferRouting(_, let to): last = to
-        case .waitingAtPlatform(let v): ahead = v + 1 // am Gleis: dieses Fahrzeug ist erreicht
+            later = v + 1
+        case .transferRouting(_, let to) where ConnectionWatch.boardedVehicle(step, in: journey, now: now) == nil:
+            later = to + 1
         default: break
         }
         let live = currentBuffer?.status == .missed
         if live, navPosition != nil, let target = NavigationEngine.targetVehicle(step) { navMissedVehicles.insert(target) }
-        if let last, let broken = NavigationEngine.brokenConnection(after: last, journey: journey, walks: navWalks, now: now, pace: pace) {
-            navMissedVehicles.insert(broken)
-        }
-        return live || navMissedVehicles.contains { $0 >= ahead }
+        return live || navMissedVehicles.contains { $0 >= ahead } || replanLatched.contains { $0 >= later }
     }
 
     /// Scheitert ein Start, bleibt es still: die Mitteilungen sind der Rueckfall.
@@ -1224,6 +1248,7 @@ final class AppFlow {
         navStartedAt = nil
         navActivityKey = nil
         navMissedVehicles = []
+        resetReplan()
         navMissedSince = nil
         navIsStale = false
         navExpired = false
@@ -1272,6 +1297,25 @@ final class AppFlow {
         }
     }
 
+    /// Modus-Parameter der Anfrage: alle Pillen an = voller Nahverkehrsfilter (nil).
+    private var modesParameter: [ModeFilter]? {
+        modeFilter.count == ModeFilter.allCases.count ? nil : ModeFilter.allCases.filter(modeFilter.contains)
+    }
+
+    /// Anfrage der Alternativen unterwegs (Blatt "Alternativen" und Vorschlag): Ziel, Modi und Barrierefreiheit wie die
+    /// laufende Fahrt, `rest` = noch offene Zwischenstopps. Start am Zwischenstopp selbst (Fahrt dorthin laeuft): der Stopp
+    /// entfaellt, das Backend lehnt Start = Stopp ab; sein Aufenthalt bleibt, die Weiterfahrt beginnt erst danach.
+    /// `via` = die gesendeten Stopps ("Wechseln" uebernimmt sie).
+    nonisolated static func alternativesQuery(from start: TripEndpoint, at time: Date, to target: TripEndpoint, via rest: [ViaStop],
+                                              modes: [ModeFilter]?, accessibility: Accessibility) -> (trip: ManualTripRequest, via: [ViaStop]) {
+        let startID: String? = if case .stop(let id, _) = start { id } else { nil }
+        let via = rest.filter { stop in startID.map { !stop.matches(stopID: $0) } ?? true }
+        let stay = rest.filter { !via.contains($0) }.reduce(0) { $0 + $1.stayMinutes }
+        let trip = ManualTripRequest(origin: start, destination: target, targetTime: time.addingTimeInterval(TimeInterval(stay * 60)),
+                                     modes: modes, accessibility: accessibility, via: via.isEmpty ? nil : via)
+        return (trip, via)
+    }
+
     /// Alternativen zum Ziel; Navigation und Karte bleiben unberuehrt.
     func openAlternatives(from origin: PeekOrigin? = nil) {
         guard case .navigation = phase, let target = destination?.place else { return }
@@ -1286,7 +1330,8 @@ final class AppFlow {
         let pace = self.pace
         let useNext = peekOrigin == .nextStation
         let rest = remainingVia
-        let modes: [ModeFilter]? = modeFilter.count == ModeFilter.allCases.count ? nil : ModeFilter.allCases.filter(modeFilter.contains)
+        let modes = modesParameter
+        let accessibility = self.accessibility
         peekTask = Task {
             do {
                 let start: TripEndpoint
@@ -1299,18 +1344,12 @@ final class AppFlow {
                     start = .coordinate(fix.coordinate, label: PlanEndpoint.currentLocation.label)
                     time = now
                 }
-                // Start am Zwischenstopp selbst (Fahrt dorthin laeuft): der Stopp entfaellt, das Backend lehnt Start = Stopp ab.
-                let startID: String? = if case .stop(let id, _) = start { id } else { nil }
-                let via = rest.filter { stop in startID.map { !stop.matches(stopID: $0) } ?? true }
-                // Der Aufenthalt dort bleibt: Weiterfahrt erst danach.
-                let stay = rest.filter { !via.contains($0) }.reduce(0) { $0 + $1.stayMinutes }
-                let trip = ManualTripRequest(origin: start, destination: target, targetTime: time.addingTimeInterval(TimeInterval(stay * 60)),
-                                             modes: modes, accessibility: accessibility, via: via.isEmpty ? nil : via)
-                for try await stage in deps.planner.plan(trip, pace: pace) {
+                let query = Self.alternativesQuery(from: start, at: time, to: target, via: rest, modes: modes, accessibility: accessibility)
+                for try await stage in deps.planner.plan(query.trip, pace: pace) {
                     guard !Task.isCancelled else { return }
                     switch stage {
-                    case .skeleton(let r): peek = .loaded(r, nil, via: via)
-                    case .calibrated(let r, let c): peek = .loaded(r, c, via: via)
+                    case .skeleton(let r): peek = .loaded(r, nil, via: query.via)
+                    case .calibrated(let r, let c): peek = .loaded(r, c, via: query.via)
                     }
                 }
             } catch {
@@ -1369,7 +1408,7 @@ final class AppFlow {
         guard let start = origin.place ?? endpoint(firstStop),
               let end = destination?.place ?? endpoint(journey.legs.last?.destination) else { return nil }
         return ManualTripRequest(origin: start, destination: end, targetTime: journey.departure ?? deps.now(),
-                                 modes: modeFilter.count == ModeFilter.allCases.count ? nil : ModeFilter.allCases.filter(modeFilter.contains),
+                                 modes: modesParameter,
                                  accessibility: accessibility, via: via.isEmpty ? nil : via)
     }
 
@@ -1434,10 +1473,23 @@ final class AppFlow {
         peek = nil
     }
 
-    /// Wechsel auf eine Alternative: ersetzt die laufende Verbindung.
+    /// Wechsel auf eine Alternative: ersetzt die laufende Verbindung. Startet sie an der naechsten Station, waehrend man noch
+    /// im Fahrzeug sitzt, wird der Wechsel wie ein uebernommener Vorschlag vorgemerkt (SPEZIFIKATION 4.4).
     func chooseAlternative(_ index: Int) {
         guard case .loaded(let response, let walks, let peekVia) = peek, index < response.journeys.count else { return }
-        via = peekVia
+        if peekOrigin == .nextStation, let walks, walks.indices.contains(index), let journey = navJourney, let step = navStep,
+           let search = ConnectionWatch.chosenSwitch(journey: journey, step: step, now: deps.now()) {
+            closeAlternatives()
+            reserveSwitch(ReplanOffer(proposal: ReplanProposal(id: UUID(), search: search, alternativeIndex: index),
+                                      answer: ReplanAnswer(search: search, response: response, calibrated: walks, via: peekVia)))
+            return
+        }
+        switchJourney(to: response, calibrated: walks, via: peekVia, index: index)
+    }
+
+    /// Startet eine andere Verbindung aus der Fahrt heraus (Blatt "Alternativen" oder vorgemerkter Wechsel).
+    private func switchJourney(to response: RoutesResponse, calibrated walks: [CalibratedJourney]?, via newVia: [ViaStop], index: Int) {
+        via = newVia
         routes = response
         calibrated = walks
         attribution = response.attribution
@@ -1446,6 +1498,165 @@ final class AppFlow {
         // Wie "Naechste Verbindung": startet eine andere Fahrt, endet der Wecker der laufenden.
         replacedReminder = navJourney.flatMap(reminders.reminder(for:))?.id
         send(.startNavigation(index))
+    }
+
+    // MARK: Proaktive Umplanung (SPEZIFIKATION 4.4)
+
+    /// Einmal am Ende jedes Navigations-Ticks (nach Refresh und Position): vorgemerkten Wechsel am Suchstart ausfuehren,
+    /// sonst einrasten, Verfall pruefen und die naechste Suche starten oder eine gemerkte Antwort zeigen.
+    /// Die Regeln stehen in `ConnectionWatch` und `ReplanMemory`; hier nur Zustand und Netz.
+    private func evaluateReplan(now: Date) {
+        guard case .navigation = phase, let journey = navJourney, let step = navStep, step != .arrived else { return }
+        if let pending = pendingSwitch {
+            let alighting = journey.legs.first { $0.index == pending.proposal.search.alightingVehicle }
+            if let arrival = alighting?.arrival ?? alighting?.plannedArrival {
+                if switchTask == nil, now >= arrival { startSwitch(pending, from: journey, arrival: arrival) }
+                return
+            }
+            // Ausstieg nicht mehr in der Fahrt: unklar, wann man am Suchstart ist, also nicht wechseln.
+            pendingSwitch = nil
+        }
+        let result = ConnectionWatch.evaluate(journey: journey, step: step, latched: replanLatched, walks: navWalks, now: now, pace: pace)
+        // Haptik einmal je Anschluss (bestehend), aus demselben Einrasten wie Vorschlag und Live Activity.
+        if !result.latched.isSubset(of: warnedVehicles) {
+            warnedVehicles.formUnion(result.latched)
+            navWarnings += 1
+        }
+        replanLatched = result.latched
+        replanSearches = result.searches
+        // Verfall mit Hysterese: der Ausloeser bleibt aktiv, bis der Puffer wieder `minimumSlackSeconds` erreicht. Je Tick gegen
+        // die aktuelle Suchzeit neu gewaehlt: nicht mehr erreichbar -> weg, andere beste -> ausgetauscht.
+        if let offer = replanOffer {
+            let live = result.searches.first { $0.key == offer.proposal.search.key }
+            if let live, ConnectionWatch.isValid(offer.proposal, current: result.searches, now: now),
+               let index = ConnectionWatch.pick(offer.answer.calibrated, for: live) {
+                if index != offer.proposal.alternativeIndex {
+                    replanOffer = ReplanOffer(proposal: ReplanProposal(id: UUID(), search: live, alternativeIndex: index), answer: offer.answer)
+                }
+            } else {
+                replanOffer = nil
+            }
+        }
+        // Solange ein Vorschlag steht, keine Suche: ihre Antwort koennte ihn nicht ersetzen.
+        guard replanTask == nil, replanOffer == nil else { return }
+        if blockedUntil == nil, !navExpired, let search = replanMemory.next(in: result.searches, now: now) {
+            startReplanSearch(search, journey: journey)
+        } else {
+            proposeFromAnswer(now: now)
+        }
+    }
+
+    /// Suche ab dem Ausstiegshalt zur Echtzeit-Ankunft, Anfrage wie im Blatt "Alternativen"; Stopps ab dem Fahrzeug vor dem
+    /// betroffenen. Der Schluessel wird synchron vor dem Task markiert: ein zweiter Tick startet keine zweite Suche.
+    private func startReplanSearch(_ search: ReplanSearch, journey: Journey) {
+        guard let target = destination?.place else { return }
+        replanMemory.markSearched(search)
+        let rest = ConnectionWatch.remainingVia(via, in: journey, alightingVehicle: search.alightingVehicle)
+        let query = Self.alternativesQuery(from: search.start, at: search.time, to: target, via: rest,
+                                           modes: modesParameter, accessibility: accessibility)
+        let pace = self.pace
+        replanTask = Task {
+            do {
+                var answer: ReplanAnswer?
+                for try await stage in deps.planner.plan(query.trip, pace: pace) {
+                    if case .calibrated(let r, let c) = stage {
+                        answer = ReplanAnswer(search: search, response: r, calibrated: c, via: query.via)
+                    }
+                }
+                guard let answer else { throw TransitError.internal }
+                guard !Task.isCancelled else { return }
+                replanTask = nil
+                // Nur fuer dieselbe Fahrt; Schluessel, Ausloeser und Zeit prueft `proposeFromAnswer`.
+                guard case .navigation = phase, navJourney?.isSameTrip(as: journey) == true else { return }
+                replanAnswer = answer
+                proposeFromAnswer(now: deps.now())
+            } catch {
+                // Still (kein Banner): Wiederholung nach `retryDelay` oder Retry-After, hoechstens `maxFailures`.
+                // Der Task bleibt bis nach dem Warten eingetragen, damit `resetReplan` ihn noch abbrechen kann.
+                let blocked = await deps.blockedUntil()
+                guard !Task.isCancelled else { return }
+                replanTask = nil
+                guard case .navigation = phase, navJourney?.isSameTrip(as: journey) == true else { return }
+                replanMemory.markFailed(search, now: deps.now(), blockedUntil: blocked)
+            }
+        }
+    }
+
+    /// Zeigt die Antwort zum gerade behandelten Ausloeser (dem ersten nicht abgelehnten), solange er aktiv ist, der Suchstart
+    /// nicht erreicht und eine Alternative erreichbar ist (beste nach Rang). Ohne erreichbare Alternative kein Vorschlag:
+    /// zaehlt als abgelehnt, damit das naechste Fahrzeug drankommt; der Hinweis "reicht nicht" bleibt.
+    private func proposeFromAnswer(now: Date) {
+        guard pendingSwitch == nil, replanOffer == nil, let answer = replanAnswer,
+              let live = replanSearches.first(where: { !replanMemory.isDeclined($0) }),
+              live.key == answer.search.key, now < live.time else { return }
+        if let index = ConnectionWatch.pick(answer.calibrated, for: live) {
+            replanOffer = ReplanOffer(proposal: ReplanProposal(id: UUID(), search: live, alternativeIndex: index), answer: answer)
+        } else {
+            replanMemory.decline(live)
+        }
+    }
+
+    /// "Uebernehmen": Wechsel vormerken. Die laufende Navigation (Zug, Ausstiegshinweis, Refresh) bleibt bis zum Suchstart.
+    func acceptReplan(_ id: UUID) {
+        guard case .navigation = phase, let offer = replanOffer, offer.proposal.id == id,
+              ConnectionWatch.isValid(offer.proposal, current: replanSearches, now: deps.now()) else { return }
+        reserveSwitch(offer)
+    }
+
+    /// Wechsel vormerken ("Uebernehmen" oder "Wechseln" ab der naechsten Station); laufende Suche und Vorschlag entfallen.
+    private func reserveSwitch(_ offer: ReplanOffer) {
+        replanTask?.cancel()
+        replanTask = nil
+        replanOffer = nil
+        pendingSwitch = offer
+        syncActivities()
+    }
+
+    /// "Behalten": Fahrt unveraendert; gemerkt wird das Fahrzeug mit dem Puffer von jetzt (neu erst 5 Min. schlechter).
+    func declineReplan(_ id: UUID) {
+        guard let offer = replanOffer, offer.proposal.id == id else { return }
+        replanMemory.decline(replanSearches.first { $0.key == offer.proposal.search.key } ?? offer.proposal.search)
+        replanOffer = nil
+    }
+
+    /// Am Suchstart: Alternative mit frischem Refresh pruefen (bis dahin ohne Echtzeit) und starten. Ohne Refresh (offline)
+    /// zaehlt der gemerkte Stand. Reicht sie nicht mehr, bleibt die laufende Fahrt mit "reicht nicht" und "Nächste Verbindung".
+    private func startSwitch(_ pending: ReplanOffer, from journey: Journey, arrival: Date) {
+        guard let chosen = pending.answer.calibrated[safe: pending.proposal.alternativeIndex] else {
+            pendingSwitch = nil
+            return
+        }
+        switchTask = Task {
+            var fresh = chosen
+            if let token = chosen.journey.refreshToken, let refreshed = try? await deps.refresh(token) {
+                fresh = chosen.replacingJourney(refreshed)
+            }
+            guard !Task.isCancelled else { return }
+            switchTask = nil
+            guard case .navigation = phase, pendingSwitch?.proposal.id == pending.proposal.id,
+                  navJourney?.isSameTrip(as: journey) == true else { return }
+            pendingSwitch = nil
+            guard ConnectionWatch.pick([fresh], for: pending.proposal.search.at(arrival)) != nil else {
+                syncActivities()
+                return
+            }
+            switchJourney(to: .single(fresh.journey, fetchedAt: deps.now(), attribution: pending.answer.response.attribution),
+                          calibrated: [fresh], via: pending.answer.via, index: 0)
+        }
+    }
+
+    /// Mit Beginn, Ende und Ankunft der Navigation: Vorschlag, Gedaechtnis, Einrasten und Wechsel verwerfen.
+    private func resetReplan() {
+        replanTask?.cancel()
+        replanTask = nil
+        switchTask?.cancel()
+        switchTask = nil
+        replanOffer = nil
+        pendingSwitch = nil
+        replanAnswer = nil
+        replanMemory = ReplanMemory()
+        replanLatched = []
+        replanSearches = []
     }
 
     func toggle(_ mode: ModeFilter) {
@@ -1566,6 +1777,12 @@ final class AppFlow {
 
     func waitForReminderCheck() async {
         await reminderCheck?.value
+    }
+
+    /// Wartet auf Suche und Wechsel der proaktiven Umplanung.
+    func waitForReplan() async {
+        await replanTask?.value
+        await switchTask?.value
     }
     #endif
 }

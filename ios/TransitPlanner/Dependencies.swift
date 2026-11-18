@@ -393,12 +393,12 @@ final class FakeRoutePlanner: RoutePlanning {
     let failAfterFirst: TransitError?
     /// Verbindungen in umgekehrter Reihenfolge (Routenauswahl ohne Ersatzverkehr oben).
     let reversed: Bool
-    /// Andere Antwort statt `FakeData.routes` (z. B. `FakeData.deutz()`).
-    let response: RoutesResponse?
+    /// Andere Antwort statt `FakeData.routes` (z. B. `FakeData.deutz()`); umschaltbar fuer Folgeanfragen.
+    let response: Mutex<RoutesResponse?>
 
     init(failure: TransitError? = nil, delay: Duration = .zero, failAfterFirst: TransitError? = nil, reversed: Bool = false,
          response: RoutesResponse? = nil) {
-        self.response = response
+        self.response = Mutex(response)
         self.failure = Mutex(failure)
         self.delay = delay
         self.failAfterFirst = failAfterFirst
@@ -408,13 +408,14 @@ final class FakeRoutePlanner: RoutePlanning {
     var callCount: Int { requests.withLock { $0.count } }
     var recordedRequests: [RoutesRequest] { requests.withLock { $0 } }
     func setFailure(_ error: TransitError?) { failure.withLock { $0 = error } }
+    func setResponse(_ response: RoutesResponse?) { self.response.withLock { $0 = response } }
 
     func plan(_ trip: some TripRequest, pace: WalkingPaceFactor) -> AsyncThrowingStream<HybridRouteCalculator.Stage, any Error> {
         let count = requests.withLock { $0.append(trip.routesRequest()); return $0.count }
         let failure = self.failure.withLock { $0 } ?? (count > 1 ? failAfterFirst : nil)
         let delay = self.delay
         let reversed = self.reversed
-        let override = self.response
+        let override = self.response.withLock { $0 }
         return AsyncThrowingStream { continuation in
             let task = Task {
                 if delay > .zero {
