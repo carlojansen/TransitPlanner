@@ -16,6 +16,8 @@ public enum ReplanTrigger: Sendable, Hashable {
 
 /// Ein Fahrzeug: Fahrt-ID, sonst Linie, Plan-Abfahrt und Einstiegshalt. Dasselbe Fahrzeug, derselbe Schluessel.
 /// Gespeichert wird je Fahrt; die Fahrt-Identitaet liegt beim Aufrufer (Gedaechtnis und Einrasten enden mit der Navigation).
+/// Gleichheit nur ueber `vehicle`: ein Gleiswechsel (andere `origin.id`) macht aus derselben Fahrt kein neues Fahrzeug.
+/// `matches` gilt fuer die Weiterfahrt nur mit Fahrt-ID auf beiden Seiten; ohne sie braucht auch die Weiterfahrt Gehweg und Puffer.
 public struct ReplanKey: Sendable, Hashable {
     public let vehicle: String
     private let tripId: String?
@@ -27,6 +29,9 @@ public struct ReplanKey: Sendable, Hashable {
             + "@\(leg.origin.id ?? leg.origin.name ?? "")"
         vehicle = leg.tripId ?? fallback
     }
+
+    public static func == (a: ReplanKey, b: ReplanKey) -> Bool { a.vehicle == b.vehicle }
+    public func hash(into h: inout Hasher) { h.combine(vehicle) }
 
     /// Dasselbe Fahrzeug: Fahrt-ID, wenn beide Seiten eine haben, sonst der Ersatzschluessel.
     func matches(_ leg: Leg) -> Bool {
@@ -197,9 +202,14 @@ public struct ReplanMemory: Sendable, Hashable {
         return search.bufferSeconds <= seen - ConnectionWatch.worseningSeconds
     }
 
-    /// Die erste Suche der Liste, die jetzt erlaubt ist (damit ein abgelehntes Fahrzeug das naechste nicht verdeckt).
+    /// Die naechste Suche, nacheinander: abgelehnte Fahrzeuge (auch solche ohne Alternative, siehe `decline`) werden uebersprungen.
+    /// Ist ein Fahrzeug gesucht und noch unbeantwortet, kommt nil; das naechste wartet auf Antwort oder Ablehnen.
     public func next(in searches: [ReplanSearch], now: Date) -> ReplanSearch? {
-        searches.first { maySearch($0, now: now) }
+        for s in searches {
+            if maySearch(s, now: now) { return s }
+            if searched[s.key] != nil && !isDeclined(s) { return nil }
+        }
+        return nil
     }
 
     /// Vor dem Start des Tasks aufrufen (synchron), sonst starten zwei Auswertungen dieselbe Suche.
@@ -218,6 +228,7 @@ public struct ReplanMemory: Sendable, Hashable {
         retryNotBefore = max(now.addingTimeInterval(ConnectionWatch.retryDelay), blockedUntil ?? .distantPast)
     }
 
+    /// Auch fuer eine Suche ohne brauchbare Alternative aufrufen, damit das naechste Fahrzeug drankommt.
     /// "Behalten": derselbe Auslöser meldet sich nicht wieder, ausser der Puffer wird um `worseningSeconds` schlechter.
     public mutating func decline(_ search: ReplanSearch) { declined[search.key] = search.bufferSeconds }
 

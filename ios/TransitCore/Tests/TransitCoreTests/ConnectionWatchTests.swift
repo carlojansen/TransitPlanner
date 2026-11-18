@@ -156,6 +156,24 @@ private let pace = WalkingPaceFactor()
         #expect(memory.next(in: result.searches, now: at(10)) == nil)
     }
 
+    @Test func searchesRunOneAfterAnotherUntilAnswered() throws {
+        let j = try journey([
+            L(trip: "A", dep: 0, arr: 30, from: "start", to: "deutz", delay: 9),
+            L(walk: true, dep: 30, arr: 32, from: "deutz", to: "gleis9", seconds: 120),
+            L(trip: "B", dep: 40, arr: 60, from: "gleis9", to: "x"),
+            L(walk: true, dep: 60, arr: 62, from: "x", to: "y", seconds: 120),
+            L(trip: "C", dep: 70, arr: 90, from: "y", to: "ziel", cancelled: true),
+        ])
+        let result = evaluate(j, .onBoardTransit(vehicle: 0), minute: 10)
+        var memory = ReplanMemory()
+        memory.markSearched(result.searches[0])
+        // B gesucht, unbeantwortet: C wartet
+        #expect(memory.next(in: result.searches, now: at(10)) == nil)
+        // B ohne Alternative oder abgelehnt: C ist dran
+        memory.decline(result.searches[0])
+        #expect(memory.next(in: result.searches, now: at(10)) == result.searches[1])
+    }
+
     @Test func cancellationGoesBeforeDelayOnSameVehicle() throws {
         let j = try journey([
             L(trip: "A", dep: 0, arr: 30, from: "start", to: "deutz", delay: 9),
@@ -298,6 +316,26 @@ private let pace = WalkingPaceFactor()
         #expect(ReplanKey(a).matches(same))
         #expect(!ReplanKey(a).matches(otherStop))
         #expect(ReplanKey(withId).matches(a))
+    }
+
+    @Test func keyIsStableWhenPlatformChanges() throws {
+        let p1 = try journey([L(trip: "X", dep: 40, arr: 50, from: "gleis1", to: "q")]).legs[0]
+        let p2 = try journey([L(trip: "X", dep: 40, arr: 50, from: "gleis2", to: "q")]).legs[0]
+        #expect(ReplanKey(p1) == ReplanKey(p2))
+        #expect(ReplanKey(p1).hashValue == ReplanKey(p2).hashValue)
+    }
+
+    @Test func stayingOnTheSameTrainNeedsNoLeadingWalkAndATripId() throws {
+        let s = try search()
+        // Gehweg vor dem Ausstiegsfahrzeug: keine Ausnahme, 08:40 liegt vor Suchzeit + Gehweg + 120 s
+        let walkFirst = try calibrated(journey([
+            L(walk: true, dep: 39, arr: 40, from: "deutz", to: "s", seconds: 60),
+            L(trip: "A", dep: 40, arr: 70, from: "s", to: "ziel"),
+        ]), walks: [0: 60])
+        #expect(ConnectionWatch.pick([walkFirst], for: s) == nil)
+        // ohne Fahrt-ID wird die Weiterfahrt nicht erkannt
+        let noId = try calibrated(journey([L(trip: "A", dep: 40, arr: 70, from: "deutz", to: "ziel", noTrip: true)]))
+        #expect(ConnectionWatch.pick([noId], for: s) == nil)
     }
 
     @Test func alternativeWithMissedTransferSkipped() throws {
