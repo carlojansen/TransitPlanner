@@ -10,7 +10,8 @@
     "start": "node src/server.js",
     "dev": "node --watch --env-file-if-exists=.env src/server.js",
     "test": "vitest run",
-    "smoke": "node --env-file-if-exists=.env scripts/smoke.js"
+    "smoke": "node --env-file-if-exists=.env scripts/smoke.js",
+    "smoke:replan": "node --env-file-if-exists=.env scripts/smoke-replan.js"
   },
   "license": "MIT",
   "dependencies": {

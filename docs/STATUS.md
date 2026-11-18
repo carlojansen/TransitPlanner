@@ -96,6 +96,49 @@ Review durch `security-hig-reviewer`: **FREIGABE**, 0 Blocker, 2 Mittel, 5 Niedr
 
 **Offen:** Gerätetest bei Carlo (Planen, Navigation, Alternativen unterwegs). Karte nennt die Grenze weiter "Umstieg"; "Umstieg knapp/reicht nicht" heißt am Stopp weiter "Umstieg". Stepper bei AX-Schriftgrößen ungeprüft. "Mein Standort" als Zwischenstopp wird ohne Haptik abgewiesen. Stufe B (Geschäfts-Pins, Navigationsschritt "Aufenthalt") nicht begonnen.
 
+## Proaktive Umplanung unterwegs (Spezifikation 18.11., Plan wartet auf Freigabe)
+
+Spezifikation: `docs/SPEZIFIKATION.md` 4.4. Kein API-Vertrag betroffen (nur bestehende Suche ab Stop-ID und Zeit). Vorhanden und wiederverwendet: `brokenConnection`, `openAlternatives` samt `PeekOrigin.nextStation`, `navMissedVehicles`, `syncActivities`, Retry-After-Sperre. Neu ist nur der automatische Auslöser, die Entscheidungsregel und die Ablehn-Erinnerung.
+
+**Plan** (Reihenfolge verbindlich, nach jedem Schritt Tests grün, vor Schritt 4 und 6 Review):
+0. **Live prüfen, bevor gebaut wird:** Suche ab Umstiegshalt mit Echtzeit-Ankunft gegen Transitous (Smoke, im macOS-Terminal). Klären: liefert MOTIS ab einer Stop-ID mit Zeit in der Zukunft sinnvolle Alternativen, und taugt `nextStation` für den Ausstiegshalt mehrere Halte voraus? Wie startet die Navigation, wenn der erste Abschnitt der Alternative beginnt, während der Nutzer noch im Fahrzeug sitzt? (Entschieden: Wechsel vormerken, siehe C.) Erlaubt MOTIS ab einer Bahnsteig-Stop-ID Umstiege auf andere Gleise, und liefert es ab einer Stop-ID Abfahrten ohne Umstiegszeit? Ergebnis in dieses Dokument.
+1. **Logik in TransitCore** (`ConnectionWatch`, rein, ohne UI und Netz): Auslöser, Suchstart, Auswahl, Ablehnen mit Verschlechterungsschwelle, Verfall, Ende. Neue Bedeutung als Typ (`ReplanProposal`, `ReplanTrigger`), keine optionalen Parameter mit Standardwert. Regeln nur hier, App ruft sie auf.
+2. **Tests dazu** (Abnahmeliste in 4.4), danach **Gegenproben**: je Regel entfernen, Test muss rot werden. Erst dann weiter.
+3. `security-hig-reviewer` prüft Schritt 1 und 2 (RAM-only, Mitteilungstext, Limits, Deep-Link-Prüfung). Blocker beheben.
+4. **Einbau in AppFlow:** Auslöser im Refresh- und Positionstakt, Suche über das bestehende `openAlternatives`-Fundament, Zustand bei `endNavigation` und `arrived` löschen. Tests mit Fake-Planner und Fake-Uhr.
+5. **UI und Mitteilung:** Banner, vorbelegtes Alternativen-Blatt, lokale Mitteilung, Live-Activity-Zustand. VoiceOver, Dynamic Type, Reduce Motion, 44 pt, keine Emojis.
+6. Review (Security und HIG) über den ganzen Diff, Befunde beheben, `xcodebuild test` und `npm test` grün.
+7. STATUS aktualisieren, **Stopp: Gerätetest und Freigabe durch Carlo** (Fahrt mit echter Verspätung oder Simulation).
+
+**Bestandteile und Einbau (Entwurf 18.11., vor Review):**
+
+A. `TransitCore/ConnectionWatch.swift` (neu, rein, Sendable, ohne UI/Netz/Uhr; `now` kommt als Parameter)
+- `ReplanTrigger`: `.connectionBroken(vehicle:)`, `.tripCancelled(vehicle:)`; `ReplanKey` (Fahrt-Schlüssel, Fahrzeug, Art); `ReplanSearch` (Auslöser, `TripEndpoint` des Ausstiegshalts, Zeit, Puffer in s).
+- `ConnectionWatch.trigger(journey:step:latched:walks:now:pace:)`: nutzt `NavigationEngine.brokenConnection` und `Leg.cancelled`; nur bei `onBoardTransit` oder `transferRouting` vor der Ankunft, nie bei `waitingAtPlatform`. Das Einrasten (bisher Nebeneffekt von `AppFlow.connectionBroken` über `navMissedVehicles`) wird eine reine Funktion hier; Live Activity, Karte und Auslöser lesen dasselbe Set (Filter `>= ahead`), und `connectionBroken` kennt danach auch Ausfälle.
+- `ConnectionWatch.search(for:in:now:)`: Ausstiegshalt = `destination` des Fahrzeugs vor dem betroffenen, Zeit = `arrival ?? plannedArrival`, nie vor `now`; Stop-ID, sonst Koordinate (wie `nextStation`).
+- `ConnectionWatch.pick(_:for:)`: erste Alternative nach Rangfolge, ohne betroffenen Anschluss, nicht `missed`.
+- Zustand als Wert: `declined: [ReplanKey: Int]` und `searched: [ReplanKey: Int]` (Puffer beim Ablehnen bzw. bei der Suche), `ReplanKey` = Fahrt und Fahrzeug ohne Art; `isSuppressed(key, bufferSeconds:)` mit `worseningSeconds = 300`, höchstens 3 Suchen je Fahrt, `retryDelay = 60`; Verfall nur mit Hysterese (`minimumSlackSeconds`).
+- `pick` prüft zusätzlich: erste Abfahrt frühestens Suchzeit + Gehweg + `minimumSlackSeconds` (`TransferCheck` prüft nur Umstiege innerhalb der Alternative).
+- `remainingVia` ab dem Fahrzeug vor dem betroffenen, nicht ab dem Zielfahrzeug.
+
+B. `TransitCore`: eigener Typ `ReplanAlert` mit Kennung `replan.<navKey>` und zufälliger Vorschlags-ID, **nicht** in `ReminderAlert.Kind` (sonst falsche Kategorie, `replaceAlerts`/`purge` löschen sie, Tipp ginge an `openReminder`). `ReplanText` (Linie, Halt, Abfahrt, Gleis; nur Halte mit `Place.kind == .stop`, nie Koordinaten-Labels).
+
+C. `AppFlow.swift`
+- Eine gemeinsame Funktion für die Anfrage der Alternativen, herausgezogen aus `openAlternatives`; Start und Zeit sind Parameter statt `nextStation` (Ziel, `modes`, `accessibility`, `via`, Aufenthalt). Beide Aufrufer nutzen sie, die Regel steht einmal.
+- Zustand: `proposal: ReplanProposal?` (beobachtet, mit Antwort, Gehzeiten, `via`, Index aus der kalibrierten Antwort), `watch` und `replanTask` (`@ObservationIgnored`).
+- `evaluateReplan(now:)` **nur** am Ende von `navigationUpdate`, vor `syncActivities` (kein zweiter Aufruf in `refreshNavigation`); hält an bei `blockedUntil`, `navExpired`, ohne Fahrt. Schlüssel vor dem Task-Start synchron markieren; Ergebnis prüfen (Fahrt, Schlüssel, Phase, Auslöser aktiv, Zeit vor Suchstart).
+- **Wechsel vormerken (Entscheidung Carlo 18.11.):** `acceptProposal()` setzt `pendingSwitch`; Navigation und Refresh der alten Fahrt laufen weiter; bei Ankunft am Suchstart wird die Alternative mit frischem Refresh geprüft und gestartet (`beginNavigation`). Dieselbe Regel für "Wechseln" aus dem Blatt bei späterem Start (heutiger Fehler: `navStep = nil`, Puffer mit Position im Zug).
+- `declineProposal()` merkt den Schlüssel und entfernt die Mitteilung.
+- Aufräumen in `beginNavigation`, `endNavigation` **und im `.arrival`-Block** (`.arrival` zählt als `isGuiding`): Zustand, Task, Mitteilung.
+
+D. Mitteilung: `SystemNotifier.request` wählt die Kategorie je Art, beide Kategorien werden in `TransitPlannerApp` registriert; `replan` hat nur die Aktion "Ansehen". `AppDelegate.didReceive` verzweigt zuerst nach `categoryIdentifier`; `flow.showProposal(id)` wirkt nur bei passender Vorschlags-ID, Phase `.navigation` und Zeit vor Suchstart. Senden nur bei `inBackground`; Entfernen bei Verfall, Übernehmen, Ablehnen, Ankunft, Beenden. Ein Vorschlag darf auch aus `.skeleton` entstehen, falls die Kalibrierung im Hintergrund scheitert.
+
+E. UI (`NavigationViews.swift`): Zeile mit "Übernehmen" und "Behalten", dazu "Alternativen ansehen" (öffnet das bestehende Blatt mit Suchstart); Texte in `Localizable.xcstrings`. Die Live Activity zeigt in v1 nur das bestehende `Problem.connection`, kein neuer Zustand (Spezifikation 4.4 ist angeglichen); `TripActivity.problem` muss dafür auch den Ausfall eines späteren Fahrzeugs kennen, nicht nur das Zielfahrzeug.
+
+F. Tests: `TransitCoreTests/ConnectionWatchTests.swift` (Abnahmeliste aus 4.4), Ergänzung in `ReminderTests`, `TransitPlannerTests/ReplanFlowTests.swift` (Fake-Planner, Fake-Uhr, `FakeNotifier`), dann Gegenproben je Regel. Commits klein: Core mit Tests, Mitteilungstexte, Flow, UI.
+
+**Offene Entscheidungen (Standard in Klammern, gilt ohne Gegenwort):** Mitteilung als `timeSensitive` (ja, wie der Aufbruch-Wecker); Schwelle für einen neuen Vorschlag nach Ablehnen (5 Minuten); nur bester Vorschlag im Banner, Rest über das Alternativen-Blatt (ja).
+
 ## Ideen (nicht geplant, nicht begonnen)
 
 ### Engel-Modus (10.11., Idee Carlo)

@@ -88,6 +88,45 @@ Jede geplante oder später aus dem Kalender übernommene Route kann als aktive E
   3. **T minus 0 Min. (Time-to-Leave):** Zeitkritische Mitteilung (`interruptionLevel = .timeSensitive`) mit markanter Haptik. Ein Tipp öffnet die App direkt im Zustand `approachingFirstStop`.
   4. **Optionaler Apple-Erinnerungen-Sync:** Auf Wunsch legt die App über `EventKit` automatisch eine fällige Aufgabe in der nativen Apple-Erinnerungen-App (`EKReminder`) mit Deep-Link (`mytransitapp://navigate?routeId=...`) an.
 
+### 4.4 Proaktive Umplanung unterwegs (`ConnectionWatch`)
+Reicht unterwegs ein Anschluss nach Echtzeitlage nicht mehr, schlägt die App von sich aus eine Alternative vor. Der Nutzer übernimmt oder lehnt ab; ohne Entscheidung läuft die Fahrt unverändert weiter. Es gibt keine automatische Umplanung.
+
+**Grundsätze**
+1. **Suche ab dem Ort, an dem der Nutzer sein wird.** Er sitzt noch im Fahrzeug und ist nicht am Umstieg. Gesucht wird ab dem Ausstiegshalt des Abschnitts vor dem betroffenen Anschluss (Stop-ID), nicht ab dem Standort. Zeit = prognostizierte Ankunft dort (Echtzeit). Der Anschluss muss mindestens `TransferCheck.minimumSlackSeconds` nach der Ankunft abfahren.
+2. **Lokal.** Auswertung auf dem Gerät aus Refresh-Stand, Position und Gehtempo. Kein Push-Server, keine neue Backend-Route, keine Änderung an `docs/API.md`. Das Backend sieht nur, was jede Suche schickt: Stop-ID, Zeit, Modi, Barrierefreiheit, Zwischenstopps.
+3. **Nur bei Folgen.** Verspätung oder außerplanmäßiger Halt ohne gefährdeten Anschluss (z. B. Direktfahrt Düsseldorf nach Köln-Deutz) erzeugt keinen Vorschlag, nur die aktualisierte Ankunft in App und Live Activity.
+4. **Die Route endet am Ziel.** Sie bleibt aktiv bis `arrived` (Zielradius 25 m) oder bis der Nutzer beendet. Danach keine Vorschläge, aller Zustand gelöscht.
+
+**Auslöser** (genau eine Auswertung am Ende jedes Navigations-Ticks, also nach Refresh und Position; solange der Nutzer noch im Fahrzeug sitzt und ein späteres Fahrzeug folgt: Zustand `onBoardTransit` oder `transferRouting` vor der Ankunft)
+- `connectionBroken(vehicle)`: `NavigationEngine.brokenConnection` liefert das Fahrzeug (Puffer <= 0).
+- `tripCancelled(vehicle)`: ein folgendes Fahrzeug fällt aus (`cancelled`). Fällt das Fahrzeug aus, auf das man am Gleis wartet, gilt der bestehende Hinweis "fällt aus" mit "Nächste Verbindung", kein Vorschlag.
+- Ein knapper Anschluss (`tight`) löst keinen Vorschlag aus, es bleibt beim bestehenden Hinweis (Anzeige, Haptik).
+- Die verpasste Abfahrt am Steig (`missedDeparture`) bleibt der bestehende Ablauf "Nächste Verbindung" ab Standort. Kein zweiter Vorschlag dafür.
+
+**Vorschlag (`ReplanProposal`)**
+- Enthält Auslöser, betroffenes Fahrzeug, Suchstart (Stop-ID + Zeit) und die gefundenen Alternativen. Anfrage: Ziel wie die laufende Fahrt, `modes`, `accessibility` und die noch offenen `via` wie bei `openAlternatives`.
+- Vorgeschlagen wird die erste Alternative nach der bestehenden Rangfolge (`DurationLabel`), die den betroffenen Anschluss nicht enthält und selbst nicht `missed` ist. Gibt es keine, kommt kein Vorschlag (kein schlechter Vorschlag); der Hinweis "Anschluss reicht nicht" bleibt.
+- Weitere Alternativen erreicht der Nutzer über das bestehende Alternativen-Blatt, vorbelegt mit dem Suchstart.
+
+**Antwort des Nutzers**
+- **Übernehmen:** merkt den Wechsel vor. Die laufende Navigation (eigener Zug, Ausstiegshinweis, Refresh) bleibt unverändert, bis der Nutzer am Suchstart ankommt; dort startet die Alternative, vorher mit frischem Refresh neu geprüft (bis dahin hat sie keine Echtzeit). Die Karte zeigt "Wechsel auf <Linie> vorgemerkt" statt "reicht nicht". Die Regel gilt einmal, auch für das bestehende "Wechseln" aus dem Alternativen-Blatt, wenn der Start eine spätere Station ist. Die `via` werden ab dem Fahrzeug vor dem betroffenen berechnet, damit schon passierte Stopps nicht zurückkommen.
+- **Behalten** (oder Wischen): Fahrt unverändert. Der Schlüssel (Fahrt, Fahrzeug, Auslöser) wird gemerkt, derselbe Auslöser kommt nicht wieder. Ein neuer Vorschlag kommt nur, wenn sich der Puffer um mindestens 5 Minuten gegenüber dem Ablehnen verschlechtert oder ein anderes Fahrzeug betroffen ist.
+- **Keine Antwort:** der Vorschlag bleibt, bis die Suchstart-Zeit erreicht ist. Er verfällt mit kurzem Hinweis erst, wenn der Anschluss wieder reicht und der Puffer mindestens `TransferCheck.minimumSlackSeconds` beträgt (Hysterese gegen Flattern). Die gefundene Antwort bleibt im RAM; löst der Auslöser erneut aus, wird sie ohne neue Suche gezeigt, solange ihre erste Abfahrt erreichbar ist.
+
+**Kommunikation** (beide Wege lokal)
+- Vordergrund: Banner "Anschluss <Linie> reicht nicht mehr" mit Aktion "Alternativen ansehen"; Haptik `.warning` einmal je Anschluss (bestehend).
+- Hintergrund: lokale Mitteilung in eigener Kategorie (nicht die der Erinnerungen, keine Aktionen "Starten" oder "Später erinnern") plus das bestehende Live-Activity-Problem "Anschluss", das auch bei Ausfall eines späteren Fahrzeugs gesetzt wird. Kein eigener Live-Activity-Zustand. Text ohne Emojis, nur Linie, Halt, Abfahrt und Gleis eines Halts aus den Fahrplandaten. Tippen öffnet das Blatt, gewechselt wird nie ohne Bestätigung. Voraussetzung ist die Hintergrund-Standort-Session (Standorterlaubnis, nicht aus dem Wartezustand gestartet); ohne sie erscheint der Vorschlag beim nächsten Öffnen. Eine Mitteilung wird entfernt bei Verfall, Übernehmen, Ablehnen, Ankunft und Beenden.
+
+**Limits:** Schlüssel = Fahrt und Fahrzeug (Ausfall geht vor Anschluss), vor dem Task-Start synchron markiert. Eine neue Suche für denselben Schlüssel nur, wenn der Puffer um mindestens 300 s schlechter ist, höchstens 3 je Fahrt. Ergebnis gilt nur, wenn Fahrt, Schlüssel, Phase `.navigation`, aktiver Auslöser und Zeit vor dem Suchstart noch stimmen. Wiederholung bei Fehler nach max(60 s, `blockedUntil`), nach Abbruch keine.
+
+**Datenschutz und Sicherheit**
+- Vorschlag und gemerkte Schlüssel nur im RAM, bei `endNavigation` gelöscht; nicht in SwiftData, nicht in Logs.
+- Mitteilungstexte nur aus Fahrplandaten (Linie, Halt, Zeit, Gleis), nie Adresse oder Position. Sie stehen auf dem Sperrbildschirm.
+- Ein Tipp auf die Mitteilung wirkt nur, wenn die zufällige Vorschlags-ID im `userInfo` dem aktuellen Vorschlag entspricht, die Phase `.navigation` ist und die Suchstart-Zeit nicht vorbei ist; nie auf eine fremde oder beendete Fahrt.
+
+**Abnahme (jeweils ein Test, der rot wird, wenn die Regel fehlt)**
+Kein Vorschlag bei Verspätung ohne Anschluss; Vorschlag bei `connectionBroken` und `tripCancelled`; Suchstart = Ausstiegshalt und Echtzeit-Ankunft, nicht Standort; `via`, Modi und Barrierefreiheit bleiben erhalten; Alternative mit dem betroffenen Anschluss wird nie vorgeschlagen; Ablehnen unterdrückt denselben Auslöser, nicht eine Verschlechterung um 5 Minuten; Verfall, wenn der Anschluss wieder reicht; nach `arrived` und `endNavigation` kein Zustand mehr; höchstens eine Suche je Schlüssel; Rate-Limit-Sperre unterdrückt die Suche; nach "Übernehmen" im Zug weder `approachingFirstStop` noch Problem "Anschluss"; `via` ab dem Fahrzeug vor dem betroffenen (Test mit Stopp am ersten Umstieg); erste Abfahrt der Alternative frühestens Suchzeit + Gehweg + `minimumSlackSeconds`; Flattern des Puffers erzeugt keinen zweiten Vorschlag und kein Verfall ohne Hysterese; Doppelaufruf während einer Suche startet keine zweite; Antwort nach Ankunft oder Verfall wird verworfen; Ausfall des Fahrzeugs am Gleis erzeugt keinen Vorschlag.
+
 ---
 
 ## 5. Widget, Lock Screen & Dynamic Island (`WidgetKit` & `ActivityKit`)
