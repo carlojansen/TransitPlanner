@@ -150,6 +150,14 @@ Tests: Backend 94/0 (ein neuer Test mit drei Fällen: Fußweg 10 min mit schnell
 
 **Offen:** Deployment auf den Server (Carlo macht es selbst). Die App-Seite ist nicht angepasst: sie zeigt bei `walkOnly` weiter nur den Fußweg, prüfen am Gerät. Schwelle 15 min ist als Konstante `WALK_PREFERRED_SECONDS` fest; "15" wurde als Minuten gelesen.
 
+### Nachbesserung Fußweg-Vorrang und Umplanung (18.11., Code-Check mit drei Opus-Agents)
+
+**Backend:** Der Vorrang vergleicht jetzt die Ankunft statt der Fahrtdauer (Wartezeit zählt mit; bei Gleichstand gewinnt der Fußweg; nur erste Seite, ohne `via`). Plan und Refresh teilen `motisParams`, der Refresh fragt Wege und Schritte nur noch mit `polylines`. `removedLongDistance` wird nach dem zweiten Versuch nicht mehr doppelt gezählt. `docs/API.md`: ein Absatz für Fußweg-Vorrang/`walkOnly`, einer für Rate-Limits. Tests Backend 101/0.
+
+**App:** Ein reiner Fußweg gilt bei der Umplanung als erreichbar (`ConnectionWatch.isReachable`), Wechsel darauf ohne Refresh. `switchTask` endet mit der Vormerkung. Anzeige: größte Verspätung aller Fahrzeuge, gleiche Ankunftszeit im Alternativen-Blatt, "Ankunft hh:mm (+n Min.)" im Vorschlag, "ZU FUSS" ohne "direkt", VoiceOver-Plural. Tests TransitCore 232/0, App 251/0. Review `security-hig-reviewer`: Freigabe.
+
+**Offen (klein):** "+n Min." vergleicht Fahrplan- mit Gehtempo-Ankunft; `chosen.journey.isWalkOnly` statt doppelter Regel (AppFlow ca. 1781); beim Wechsel auf Fußweg Zeiten auf jetzt verschieben; Tests für Fußweg-Vorschlagstext und Verwerfen während Refresh; Katalogschlüssel "%@%lld Minuten Fußweg" und "Etwa " löschen. Weiter offen: Vormerkung verfällt, wenn der Anschluss wieder reicht (Entscheidung Carlo), `directWalkSeconds`/`walkSeconds` für "Zu Fuß 12 Min." (API-Änderung), Meldungen mit `validUntil`/`url`, Blättern ohne 404, Smoke-Test, Deploy durch Carlo, "15" als Minuten bestätigen.
+
 ## Ideen (nicht geplant, nicht begonnen)
 
 ### Engel-Modus (10.11., Idee Carlo)
