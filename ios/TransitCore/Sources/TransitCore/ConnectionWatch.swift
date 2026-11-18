@@ -2,7 +2,7 @@ import Foundation
 
 /// Warum unterwegs umgeplant werden soll (SPEZIFIKATION 4.4). `vehicle` ist der betroffene Leg-Index.
 public enum ReplanTrigger: Sendable, Hashable {
-    /// Der Anschluss reicht nach Echtzeit nicht mehr (Puffer unter 0 s).
+    /// Der Anschluss reicht nach Echtzeit nicht mehr (Puffer 0 s oder weniger).
     case connectionBroken(vehicle: Int)
     /// Das spaetere Fahrzeug faellt aus.
     case tripCancelled(vehicle: Int)
@@ -14,12 +14,24 @@ public enum ReplanTrigger: Sendable, Hashable {
     }
 }
 
-/// Das betroffene Fahrzeug (Fahrt-ID, sonst Linie und Plan-Abfahrt). Dieselbe Verbindung, dasselbe Fahrzeug: derselbe Schluessel.
+/// Ein Fahrzeug: Fahrt-ID, sonst Linie, Plan-Abfahrt und Einstiegshalt. Dasselbe Fahrzeug, derselbe Schluessel.
+/// Gespeichert wird je Fahrt; die Fahrt-Identitaet liegt beim Aufrufer (Gedaechtnis und Einrasten enden mit der Navigation).
 public struct ReplanKey: Sendable, Hashable {
     public let vehicle: String
+    private let tripId: String?
+    private let fallback: String
 
     init(_ leg: Leg) {
-        vehicle = leg.tripId ?? "\(leg.line?.name ?? leg.mode.rawValue)@\((leg.plannedDeparture ?? leg.departure)?.timeIntervalSince1970 ?? 0)"
+        tripId = leg.tripId
+        fallback = "\(leg.line?.name ?? leg.mode.rawValue)@\((leg.plannedDeparture ?? leg.departure)?.timeIntervalSince1970 ?? 0)"
+            + "@\(leg.origin.id ?? leg.origin.name ?? "")"
+        vehicle = leg.tripId ?? fallback
+    }
+
+    /// Dasselbe Fahrzeug: Fahrt-ID, wenn beide Seiten eine haben, sonst der Ersatzschluessel.
+    func matches(_ leg: Leg) -> Bool {
+        if let tripId, let other = leg.tripId { return tripId == other }
+        return fallback == ReplanKey(leg).fallback
     }
 }
 
@@ -27,20 +39,37 @@ public struct ReplanKey: Sendable, Hashable {
 public struct ReplanSearch: Sendable, Hashable {
     public let trigger: ReplanTrigger
     public let key: ReplanKey
-    /// Fahrzeug, in dem man bis zum Suchstart sitzt.
+    /// Fahrzeug, in dem man bis zum Suchstart sitzt, und sein Schluessel (Weiterfahrt im selben Zug ist erlaubt).
     public let alightingVehicle: Int
+    public let alightingKey: ReplanKey
     public let start: TripEndpoint
     public let time: Date
     /// Puffer des betroffenen Anschlusses in s; `ConnectionWatch.cancelledBuffer` bei Ausfall.
     public let bufferSeconds: Int
 }
 
+/// Vorschlag fuer den Nutzer: die Suche und der Index der gewaehlten Alternative in der Antwort (die liegt in der App).
+/// `id` ist zufaellig und steckt in der Mitteilung, damit ein Tipp nur zum aktuellen Vorschlag passt.
+public struct ReplanProposal: Sendable, Hashable {
+    public let id: UUID
+    public let search: ReplanSearch
+    public let alternativeIndex: Int
+
+    public init(id: UUID, search: ReplanSearch, alternativeIndex: Int) {
+        self.id = id
+        self.search = search
+        self.alternativeIndex = alternativeIndex
+    }
+}
+
 /// Reine Regeln der proaktiven Umplanung: keine Uhr, kein Netz, keine UI (`now` kommt als Parameter).
 public enum ConnectionWatch {
     /// Eine neue Suche zum selben Fahrzeug erst, wenn der Puffer so viel schlechter ist (s).
     public static let worseningSeconds = 300
-    /// Hoechstens so viele Suchen je Fahrt.
+    /// Hoechstens so viele erfolgreiche Suchen je Fahrt.
     public static let maxSearches = 3
+    /// Hoechstens so viele gescheiterte Suchen je Fahrt, danach Ruhe (Transitous wird ehrenamtlich betrieben).
+    public static let maxFailures = 3
     /// Mindestwartezeit nach einer gescheiterten Suche (s).
     public static let retryDelay: TimeInterval = 60
     /// Puffer eines ausgefallenen Fahrzeugs: schlechter als jede Verspaetung, aber ohne Ueberlauf beim Vergleich.
@@ -61,25 +90,38 @@ public enum ConnectionWatch {
 
     /// Ein Auswertungsschritt: neuer Anschlussbruch oder Ausfall rastet ein (Puffer-Zittern um 0 s schaltet nicht um) und
     /// faellt erst, wenn der Anschluss mit mindestens `TransferCheck.minimumSlackSeconds` wieder erreichbar ist.
+    /// Alle betroffenen Fahrzeuge, frueheste zuerst: lehnt der Nutzer das erste ab, bleibt das zweite sichtbar.
     /// `latched` gehoert dem Aufrufer (RAM) und wird mit dem Ergebnis zurueckgegeben.
     public static func evaluate(journey: Journey, step: NavigationStep, latched: Set<Int>, walks: [Int: WalkEstimate],
-                                now: Date, pace: WalkingPaceFactor) -> (search: ReplanSearch?, latched: Set<Int>) {
-        guard let last = boardedVehicle(step, in: journey, now: now) else { return (nil, latched) }
+                                now: Date, pace: WalkingPaceFactor) -> (searches: [ReplanSearch], latched: Set<Int>) {
+        guard let last = boardedVehicle(step, in: journey, now: now) else { return ([], latched) }
         var latched = latched
         let vehicles = journey.legs.filter { !$0.isWalk }
         if let broken = NavigationEngine.brokenConnection(after: last, journey: journey, walks: walks, now: now, pace: pace) {
             latched.insert(broken)
         }
         for leg in vehicles where leg.index > last && leg.cancelled { latched.insert(leg.index) }
+        var searches: [ReplanSearch] = []
         for index in latched.filter({ $0 > last }).sorted() {
             guard let affected = vehicles.first(where: { $0.index == index }) else { latched.remove(index); continue }
-            let buffer = affected.cancelled ? cancelledBuffer
-                : NavigationEngine.buffer(journey: journey, vehicle: index, walks: walks, position: nil, now: now, pace: pace)?.seconds ?? 0
-            if !affected.cancelled, buffer >= TransferCheck.minimumSlackSeconds { latched.remove(index); continue }
-            guard let before = vehicles.last(where: { $0.index < index }) else { continue }
-            return (search(before: before, affected: affected, buffer: buffer, now: now), latched)
+            let buffer: Int
+            if affected.cancelled {
+                buffer = cancelledBuffer
+            } else if let seconds = NavigationEngine.buffer(journey: journey, vehicle: index, walks: walks, position: nil,
+                                                            now: now, pace: pace)?.seconds,
+                      seconds < TransferCheck.minimumSlackSeconds {
+                buffer = seconds
+            } else {
+                // erreichbar mit Reserve, oder ohne Abfahrtszeit nicht beurteilbar: freigeben
+                latched.remove(index)
+                continue
+            }
+            if let before = vehicles.last(where: { $0.index < index }),
+               let search = search(before: before, affected: affected, buffer: buffer, now: now) {
+                searches.append(search)
+            }
         }
-        return (nil, latched)
+        return (searches, latched)
     }
 
     private static func search(before: Leg, affected: Leg, buffer: Int, now: Date) -> ReplanSearch? {
@@ -93,24 +135,36 @@ public enum ConnectionWatch {
             return nil
         }
         let trigger: ReplanTrigger = affected.cancelled ? .tripCancelled(vehicle: affected.index) : .connectionBroken(vehicle: affected.index)
-        return ReplanSearch(trigger: trigger, key: ReplanKey(affected), alightingVehicle: before.index, start: start,
-                            time: max(now, before.arrival ?? before.plannedArrival ?? now), bufferSeconds: buffer)
+        return ReplanSearch(trigger: trigger, key: ReplanKey(affected), alightingVehicle: before.index, alightingKey: ReplanKey(before),
+                            start: start, time: max(now, before.arrival ?? before.plannedArrival ?? now), bufferSeconds: buffer)
     }
 
-    /// Erste Alternative der Rangfolge, die man wirklich erreicht: ohne das betroffene Fahrzeug, ohne Ausfall, kein Umstieg
-    /// verpasst und erste Abfahrt frühestens Suchzeit + Gehweg am Start + `minimumSlackSeconds` (MOTIS liefert Abfahrten
-    /// ohne Umstiegszeit, live geprueft 18.11.). Ergebnis ist der Index in `alternatives`.
+    /// Beste erreichbare Alternative nach der bestehenden Rangfolge (Ankunft, Umstiege, Gehzeit, Strafen). Erreichbar heisst:
+    /// ohne das betroffene Fahrzeug, ohne Ausfall, kein Umstieg verpasst, und die erste Abfahrt fruehestens
+    /// Suchzeit + Gehweg am Start + `minimumSlackSeconds` (MOTIS liefert Abfahrten ohne Umstiegszeit, live geprueft 18.11.).
+    /// Ausnahme: faehrt man im selben Zug weiter (erstes Fahrzeug = Ausstiegsfahrzeug), zaehlt nur die Abfahrt nach der Ankunft.
+    /// Ergebnis ist der Index in `alternatives`.
     public static func pick(_ alternatives: [CalibratedJourney], for search: ReplanSearch) -> Int? {
-        alternatives.firstIndex { alt in
+        let reachable = alternatives.indices.filter { i in
+            let alt = alternatives[i]
             let vehicles = alt.journey.legs.filter { !$0.isWalk }
             guard !alt.journey.cancelled, let first = vehicles.first,
-                  !vehicles.contains(where: { $0.cancelled || ReplanKey($0) == search.key }),
+                  !vehicles.contains(where: { $0.cancelled || search.key.matches($0) }),
                   !alt.transfers.contains(where: { $0.status == .missed }),
                   let departure = first.departure ?? first.plannedDeparture else { return false }
+            if search.alightingKey.matches(first), alt.journey.legs.first?.isWalk == false { return departure >= search.time }
             let access = alt.journey.legs.first.flatMap { $0.isWalk ? (alt.walks[$0.index]?.seconds ?? $0.durationSeconds) : nil } ?? 0
-            let earliest = search.time.addingTimeInterval(TimeInterval(access + TransferCheck.minimumSlackSeconds))
-            return departure >= earliest
+            return departure >= search.time.addingTimeInterval(TimeInterval(access + TransferCheck.minimumSlackSeconds))
         }
+        return reachable.min { alternatives[$0].rank(arrivalSearch: false) < alternatives[$1].rank(arrivalSearch: false) }
+    }
+
+    /// Gilt ein Vorschlag noch? Nur solange derselbe Anschluss weiter betroffen ist (`current` = Ergebnis von `evaluate`)
+    /// und der Nutzer den Suchstart noch nicht erreicht hat (die Zeit folgt der aktuellen Echtzeit-Ankunft).
+    /// Danach gilt der bestehende Ablauf; ein spaeter eintreffender Suchlauf wird verworfen.
+    public static func isValid(_ proposal: ReplanProposal, current: [ReplanSearch], now: Date) -> Bool {
+        guard let live = current.first(where: { $0.key == proposal.search.key }) else { return false }
+        return now < live.time
     }
 
     /// Zwischenstopps, die die Alternative noch behalten soll: alle ab dem Ausstiegsfahrzeug (dessen Halt eingeschlossen),
@@ -122,22 +176,30 @@ public enum ConnectionWatch {
 }
 
 /// Gedaechtnis einer Fahrt gegen Wiederholung (nur RAM, mit der Navigation verworfen).
+/// Ablehnen merkt das Fahrzeug, nicht die Art: wer "B reicht nicht" behaelt, wird bei "B faellt aus" erneut gefragt
+/// (Ausfall ist weit schlechter als 300 s), umgekehrt nicht.
 public struct ReplanMemory: Sendable, Hashable {
     private var searched: [ReplanKey: Int] = [:]
     private var declined: [ReplanKey: Int] = [:]
     private var retryNotBefore: Date?
     public private(set) var searchCount = 0
+    public private(set) var failureCount = 0
 
     public init() {}
 
     /// Darf jetzt gesucht werden? Ein Schluessel wird nur bei mindestens `worseningSeconds` schlechterem Puffer erneut gesucht,
     /// nie nach abgelehntem Stand, nie mehr als `maxSearches` je Fahrt und nicht vor Ablauf der Wiederholungssperre.
     public func maySearch(_ search: ReplanSearch, now: Date) -> Bool {
-        if searchCount >= ConnectionWatch.maxSearches { return false }
+        if searchCount >= ConnectionWatch.maxSearches || failureCount >= ConnectionWatch.maxFailures { return false }
         if let retryNotBefore, now < retryNotBefore { return false }
         if isDeclined(search) { return false }
         guard let seen = searched[search.key] else { return true }
         return search.bufferSeconds <= seen - ConnectionWatch.worseningSeconds
+    }
+
+    /// Die erste Suche der Liste, die jetzt erlaubt ist (damit ein abgelehntes Fahrzeug das naechste nicht verdeckt).
+    public func next(in searches: [ReplanSearch], now: Date) -> ReplanSearch? {
+        searches.first { maySearch($0, now: now) }
     }
 
     /// Vor dem Start des Tasks aufrufen (synchron), sonst starten zwei Auswertungen dieselbe Suche.
@@ -146,10 +208,13 @@ public struct ReplanMemory: Sendable, Hashable {
         searchCount += 1
     }
 
-    /// Suche gescheitert: Zaehler zurueck, nach `retryDelay` oder `blockedUntil` (Rate-Limit) erneut.
+    /// Suche gescheitert: Zaehler zurueck (die Suche zaehlt als Fehlversuch, hoechstens `maxFailures`), nach `retryDelay`
+    /// oder `blockedUntil` (Rate-Limit) erneut. Wirkt nur fuer eine markierte Suche.
     public mutating func markFailed(_ search: ReplanSearch, now: Date, blockedUntil: Date?) {
+        guard searched[search.key] != nil else { return }
         searched[search.key] = nil
         searchCount = max(searchCount - 1, 0)
+        failureCount += 1
         retryNotBefore = max(now.addingTimeInterval(ConnectionWatch.retryDelay), blockedUntil ?? .distantPast)
     }
 
