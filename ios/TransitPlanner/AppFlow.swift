@@ -1778,8 +1778,7 @@ final class AppFlow {
             return
         }
         // Reiner Fussweg: keine Echtzeit, die ein Refresh aendern koennte.
-        let walkOnly = !chosen.journey.legs.contains { !$0.isWalk }
-        let token = blockedUntil == nil && !walkOnly ? chosen.journey.refreshToken : nil
+        let token = blockedUntil == nil && !chosen.journey.isWalkOnly ? chosen.journey.refreshToken : nil
         switchTask = Task {
             var fresh = chosen
             if let token {

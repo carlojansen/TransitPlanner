@@ -66,16 +66,6 @@
         }
       }
     },
-    "%@%lld Minuten Fußweg" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@%2$lld Minuten Fußweg"
-          }
-        }
-      }
-    },
     "%lld" : {
 
     },
@@ -623,9 +613,6 @@
 
     },
     "Ersatzverkehr: Bus ab %@" : {
-
-    },
-    "Etwa " : {
 
     },
     "Etwa %lld Minuten Fußweg" : {
@@ -1338,13 +1325,10 @@
     "Zu dieser Verbindung wechseln?" : {
 
     },
-    "Zu Fuß" : {
-
-    },
     "ZU FUSS" : {
 
     },
-    "Zu Fuß:" : {
+    "Zu Fuß" : {
 
     },
     "Zu Fuß zu %@" : {
@@ -1354,6 +1338,9 @@
 
     },
     "Zu Fuß zum Ziel" : {
+
+    },
+    "Zu Fuß:" : {
 
     },
     "Zuhause" : {
