@@ -152,6 +152,26 @@ Ein echter Ausfall (GTFS-RT) kommt dagegen als `200` mit `cancelled: true`.
 
 ---
 
+## Bericht (nur Gerät, kein Endpunkt)
+Die App führt lokal ein anonymes Fall-Protokoll (Ringpuffer, höchstens 200 Einträge, gleiche Einträge nur einmal; Datei `caselog.json` im Application-Support-Ordner, Dateischutz bis zur ersten Entsperrung, vom Backup ausgenommen). Das Backend erhält davon nichts. Der Ort ist immer ein Halt der Fahrt (Einstieg, Ausstieg, Suchstart), nie der Standort oder die Adresse des Nutzers. "Bericht senden" (Einstellungen, nur in TestFlight und Debug sichtbar) schreibt `Bericht-<Tag>.json` und gibt sie nur über das Teilen-Menü weiter (Vorschau vorher).
+
+```json
+{ "schema": 1, "app": "1.0 (7)", "os": "26.1",
+  "events": [ { "kind": "departureNearMiss", "time": "2026-11-23T11:20:00Z",
+                "latitude": 50.94, "longitude": 6.96, "numbers": { "slack": -60, "walkApple": 180, "walkMotis": 90 } } ] }
+```
+
+- Zeit auf 5 Minuten abgerundet, Koordinaten auf 2 Nachkommastellen (etwa 1 km), keine Namen, Adressen, Haltestellen, Geräte-IDs.
+- `kind` und Zahlen (alle in Sekunden, Distanz in Metern):
+
+| `kind` | Auslöser | `numbers` |
+|---|---|---|
+| `departureNearMiss` | Aufbruch mit Apple-Gehzeit zu spät, mit MOTIS-Gehzeit rechtzeitig (nur wenn der Zugangsweg von Apple Maps kommt, nicht beim Fahrplan-Fallback) | `slack`, `walkApple`, `walkMotis` |
+| `replanLate` | Vorschlag kam mehr als 60 s nach dem Anschlussbruch | `buffer`, `delay` |
+| `arrivalWithoutGPS` | Fahrt per Zeit beendet, Position weiter als 25 m vom Ziel | `distance` |
+
+---
+
 ## Fehler
 Immer `{"error": {"code": "...", "message": "...", "details": [...]?, "retryAfterSeconds": n?}}`.
 `details` enthält nur Feldpfade, nie Eingabewerte; bei unbekannten Feldern den festen Text `unknown_field` statt des Feldnamens. Fehlerhafte Requests (falscher Content-Type/Charset, zu großer oder ungültiger Body) ergeben ebenfalls `INVALID_REQUEST` (400).

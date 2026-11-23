@@ -17,3 +17,7 @@ ios/TransitPlannerWidgets/Info.plist
 
 # Geraete-Screenshots mit echten Adressen und Standort
 docs/refs/
+
+# Anonyme Tester-Berichte (Nutzerdaten, nicht ins Repo)
+feedback/*
+!feedback/.gitkeep

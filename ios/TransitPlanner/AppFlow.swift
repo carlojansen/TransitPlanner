@@ -1,6 +1,7 @@
 import Foundation
 import MapKit
 import Observation
+import StoreKit
 import TransitCore
 
 /// Welcher Endpunkt gerade gesucht wird.
@@ -379,6 +380,10 @@ final class AppFlow {
     @ObservationIgnored private var replanMemory = ReplanMemory()
     /// Eingerastete spaetere Fahrzeuge (`ConnectionWatch.evaluate`): Vorschlag, Live Activity und Haptik lesen dasselbe Set.
     @ObservationIgnored private var replanLatched: Set<Int> = []
+    /// Wann ein Anschluss einrastete (RAM): Zeit bis zum Vorschlag fuer das Fall-Protokoll.
+    @ObservationIgnored private var latchedAt: [Int: Date] = [:]
+    /// Anonymes lokales Fall-Protokoll (nur Zahlen, gerundet) fuer "Bericht senden".
+    @ObservationIgnored private var caseLog: CaseLog
     /// Ausloeser des letzten Ticks, frueheste zuerst.
     @ObservationIgnored private var replanSearches: [ReplanSearch] = []
     @ObservationIgnored private var replanTask: Task<Void, Never>?
@@ -420,6 +425,7 @@ final class AppFlow {
         self.deps = deps
         reminders = ReminderCenter(deps)
         pace = deps.loadPace()
+        caseLog = deps.loadCaseLog()
         let choice = deps.loadOnboarding()
         locationAuthorization = deps.authorization()
         do {
@@ -916,6 +922,49 @@ final class AppFlow {
         }
     }
 
+    /// Bericht senden: nur in TestFlight (StoreKit-Umgebung `.sandbox`) und in Debug-Builds. Ohne Antwort von StoreKit
+    /// (offline) bleibt der Button verborgen.
+    private(set) var offersReport: Bool = {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
+    }()
+
+    func detectTestFlight() async {
+        #if !DEBUG
+        if let transaction = try? await AppTransaction.shared, case .verified(let app) = transaction, app.environment == .sandbox {
+            offersReport = true
+        }
+        #endif
+    }
+
+    var caseCount: Int { caseLog.events.count }
+
+    /// Schreibt die Berichtsdatei in den temporaeren Ordner (zum Teilen); der Aufrufer loescht sie danach.
+    func writeReport() -> URL? {
+        let info = Bundle.main.infoDictionary
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        let report = CaseReport(log: caseLog, app: "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))",
+                                os: "\(v.majorVersion).\(v.minorVersion)")
+        return try? report.write(to: FileManager.default.temporaryDirectory)
+    }
+
+    /// Loescht das Protokoll (Datei und Speicher).
+    func clearCaseLog() {
+        caseLog = CaseLog()
+        deps.saveCaseLog(caseLog)
+    }
+
+    /// Nur wo der Bericht angeboten wird: im App Store gibt es keine Stelle, das Protokoll zu sehen oder zu loeschen.
+    private func record(_ events: [CaseEvent?]) {
+        guard offersReport else { return }
+        let before = caseLog
+        events.forEach { caseLog.record($0) }
+        if caseLog != before { deps.saveCaseLog(caseLog) }
+    }
+
     private func consume(_ stream: AsyncThrowingStream<HybridRouteCalculator.Stage, any Error>) async throws(TransitError) {
         do {
             for try await stage in stream {
@@ -933,6 +982,7 @@ final class AppFlow {
                     }
                     routes = r
                     calibrated = c
+                    record(CaseTrigger.departureNearMisses(in: c, now: deps.now()))
                 }
                 updateOverlay()
             }
@@ -1082,6 +1132,12 @@ final class AppFlow {
         // darf die Navigation nicht ohne Hinweis verschwinden, etwa offline bei langer Verspaetung.
         if inBackground, step != .arrived, let started = navStartedAt,
            now >= NavigationEngine.trackingEnd(journey: journey, startedAt: started, missedInBackgroundSince: navMissedSince) {
+            // Ort: Ausstiegshalt des letzten Fahrzeugs, nie die Live-Position (Standort bleibt im RAM, AGENT.md 3.1.2).
+            let target = journey.legs.last?.destination.coordinate
+            let stop = journey.legs.last { !$0.isWalk }?.destination.coordinate
+            record([navPosition.flatMap { p in target.map { p.distance(to: $0) } }.flatMap {
+                CaseTrigger.arrivalWithoutGPS(endedByTime: true, distanceMeters: $0, now: now, near: stop)
+            }])
             send(.back)
             return
         }
@@ -1565,6 +1621,8 @@ final class AppFlow {
         let result = ConnectionWatch.evaluate(journey: journey, step: step, latched: replanLatched, walks: navWalks, now: now, pace: pace)
         replanLatched = result.latched
         replanSearches = result.searches
+        for v in result.latched where latchedAt[v] == nil { latchedAt[v] = now }
+        latchedAt = latchedAt.filter { result.latched.contains($0.key) }
         // Betroffen: eingerastet ohne abgelehnte (auch nach dem Aussteigen, wenn es keine Suchen mehr gibt), und per Position
         // verpasste immer: Ablehnen galt der Echtzeit-Lage, nicht dem tatsaechlich verpassten Fahrzeug.
         // Bis zum Ausstiegsfahrzeug eines Vorschlags oder einer Vormerkung laeuft alles wie sonst; bricht dort etwas weg,
@@ -1662,6 +1720,10 @@ final class AppFlow {
               let answer = replanAnswers[live.key], now < live.time else { return }
         if let index = ConnectionWatch.pick(answer.calibrated, for: live, keeping: nil) {
             replanOffer = ReplanOffer(proposal: ReplanProposal(id: UUID(), search: live, alternativeIndex: index), answer: answer)
+            record([CaseTrigger.replanLate(bufferSeconds: live.bufferSeconds,
+                                           delaySeconds: Int(now.timeIntervalSince(latchedAt[live.trigger.vehicle] ?? now)),
+                                           now: now, near: live.startCoordinate)])
+            latchedAt[live.trigger.vehicle] = nil // naechster Vorschlag zum selben Anschluss misst neu
         } else {
             replanMemory.decline(live)
         }
@@ -1829,6 +1891,7 @@ final class AppFlow {
         replanAnswers = [:]
         replanMemory = ReplanMemory()
         replanLatched = []
+        latchedAt = [:]
         replanSearches = []
     }
 

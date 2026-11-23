@@ -44,6 +44,9 @@ struct AppDependencies: Sendable {
     /// Gelernter Gehzeit-Faktor (UserDefaults, JSON); nur der Faktor, keine Wege oder Orte.
     var loadPace: @Sendable () -> WalkingPaceFactor
     var savePace: @Sendable (WalkingPaceFactor) -> Void
+    /// Lokales anonymes Fall-Protokoll fuer "Bericht senden" (Datei im Geraet, vom Backup ausgenommen, nie im Netz).
+    var loadCaseLog: @Sendable () -> CaseLog
+    var saveCaseLog: @Sendable (CaseLog) -> Void
     /// Live-Standort fuer die Navigation (when-in-use, im Hintergrund mit `beginBackgroundLocation`); Fixes bleiben im RAM.
     var positions: @Sendable () -> AsyncStream<LocationFix>
     /// POST /api/refresh ohne Polylines (Polling braucht keine Geometrie, API.md).
@@ -80,6 +83,13 @@ struct AppDependencies: Sendable {
 
     static let onboardingKey = "onboarding"
     static let paceKey = "walkingPace"
+
+    /// Application Support: nicht im Dokumente-Ordner, den Nutzer sehen; Ordner wird bei Bedarf angelegt.
+    /// Ohne Application Support gibt es kein Protokoll (nil): kein Ausweichen in den temporaeren Ordner, den das System leert.
+    static func caseLogStore() -> CaseLogStore? {
+        (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
+            .map { CaseLogStore(url: $0.appendingPathComponent("caselog.json")) }
+    }
 
     /// CLLocationUpdate.liveUpdates mit CLServiceSession (when-in-use). Im Hintergrund nur mit `beginBackgroundLocation`.
     static func livePositions() -> AsyncStream<LocationFix> {
@@ -131,6 +141,8 @@ struct AppDependencies: Sendable {
             saveOnboarding: { UserDefaults.standard.set($0.rawValue, forKey: onboardingKey) },
             loadPace: { UserDefaults.standard.data(forKey: paceKey).flatMap { try? JSONDecoder().decode(WalkingPaceFactor.self, from: $0) } ?? WalkingPaceFactor() },
             savePace: { if let data = try? JSONEncoder().encode($0) { UserDefaults.standard.set(data, forKey: paceKey) } },
+            loadCaseLog: { caseLogStore()?.load() ?? CaseLog() },
+            saveCaseLog: { caseLogStore()?.save($0) },
             positions: { livePositions() },
             refresh: { token throws(TransitError) in try await api.refresh(refreshToken: token, polylines: false, accessibility: .stored).journey },
             blockedUntil: { await api.blocked?.until },
@@ -230,12 +242,15 @@ extension AppDependencies {
                       notifier: FakeNotifier = FakeNotifier()) -> AppDependencies {
         let stored = Mutex(onboarding)
         let storedPace = Mutex(pace)
+        let storedCases = Mutex(CaseLog())
         return AppDependencies(search: search, planner: planner, secrets: secrets, location: location,
                                authorization: { location.status },
                                loadOnboarding: { stored.withLock { $0 } },
                                saveOnboarding: { value in stored.withLock { $0 = value } },
                                loadPace: { storedPace.withLock { $0 } },
                                savePace: { value in storedPace.withLock { $0 = value } },
+                               loadCaseLog: { storedCases.withLock { $0 } },
+                               saveCaseLog: { value in storedCases.withLock { $0 = value } },
                                positions: { AsyncStream { _ in } },
                                refresh: { token throws(TransitError) in try await refresher.refresh(token) },
                                blockedUntil: { blockedUntil },

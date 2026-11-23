@@ -158,6 +158,24 @@ Tests: Backend 94/0 (ein neuer Test mit drei Fällen: Fußweg 10 min mit schnell
 
 **Offen (klein):** "+n Min." vergleicht Fahrplan- mit Gehtempo-Ankunft; `chosen.journey.isWalkOnly` statt doppelter Regel (AppFlow ca. 1781); beim Wechsel auf Fußweg Zeiten auf jetzt verschieben; Tests für Fußweg-Vorschlagstext und Verwerfen während Refresh; Katalogschlüssel "%@%lld Minuten Fußweg" und "Etwa " löschen. Weiter offen: Vormerkung verfällt, wenn der Anschluss wieder reicht (Entscheidung Carlo), `directWalkSeconds`/`walkSeconds` für "Zu Fuß 12 Min." (API-Änderung), Meldungen mit `validUntil`/`url`, Blättern ohne 404, Smoke-Test, Deploy durch Carlo, "15" als Minuten bestätigen.
 
+## Fall-Protokoll und "Bericht senden" (23.11., Wunsch Carlo)
+
+**Ziel:** Tester liefern Daten für Fixes und Tests, ohne Aufwand und ohne Personenbezug. Das Backend erhält nichts (API.md, Abschnitt "Bericht").
+
+**Umgesetzt:**
+- `TransitCore/CaseLog.swift`: Ringpuffer (200 Einträge, gleiche Einträge nur einmal), Eintrag mit Zeit auf 5 Min. und Ort auf 2 Stellen gerundet, nur benannte Zahlen. Drei Auslöser als reine Regeln: `departureNearMiss` (Apple-Gehzeit gegen MOTIS, Fall U5), `replanLate` (Vorschlag über 60 s nach dem Anschlussbruch, Schwelle ist eine Annahme), `arrivalWithoutGPS` (Fahrt per Zeit beendet, Position über 25 m vom Ziel). `CaseReport` (JSON, Schema 1) und `CaseLogStore` (Datei, Dateischutz bis zur ersten Entsperrung, vom Backup ausgenommen, nicht lesbare Datei wird nicht überschrieben).
+- `AppFlow`: drei Auslöser eingebunden, Ort immer ein Halt der Fahrt, nie Standort oder Adresse. `Dependencies`: `loadCaseLog`/`saveCaseLog`.
+- Einstellungen: "Bericht senden" nur in TestFlight (StoreKit-Umgebung `.sandbox`, offline verborgen) und Debug; Vorschau, Teilen über `ShareLink`, Datei im temporären Ordner und beim Verlassen gelöscht.
+- Agent `report-analyst` (nur lesen, Datenschutz-Check zuerst, Tabelle mit Testfall-Entwürfen); Ablage `feedback/` (in `.gitignore`).
+
+**Prüfung:** TransitCore 243/0, App 251/0, Release-Build grün. Gegenprobe für die Near-Miss-Bedingung. `security-hig-reviewer`: erster Lauf 3 Blocker (Ort, Dateischutzklasse, Backup), behoben; zweiter Lauf 1 Blocker (veralteter App-Beleg bricht den Release-Build), behoben. Dritter Review nach den letzten Korrekturen steht aus (Carlo lässt ihn laufen).
+
+**Offen (klein):** Protokoll wird nur beim Start geladen (Überschreiben der Historie nach Entsperren theoretisch möglich; `save` zusammenführen); Schreibfehler der Berichtsdatei zeigt fälschlich "Noch keine Fälle"; Vorschau als ein Text (VoiceOver: eine Zeile je Eintrag); Leerzustand als `ContentUnavailableView`; `arrivalWithoutGPS` ohne jede Position schreibt nichts (Darstellung klären); kein App-Test für die Einbindung in `AppFlow`; Oberfläche nicht am Gerät oder Simulator angesehen; neue Texte noch nicht in `Localizable.xcstrings`.
+
+**Dritter Review (23.11.):** Freigabe, 0 Blocker. Umgesetzt danach: `departureNearMiss` nur bei Apple-Quelle des Zugangswegs (Fahrplan-Fallback wäre nur der Tempo-Faktor); gleiche Art, Zeit und Ort nur einmal (Zahlen des letzten Mals); Protokoll nur dort geführt, wo der Bericht angeboten wird, mit "Protokoll löschen"; kein Ausweichen in den temporären Ordner; Dateiname mit Ortstag; Test räumt auf. Bewusst offen: `PrivacyInfo` (CoarseLocation, Diagnostics) vor einer App-Store-Freigabe, Messlogik `latchedAt` ohne eigenen Test, Datei-I/O auf dem Main Actor (30 KB).
+
+**Als Nächstes (Plan):** MetricKit (Akku, Abstürze) in den Bericht, danach Fixes in der Reihenfolge Gleis Köln, Ankunft-Test, U5, Alternativen, dann Features. U5-Ursache ist nicht belegt; die ersten Berichte klären sie. Ungeklärt: "Fahrten aus der Vergangenheit" (laufende Fahrt prüfen oder Verlauf-Liste).
+
 ## Ideen (nicht geplant, nicht begonnen)
 
 ### Engel-Modus (10.11., Idee Carlo)

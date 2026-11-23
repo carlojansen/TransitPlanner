@@ -202,7 +202,7 @@ struct ServerKeyView: View {
 // MARK: - G1 Einstellungen
 
 struct SettingsSheet: View {
-    enum Route: Hashable { case server, sources }
+    enum Route: Hashable { case server, sources, report }
 
     @Environment(AppFlow.self) private var flow
     @Environment(\.dismiss) private var dismiss
@@ -239,6 +239,14 @@ struct SettingsSheet: View {
                 } footer: {
                     Text("Gilt für neue Erinnerungen, bestehende übernehmen den Wert bei der nächsten Neuberechnung. Bei 0 Min. entfällt „Später erinnern“ in der Losgehen-Mitteilung, außer du gehst früher los. Umstiege bewertet die App davon unabhängig.")
                 }
+                if flow.offersReport {
+                    Section {
+                        NavigationLink(value: Route.report) { SettingsRow(title: "Bericht senden") }
+                            .accessibilityIdentifier("reportLink")
+                    } footer: {
+                        Text("Für Tester: ein anonymer Bericht über knappe Abfahrten, späte Vorschläge und Ankünfte. Du siehst ihn vor dem Teilen.")
+                    }
+                }
                 Section {
                     NavigationLink(value: Route.sources) { SettingsRow(title: "Quellen und Lizenzen") }
                     SettingsRow(title: "Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
@@ -251,6 +259,7 @@ struct SettingsSheet: View {
                 switch route {
                 case .server: ServerKeyView()
                 case .sources: SourcesView(attribution: flow.attribution)
+                case .report: ReportView()
                 }
             }
             .toolbar {
@@ -261,6 +270,7 @@ struct SettingsSheet: View {
             }
         }
         .presentationDetents([.large])
+        .task { await flow.detectTestFlight() }
     }
 
     /// Echter iOS-Status (wird bei Rueckkehr in die App neu gelesen).
@@ -274,6 +284,57 @@ struct SettingsSheet: View {
 
     private func openSystemSettings() {
         if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+    }
+}
+
+// MARK: - Bericht senden (TestFlight)
+
+/// Vorschau der Berichtsdatei und Teilen ueber das System-Menue. Nichts verlaesst das Geraet ohne diesen Schritt.
+struct ReportView: View {
+    @Environment(AppFlow.self) private var flow
+    @State private var file: URL?
+    @State private var text = ""
+
+    var body: some View {
+        List {
+            if let file, flow.caseCount > 0 {
+                Section {
+                    ShareLink(item: file) { Label("Bericht teilen", systemImage: "square.and.arrow.up") }
+                        .accessibilityIdentifier("reportShare")
+                } footer: {
+                    Text("Enthält nur Zahlen, Uhrzeit auf 5 Minuten und Ort auf etwa 1 km gerundet. Keine Namen, Adressen oder Geräte-Kennung.")
+                }
+                Section {
+                    Button("Protokoll löschen", role: .destructive) {
+                        flow.clearCaseLog()
+                        try? FileManager.default.removeItem(at: file)
+                        self.file = nil
+                        text = ""
+                    }
+                    .accessibilityIdentifier("reportClear")
+                }
+                Section {
+                    Text(text)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                } header: {
+                    Text("Vorschau")
+                }
+            } else {
+                Section {
+                    Text("Noch keine Fälle aufgezeichnet. Die App notiert sie, sobald unterwegs etwas knapp oder spät ist.")
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .navigationTitle("Bericht senden")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            guard flow.caseCount > 0 else { return }
+            file = flow.writeReport()
+            text = file.flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
+        }
+        .onDisappear { if let file { try? FileManager.default.removeItem(at: file) } }
     }
 }
 
