@@ -71,6 +71,10 @@ struct AppDependencies: Sendable {
     var activities: any TripActivityControlling = NoTripActivities()
     /// Haelt die Standort-Updates bei gesperrtem Geraet; nil, wenn es gerade nicht geht. Rueckgabe beendet die Session.
     var beginBackgroundLocation: @MainActor @Sendable () -> (@MainActor @Sendable () -> Void)? = { nil }
+    /// Eigene Tickets (Foto, Bild, PDF), lokal verschluesselt; nie im Backup, nie im Netz.
+    var tickets: any TicketStoring = MemoryTickets()
+    /// Beginnt die Ticket-Anzeige (Bildschirm hell, nicht sperren); die Rueckgabe stellt beides wieder her.
+    var beginTicketDisplay: @MainActor @Sendable () -> (@MainActor @Sendable () -> Void) = { {} }
     var now: @Sendable () -> Date = { Date() }
     /// Entprellung der Suche (API.md: mindestens 300 ms).
     var debounce: Duration = .milliseconds(300)
@@ -89,6 +93,12 @@ struct AppDependencies: Sendable {
     static func caseLogStore() -> CaseLogStore? {
         (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
             .map { CaseLogStore(url: $0.appendingPathComponent("caselog.json")) }
+    }
+
+    /// Ordner `Tickets` in Application Support (nicht im geteilten App-Group-Ordner, den das Widget lesen koennte).
+    static func ticketStore(sealer: LocalSealer) -> TicketStore? {
+        (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
+            .map { TicketStore(directory: $0.appendingPathComponent("Tickets", isDirectory: true), sealer: sealer) }
     }
 
     /// CLLocationUpdate.liveUpdates mit CLServiceSession (when-in-use). Im Hintergrund nur mit `beginBackgroundLocation`.
@@ -173,6 +183,21 @@ struct AppDependencies: Sendable {
                 guard UIApplication.shared.applicationState == .active else { return nil }
                 let session = CLBackgroundActivitySession()
                 return { session.invalidate() }
+            },
+            // Ohne Application Support nur fuer diese Sitzung im Speicher (ein Ticket, das nach dem Beenden fehlt, ist besser als
+            // eines im temporaeren Ordner, den das System leert).
+            tickets: ticketStore(sealer: sealer) ?? MemoryTickets(),
+            beginTicketDisplay: {
+                // Szene statt `UIScreen.main` (veraltet); die App hat nur eine Szene.
+                let screen = { (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen }
+                let brightness = screen()?.brightness
+                let idleDisabled = UIApplication.shared.isIdleTimerDisabled
+                screen()?.brightness = 1
+                UIApplication.shared.isIdleTimerDisabled = true
+                return {
+                    if let brightness { screen()?.brightness = brightness }
+                    UIApplication.shared.isIdleTimerDisabled = idleDisabled
+                }
             }
         )
     }
@@ -239,7 +264,9 @@ extension AppDependencies {
                       waitingHint: Duration = .seconds(3),
                       refresher: FakeRefresher = FakeRefresher(),
                       reminders: MemoryReminders = MemoryReminders(),
-                      notifier: FakeNotifier = FakeNotifier()) -> AppDependencies {
+                      notifier: FakeNotifier = FakeNotifier(),
+                      tickets: MemoryTickets = MemoryTickets(),
+                      ticketDisplay: FakeTicketDisplay = FakeTicketDisplay()) -> AppDependencies {
         let stored = Mutex(onboarding)
         let storedPace = Mutex(pace)
         let storedCases = Mutex(CaseLog())
@@ -260,7 +287,19 @@ extension AppDependencies {
                                },
                                places: places, reminders: reminders, notifier: notifier, replanNotifier: notifier,
                                scheduleBackgroundCheck: { _ in },
+                               tickets: tickets, beginTicketDisplay: { ticketDisplay.begin() },
                                debounce: debounce, waitingHint: waitingHint)
+    }
+}
+
+/// Zaehlt Beginn und Ende der Ticket-Anzeige (Helligkeit, Bildschirmsperre) in Tests.
+@MainActor final class FakeTicketDisplay {
+    private(set) var began = 0
+    private(set) var ended = 0
+    var active: Bool { began > ended }
+    func begin() -> @MainActor @Sendable () -> Void {
+        began += 1
+        return { [self] in ended += 1 }
     }
 }
 

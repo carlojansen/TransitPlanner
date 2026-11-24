@@ -789,6 +789,77 @@ import TransitCore
         #expect(f.favorites.map(\.role) == [.home])
     }
 
+    // MARK: Tickets
+
+    static let ticketData = Data("TESTTICKET".utf8)
+
+    /// Der Knopf steht nur bei offener Route und nur mit lesbarem Ticket; die Regel ist eine Funktion der Phase.
+    @Test func ticketIsOfferedOnlyWithRouteAndReadableTicket() async {
+        for (phase, offered) in [(Phase.start, false), (.plan(nil), false), (.plan(.destination), false), (.routeSelection, true),
+                                 (.tripDetails(0), true), (.navigation(0), true), (.arrival, true)] {
+            #expect(AppFlow.showsRouteContent(phase) == offered, "\(phase)")
+        }
+        let tickets = MemoryTickets()
+        let f = AppFlow(.fakes(onboarding: .withLocation, tickets: tickets))
+        await f.loadTickets()
+        f.choose(Self.stopEndpoint)
+        await f.waitForWork()
+        #expect(f.phase == .routeSelection)
+        #expect(!f.offersTicket) // kein Ticket
+        tickets.addUnreadable()
+        await f.loadTickets()
+        #expect(f.hasUnreadableTicket && !f.offersTicket) // unlesbar zeigt keinen Knopf
+        try? tickets.save(StoredTicket(kind: .image, data: Self.ticketData))
+        await f.loadTickets()
+        #expect(f.offersTicket)
+        f.send(.reset)
+        #expect(!f.offersTicket) // Start: kein Knopf
+    }
+
+    /// Anzeige: Helligkeit beginnt und endet genau einmal, auch im Hintergrund; Reset schliesst.
+    @Test func ticketDisplayBeginsAndEndsWithTheView() async {
+        let display = FakeTicketDisplay()
+        let tickets = MemoryTickets(tickets: [StoredTicket(kind: .image, data: Self.ticketData)])
+        let f = AppFlow(.fakes(onboarding: .withLocation, tickets: tickets, ticketDisplay: display))
+        await f.loadTickets()
+        f.showTicket() // im Start: kein Knopf, nichts passiert
+        #expect(!f.showsTicket && display.began == 0)
+        f.choose(Self.stopEndpoint)
+        await f.waitForWork()
+        f.showTicket()
+        f.showTicket() // zweimal: ein Beginn
+        #expect(f.showsTicket && display.began == 1 && display.active)
+        f.movedToBackground()
+        #expect(display.ended == 1 && !display.active && f.showsTicket)
+        f.becameActive()
+        #expect(display.began == 2 && display.active)
+        f.closeTicket()
+        #expect(!f.showsTicket && !display.active)
+        f.showTicket()
+        f.send(.reset) // zurueck in den Start schliesst das Ticket
+        #expect(!f.showsTicket && !display.active)
+    }
+
+    /// Hinzufuegen ersetzt das alte erst nach dem Speichern; unbrauchbare Dateien und volle Ablage lassen das alte stehen.
+    @Test func addingTicketReplacesOnlyAfterSaving() async throws {
+        let tickets = MemoryTickets()
+        let f = AppFlow(.fakes(onboarding: .withLocation, tickets: tickets))
+        let png = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="))
+        try await f.addTicket(png)
+        let first = try #require(f.shownTicket)
+        #expect(first.kind == .image)
+        await #expect(throws: TransitError.ticketUnreadable) { try await f.addTicket(Data("kein Bild".utf8)) }
+        #expect(f.shownTicket?.id == first.id) // altes bleibt
+        tickets.failsWrites.withLock { $0 = true }
+        await #expect(throws: TransitError.storageUnavailable) { try await f.addTicket(png) }
+        #expect(f.shownTicket?.id == first.id)
+        tickets.failsWrites.withLock { $0 = false }
+        try await f.addTicket(png)
+        #expect(f.tickets.count == 1 && f.shownTicket?.id != first.id) // ersetzt
+        await f.deleteTicket(try #require(f.shownTicket).id)
+        #expect(f.tickets.isEmpty)
+    }
+
     @Test func flowMovesFavoritesAndReportsFailure() {
         let places = MemoryPlaces(favorites: [Self.stopEndpoint, Self.otherStopEndpoint])
         let f = AppFlow(.fakes(onboarding: .withLocation, places: places))

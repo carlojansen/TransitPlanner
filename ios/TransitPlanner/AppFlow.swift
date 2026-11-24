@@ -395,6 +395,11 @@ final class AppFlow {
     var reminderJourneyIndex: Int?
     /// D2: Liste der Erinnerungen.
     var showsReminders = false
+    /// Eigene Tickets (nur zeigen, nie pruefen). Geladen ausserhalb des Main Actors (Entschluesseln).
+    private(set) var tickets: [TicketStore.Entry] = []
+    /// Ticket-Anzeige offen (Vollbild). Die Helligkeit gehoert dazu und endet mit dem Schliessen.
+    private(set) var showsTicket = false
+    @ObservationIgnored private var endTicketDisplay: (@MainActor @Sendable () -> Void)?
     /// Einstellungen direkt auf "Dein Server" oeffnen (Banner-Aktion).
     var settingsOpensServer = false
 
@@ -507,6 +512,7 @@ final class AppFlow {
     func becameActive() {
         locationAuthorization = deps.authorization()
         inBackground = false
+        if showsTicket, endTicketDisplay == nil { endTicketDisplay = deps.beginTicketDisplay() }
         activityStartFailed = false
         if !locationAllowed {
             endBackgroundLocation?()
@@ -534,6 +540,9 @@ final class AppFlow {
     /// Hintergrund: nichts Standortbezogenes behalten.
     func movedToBackground() {
         inBackground = true
+        // Helligkeit und Bildschirmsperre zurueck; die Ansicht selbst zeigt dann einen Platzhalter.
+        endTicketDisplay?()
+        endTicketDisplay = nil
         // Ein Vorschlag, der schon im Vordergrund stand, kommt jetzt als Mitteilung.
         syncReplanAlert()
         reminders.scheduleBackgroundCheck()
@@ -598,6 +607,7 @@ final class AppFlow {
         if !new.isPlan { assigningRole = nil; replacingFavorite = nil }
         movedBackward = event.isBackward
         phase = new
+        if showsTicket, !Self.showsRouteContent(new) { closeTicket() }
         if plans, new == .routeSelection { startPlanning() }
         if case .navigation(let i) = new, event == .startNavigation(i) || event == .resumeTrip { beginNavigation(i) }
         if case .startNavigation(let i) = event { retireReplacedReminder(journey(at: i)) }
@@ -1998,6 +2008,72 @@ final class AppFlow {
 
     func journey(at index: Int) -> Journey? {
         routes.flatMap { index < $0.journeys.count ? $0.journeys[index] : nil }
+    }
+
+    // MARK: Ticket
+
+    /// Phasen mit offener Route: dort darf der Ticket-Knopf stehen (nicht im Start und nicht in der Planung).
+    nonisolated static func showsRouteContent(_ phase: Phase) -> Bool {
+        switch phase {
+        case .routeSelection, .tripDetails, .navigation, .arrival: true
+        case .start, .plan: false
+        }
+    }
+
+    /// Das erste lesbare Ticket (Stufe B1: eines).
+    var shownTicket: StoredTicket? {
+        tickets.lazy.compactMap { if case .ticket(let ticket) = $0 { ticket } else { nil } }.first
+    }
+
+    /// Ein Ticket liegt vor, aber nicht lesbar (z. B. neuer Schluessel): die Einstellungen zeigen es und lassen es loeschen.
+    var hasUnreadableTicket: Bool { tickets.contains { if case .unreadable = $0 { true } else { false } } }
+
+    /// Die Regel fuer den Knopf, einmal hier: nur mit lesbarem Ticket und nur bei offener Route.
+    var offersTicket: Bool { shownTicket != nil && Self.showsRouteContent(phase) }
+
+    func loadTickets() async {
+        let store = deps.tickets
+        tickets = await Task.detached { store.entries() }.value
+    }
+
+    func showTicket() {
+        guard offersTicket, !showsTicket else { return }
+        showsTicket = true
+        endTicketDisplay = deps.beginTicketDisplay()
+    }
+
+    func closeTicket() {
+        showsTicket = false
+        endTicketDisplay?()
+        endTicketDisplay = nil
+    }
+
+    /// Foto, Bild oder PDF als Ticket speichern (Stufe B1: ersetzt das vorhandene). Aufbereiten, Verschluesseln und Schreiben
+    /// laufen ausserhalb des Main Actors; scheitert etwas, bleibt das alte Ticket. Der Fehler geht an die Einstellungen.
+    // ponytail: ein Ticket; B2 haengt an, statt zu ersetzen.
+    func addTicket(_ raw: Data) async throws(TransitError) {
+        let store = deps.tickets
+        let old = tickets.map(\.id)
+        let result: Result<Void, TransitError> = await Task.detached {
+            do throws(TransitError) {
+                let prepared = try TicketImport.prepare(raw)
+                try store.save(StoredTicket(kind: prepared.kind, data: prepared.data))
+                old.forEach(store.delete) // erst nach dem Speichern des neuen
+                return .success(())
+            } catch {
+                return .failure(error)
+            }
+        }.value
+        await loadTickets()
+        try result.get()
+    }
+
+    func deleteTicket(_ id: UUID) async {
+        let store = deps.tickets
+        await Task.detached { store.delete(id) }.value
+        if shownTicket == nil { closeTicket() }
+        await loadTickets()
+        if shownTicket == nil { closeTicket() }
     }
 
     // MARK: Fehler
