@@ -702,8 +702,8 @@ final class AppFlow {
 
     private func reloadSaved() {
         favorites = deps.places.favorites()
-        let saved = Set(favorites.map(\.endpoint))
-        recents = deps.places.recents().filter { !saved.contains($0.endpoint) }
+        let saved = Set(favorites.map(\.endpoint.routePoint))
+        recents = deps.places.recents().filter { !saved.contains($0.endpoint.routePoint) }
     }
 
     /// Haltestellen in der Naehe: nur die gerundete Koordinate geht ans Backend, nur mit Erlaubnis, hoechstens alle 2 Minuten.
@@ -745,8 +745,8 @@ final class AppFlow {
     /// Favoriten setzt man bewusst: scheitert das Speichern, zeigt ein Banner es (der Verlauf bleibt dagegen still).
     /// Aufrufer, die danach die Phase wechseln, setzen das Banner nach dem Wechsel (der loescht es).
     @discardableResult
-    private func saveFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role) -> Bool {
-        let saved = deps.places.addFavorite(endpoint, role: role)
+    private func saveFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role, replacing: UUID? = nil) -> Bool {
+        let saved = deps.places.addFavorite(endpoint, role: role, replacing: replacing)
         if !saved { banner = .storageUnavailable }
         reloadSaved()
         return saved
@@ -799,8 +799,7 @@ final class AppFlow {
         switch phase {
         case .plan(let slot):
             if let role = assigningRole {
-                var saved = saveFavorite(endpoint, role: role)
-                if saved, let old = replacingFavorite { saved = deps.places.removeFavorite(old); reloadSaved() }
+                let saved = saveFavorite(endpoint, role: role, replacing: replacingFavorite)
                 send(.back)
                 if !saved { banner = .storageUnavailable }
                 return

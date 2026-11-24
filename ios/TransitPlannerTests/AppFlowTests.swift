@@ -556,6 +556,44 @@ import TransitCore
         }
     }
 
+    /// Gleicher Ort unter anderem Namen (z. B. umbenannt) ist kein neuer Eintrag: nicht im Verlauf, nicht unter den Favoriten.
+    @Test func samePlaceUnderAnotherLabelIsNoDuplicate() throws {
+        let container = try TransitStore.makeContainer(inMemory: true)
+        let stores: [any PlaceStoring] = [MemoryPlaces(), SwiftDataPlaces(container: container, sealer: LocalSealer(secrets: InMemorySecretStore()))]
+        let renamed = TripEndpoint.stop(id: "de-DELFI_de:05315:11201", label: "Wohnung Oma")
+        for places in stores {
+            places.remember(Self.stopEndpoint)
+            places.remember(renamed)
+            #expect(places.recents().map(\.endpoint) == [renamed]) // ein Eintrag, Name der letzten Wahl
+            places.addFavorite(Self.stopEndpoint, role: .other)
+            places.addFavorite(renamed, role: .other)
+            #expect(places.favorites().count == 1)
+        }
+        // Ist der Ort Favorit, steht er nicht zusaetzlich unter "Zuletzt gesucht".
+        let memory = MemoryPlaces(recents: [Self.stopEndpoint])
+        memory.addFavorite(renamed, role: .other)
+        let f = AppFlow(.fakes(onboarding: .withLocation, places: memory))
+        f.loadSuggestions()
+        #expect(f.recents.isEmpty)
+    }
+
+    /// Ein ersetzter Favorit behaelt seinen Platz und wird in einem Schritt ersetzt, auch wenn das Speichern scheitert.
+    @Test func replacingFavoriteKeepsItsPlace() throws {
+        let container = try TransitStore.makeContainer(inMemory: true)
+        let stores: [any PlaceStoring] = [MemoryPlaces(), SwiftDataPlaces(container: container, sealer: LocalSealer(secrets: InMemorySecretStore()))]
+        let fourth = TripEndpoint.stop(id: "de-DELFI_de:05162:99999", label: "Neuss Hbf")
+        for places in stores {
+            for e in [Self.stopEndpoint, Self.addressEndpoint, Self.otherStopEndpoint] { places.addFavorite(e, role: .other) }
+            let middle = try #require(places.favorites().dropFirst().first)
+            #expect(places.addFavorite(fourth, role: .other, replacing: middle.id))
+            #expect(places.favorites().map(\.endpoint) == [Self.stopEndpoint, fourth, Self.otherStopEndpoint])
+        }
+        let memory = MemoryPlaces(favorites: [Self.stopEndpoint, Self.addressEndpoint])
+        memory.failsWrites = true
+        #expect(!memory.addFavorite(fourth, role: .other, replacing: memory.favorites()[0].id))
+        #expect(memory.favorites().map(\.endpoint) == [Self.stopEndpoint, Self.addressEndpoint]) // nichts halb ersetzt
+    }
+
     @Test func nearbyLoadsOncePerStartAndAtMostEveryTwoMinutes() async {
         let calls = Mutex(0)
         let now = Mutex(Date())

@@ -710,8 +710,8 @@ struct PlanSheet: View {
         let all = flow.favorites.map { ($0.endpoint, "star.fill") }
             + flow.recents.map { ($0.endpoint, "clock.arrow.circlepath") }
             + nearby.map { ($0, "mappin.and.ellipse") }
-        var seen = Set<TripEndpoint>()
-        return all.filter { $0.0.label.localizedCaseInsensitiveContains(text) && seen.insert($0.0).inserted }
+        var seen = Set<RoutePoint>() // gleicher Ort nur einmal, auch unter anderem Namen
+        return all.filter { $0.0.label.localizedCaseInsensitiveContains(text) && seen.insert($0.0.routePoint).inserted }
             .prefix(5)
             .map { (endpoint: $0.0, symbol: $0.1) }
     }

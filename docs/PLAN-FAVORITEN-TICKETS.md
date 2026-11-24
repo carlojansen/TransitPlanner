@@ -78,6 +78,17 @@ Ablauf je Scheibe (nach `CLAUDE.md` und den Lehren aus dem Zwischenstopp-Feature
 6. **Commit** klein und thematisch, nie `git commit -a`, Tests vorher grün.
 7. **Stopp** und Freigabe von Carlo abwarten, dann nächste Scheibe.
 
+### Auflagen aus der Auswirkungsprüfung Scheibe 2 (24.11.)
+
+1. Keine Schemaänderung, keine neuen Felder (sonst nur optional).
+2. Gleicher Ort einmal über `routePoint` erkennen, im Store, im Verlauf-Filter und bei den Treffern. *Erledigt in Commit 1.*
+3. Ersetzen mit `replacing:`, Platz bleibt, ein Speichern. *Erledigt in Commit 1.*
+4. Verschieben ordnet nur die `sortIndex`-Werte der "Weiteren Favoriten" neu; Rollen-Kacheln bleiben.
+5. Klartext-Test deckt auch das neue Label ab.
+6. "Bearbeiten" erscheint auch bei nur weiteren Favoriten; jede Geste hat eine VoiceOver-Aktion; Eingabe trimmen, leer ablehnen, Länge begrenzen (60).
+7. Drei Commits: Store-Regeln, Umbenennen (A2), Reihenfolge (A3); danach `DESIGN.md` Zeile 110 und `STATUS.md`.
+8. Annahmen, bis Carlo anders entscheidet: Umbenennen nur für weitere Favoriten; A4 übernimmt den Namen des neuen Orts.
+
 Teil A (Scheiben 1 bis 3) ist freigegeben. Teil B beginnt mit der Prüfung in Scheibe 4.
 
 ### Prüfung der Workflows (24.11.)

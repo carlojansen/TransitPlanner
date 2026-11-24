@@ -24,11 +24,19 @@ protocol PlaceStoring: Sendable {
     // ponytail: lebt mit dem Verlauf (10 Orte, "Suchverlauf löschen"); eigenes Modell, falls Werte laenger halten sollen.
     @MainActor func setEarlierMinutes(_ minutes: Int, for endpoint: TripEndpoint)
     /// Je Rolle (ausser `.other`) ein Ort; derselbe Ort nie doppelt (eine neue Rolle ersetzt die alte).
+    /// `replacing`: der Favorit, den der neue Ort ersetzt; er behaelt dessen Platz in der Reihenfolge, ersetzt wird in
+    /// einem einzigen Speichern. Gleicher Ort heisst gleicher `routePoint` (das Label darf abweichen, z. B. umbenannt).
     /// `false`, wenn nichts gespeichert werden konnte (der Zustand bleibt dann wie vorher).
-    @MainActor @discardableResult func addFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role) -> Bool
+    @MainActor @discardableResult func addFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role, replacing: UUID?) -> Bool
     @MainActor @discardableResult func removeFavorite(_ id: UUID) -> Bool
     @MainActor func removeRecent(_ id: UUID)
     @MainActor func clearRecents()
+}
+
+extension PlaceStoring {
+    @MainActor @discardableResult func addFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role) -> Bool {
+        addFavorite(endpoint, role: role, replacing: nil)
+    }
 }
 
 /// Gleiche Wahl nur einmal im Verlauf, aeltere Eintraege fallen heraus.
@@ -65,9 +73,10 @@ final class SwiftDataPlaces: PlaceStoring {
 
     func remember(_ endpoint: TripEndpoint) {
         let rows = recentRows()
-        let hit = rows.first { open($0.sealedEndpoint) == endpoint }
+        let hit = rows.first { open($0.sealedEndpoint)?.routePoint == endpoint.routePoint }
         if let hit {
             hit.usedAt = .now
+            if let sealed = try? sealer.seal(endpoint) { hit.sealedEndpoint = sealed } // Label der letzten Wahl
         } else {
             guard let sealed = try? sealer.seal(endpoint) else { return }
             context.insert(RecentSearch(sealedEndpoint: sealed))
@@ -82,13 +91,21 @@ final class SwiftDataPlaces: PlaceStoring {
         try? context.save()
     }
 
-    @discardableResult func addFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role) -> Bool {
+    @discardableResult func addFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role, replacing: UUID?) -> Bool {
         let rows = favoriteRows()
-        let replaced = rows.filter { open($0.sealedEndpoint) == endpoint || (role != .other && $0.role == role) }
-        if role == .other, !replaced.isEmpty { return true } // schon Favorit: nichts zu tun
+        let samePlace = rows.filter { open($0.sealedEndpoint)?.routePoint == endpoint.routePoint }
+        let old = rows.first { $0.id == replacing }
+        // Schon Favorit (ohne Rolle): nichts zu tun, nur der ersetzte faellt weg.
+        if role == .other, samePlace.contains(where: { $0.id != replacing }) {
+            guard let old else { return true }
+            context.delete(old)
+            return saveOrRollBack()
+        }
         guard let sealed = try? sealer.seal(endpoint) else { return false }
+        let replaced = rows.filter { row in samePlace.contains { $0 === row } || (role != .other && row.role == role) || row === old }
+        let index = old?.sortIndex ?? (rows.map(\.sortIndex).max() ?? -1) + 1
         replaced.forEach(context.delete)
-        context.insert(FavoritePlace(role: role, sealedEndpoint: sealed, sortIndex: (rows.map(\.sortIndex).max() ?? -1) + 1))
+        context.insert(FavoritePlace(role: role, sealedEndpoint: sealed, sortIndex: index))
         return saveOrRollBack()
     }
 
@@ -143,8 +160,8 @@ final class MemoryPlaces: PlaceStoring {
 
     func remember(_ endpoint: TripEndpoint) {
         state.withLock {
-            let kept = $0.recents.first { $0.endpoint == endpoint }?.earlierMinutes
-            $0.recents.removeAll { $0.endpoint == endpoint }
+            let kept = $0.recents.first { $0.endpoint.routePoint == endpoint.routePoint }?.earlierMinutes
+            $0.recents.removeAll { $0.endpoint.routePoint == endpoint.routePoint }
             $0.recents.insert(SavedPlace(id: UUID(), endpoint: endpoint, isFavorite: false, earlierMinutes: kept), at: 0)
             $0.recents = Array($0.recents.prefix(recentPlacesLimit))
         }
@@ -163,13 +180,19 @@ final class MemoryPlaces: PlaceStoring {
         set { failure.withLock { $0 = newValue } }
     }
 
-    @discardableResult func addFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role) -> Bool {
+    @discardableResult func addFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role, replacing: UUID?) -> Bool {
         if failsWrites { return false }
         return state.withLock {
-            let replaced = { (p: SavedPlace) in p.endpoint == endpoint || (role != .other && p.role == role) }
-            if role == .other, $0.favorites.contains(where: replaced) { return true }
-            $0.favorites.removeAll(where: replaced)
-            $0.favorites.append(SavedPlace(id: UUID(), endpoint: endpoint, isFavorite: true, role: role))
+            let samePlace = { (p: SavedPlace) in p.endpoint.routePoint == endpoint.routePoint }
+            let oldIndex = $0.favorites.firstIndex { $0.id == replacing }
+            if role == .other, $0.favorites.contains(where: { samePlace($0) && $0.id != replacing }) {
+                $0.favorites.removeAll { $0.id == replacing }
+                return true
+            }
+            let place = SavedPlace(id: UUID(), endpoint: endpoint, isFavorite: true, role: role)
+            $0.favorites.removeAll { samePlace($0) || (role != .other && $0.role == role) || $0.id == replacing }
+            // Platz des ersetzten Favoriten behalten (wie `sortIndex` im SwiftData-Speicher).
+            $0.favorites.insert(place, at: min(oldIndex ?? $0.favorites.count, $0.favorites.count))
             return true
         }
     }
