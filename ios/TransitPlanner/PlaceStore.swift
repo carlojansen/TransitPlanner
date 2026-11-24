@@ -30,6 +30,9 @@ protocol PlaceStoring: Sendable {
     @MainActor @discardableResult func addFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role, replacing: UUID?) -> Bool
     /// Neuer Name fuer einen Favoriten (Ort, Rolle und Platz bleiben). Der Name ist schon geprueft (`TripEndpoint.normalizedLabel`).
     @MainActor @discardableResult func renameFavorite(_ id: UUID, to label: String) -> Bool
+    /// Ein weiterer Favorit (`.other`) um einen Platz nach oben oder unten; am Rand `true` ohne Aenderung. Nur diese
+    /// Favoriten tauschen untereinander, Rollen-Favoriten (Zuhause, Uni, Arbeit) bleiben. Unbekannt oder mit Rolle: `false`.
+    @MainActor @discardableResult func moveFavorite(_ id: UUID, up: Bool) -> Bool
     @MainActor @discardableResult func removeFavorite(_ id: UUID) -> Bool
     @MainActor func removeRecent(_ id: UUID)
     @MainActor func clearRecents()
@@ -115,6 +118,19 @@ final class SwiftDataPlaces: PlaceStoring {
         guard let row = favoriteRows().first(where: { $0.id == id }), let endpoint = open(row.sealedEndpoint),
               let sealed = try? sealer.seal(endpoint.relabeled(label)) else { return false }
         row.sealedEndpoint = sealed
+        return saveOrRollBack()
+    }
+
+    @discardableResult func moveFavorite(_ id: UUID, up: Bool) -> Bool {
+        var others = favoriteRows().filter { $0.role == .other }
+        guard let i = others.firstIndex(where: { $0.id == id }) else { return false }
+        let j = up ? i - 1 : i + 1
+        guard others.indices.contains(j) else { return true }
+        // Die Plaetze (streng aufsteigend, auch bei Gleichstand) werden neu an die getauschte Reihenfolge verteilt.
+        var last = -1
+        let slots = others.map { row -> Int in last = max(row.sortIndex, last + 1); return last }
+        others.swapAt(i, j)
+        for (row, slot) in zip(others, slots) { row.sortIndex = slot }
         return saveOrRollBack()
     }
 
@@ -211,6 +227,17 @@ final class MemoryPlaces: PlaceStoring {
         return state.withLock { s in
             guard let i = s.favorites.firstIndex(where: { $0.id == id }) else { return false }
             s.favorites[i] = SavedPlace(id: id, endpoint: s.favorites[i].endpoint.relabeled(label), isFavorite: true, role: s.favorites[i].role)
+            return true
+        }
+    }
+
+    @discardableResult func moveFavorite(_ id: UUID, up: Bool) -> Bool {
+        if failsWrites { return false }
+        return state.withLock { s in
+            let slots = s.favorites.indices.filter { s.favorites[$0].role == .other }
+            guard let i = slots.firstIndex(where: { s.favorites[$0].id == id }) else { return false }
+            let j = up ? i - 1 : i + 1
+            if slots.indices.contains(j) { s.favorites.swapAt(slots[i], slots[j]) }
             return true
         }
     }

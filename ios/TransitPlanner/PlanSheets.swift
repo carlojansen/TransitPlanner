@@ -70,14 +70,29 @@ struct StartSheet: View {
                     }
                     let others = flow.favorites.filter { $0.role == .other }
                     if !others.isEmpty {
-                        CardSection("Weitere Favoriten") {
-                            ForEach(others) { saved in
-                                EndpointRow(endpoint: saved.endpoint, symbol: saved.role.symbol)
-                                    .swipeActions {
-                                        Button("Entfernen", systemImage: "star.slash", role: .destructive) { flow.removeFavorite(saved.id) }
-                                        Button("Umbenennen", systemImage: "pencil") { newName = saved.endpoint.label; renaming = saved }
-                                            .tint(Color(.accentBlue))
-                                    }
+                        Section {
+                            ForEach(Array(others.enumerated()), id: \.element.id) { index, saved in
+                                HStack(spacing: 0) {
+                                    EndpointRow(endpoint: saved.endpoint, symbol: saved.role.symbol)
+                                    if editingFavorites, others.count > 1 { moveButtons(saved, index: index, count: others.count) }
+                                }
+                                .swipeActions {
+                                    Button("Entfernen", systemImage: "star.slash", role: .destructive) { flow.removeFavorite(saved.id) }
+                                    Button("Umbenennen", systemImage: "pencil") { newName = saved.endpoint.label; renaming = saved }
+                                        .tint(Color(.accentBlue))
+                                }
+                                .accessibilityActions {
+                                    if index > 0 { Button("Nach oben") { flow.moveFavorite(saved.id, up: true) } }
+                                    if index < others.count - 1 { Button("Nach unten") { flow.moveFavorite(saved.id, up: false) } }
+                                }
+                            }
+                            .listRowBackground(Color(.surfaceCard))
+                        } header: {
+                            HStack {
+                                SectionTitle("Weitere Favoriten")
+                                Spacer()
+                                // Ohne Rollen-Favoriten gibt es sonst keinen Bearbeiten-Knopf (er sitzt bei den Chips).
+                                if !hasRoleFavorites, others.count > 1 { editButton }
                             }
                         }
                     }
@@ -106,8 +121,8 @@ struct StartSheet: View {
             Button("Abbrechen", role: .cancel) {}
             Button("Speichern") { if let renaming { flow.renameFavorite(renaming.id, to: newName) } }
         }
-        // Letzter Favorit entfernt: nichts mehr zu bearbeiten.
-        .onChange(of: flow.favorites.contains { $0.role != .other }) { if !flow.favorites.contains(where: { $0.role != .other }) { editingFavorites = false } }
+        // Nichts mehr zu bearbeiten (keine Rollen-Favoriten, keine zwei weiteren): Modus beenden.
+        .onChange(of: canEditFavorites) { if !canEditFavorites { editingFavorites = false } }
     }
 
     /// Chips in einer festen Reihe unter dem Suchfeld (nicht bei AX: dort stehen sie untereinander in der Liste).
@@ -116,6 +131,25 @@ struct StartSheet: View {
     }
 
     private var hasRoleFavorites: Bool { flow.favorites.contains { $0.role != .other } }
+    private var canEditFavorites: Bool { hasRoleFavorites || flow.favorites.filter { $0.role == .other }.count > 1 }
+
+    /// Pfeile statt Ziehgriffen: gleiche Bedienung mit VoiceOver, grosser Schrift und Wischaktionen in der Zeile.
+    // ponytail: Pfeile; Ziehen (onMove) nur, wenn die Familie es vermisst.
+    private func moveButtons(_ saved: SavedPlace, index: Int, count: Int) -> some View {
+        HStack(spacing: 0) {
+            Button { withAnimation(Motion.micro) { flow.moveFavorite(saved.id, up: true) } } label: {
+                Image(systemName: "chevron.up").frame(minWidth: 44, minHeight: 44)
+            }
+            .disabled(index == 0)
+            .accessibilityLabel("Nach oben")
+            Button { withAnimation(Motion.micro) { flow.moveFavorite(saved.id, up: false) } } label: {
+                Image(systemName: "chevron.down").frame(minWidth: 44, minHeight: 44)
+            }
+            .disabled(index == count - 1)
+            .accessibilityLabel("Nach unten")
+        }
+        .buttonStyle(.borderless)
+    }
 
     private var favoritesHeader: some View {
         HStack {

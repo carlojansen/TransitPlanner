@@ -628,6 +628,45 @@ import TransitCore
         #expect(f.favorites[0].endpoint.label == "Uni")
     }
 
+    /// A3: Verschieben ordnet nur die weiteren Favoriten untereinander; Rollen-Favoriten bleiben, Raender sind ein No-op.
+    @Test func movingFavoritesReordersOnlyTheOthers() throws {
+        let container = try TransitStore.makeContainer(inMemory: true)
+        let stores: [any PlaceStoring] = [MemoryPlaces(), SwiftDataPlaces(container: container, sealer: LocalSealer(secrets: InMemorySecretStore()))]
+        func others(_ places: any PlaceStoring) -> [String] { places.favorites().filter { $0.role == .other }.map(\.endpoint.label) }
+        for places in stores {
+            places.addFavorite(Self.addressEndpoint, role: .home)
+            for e in [Self.stopEndpoint, Self.otherStopEndpoint, TripEndpoint.stop(id: "x", label: "Neuss Hbf")] { places.addFavorite(e, role: .other) }
+            let home = try #require(places.favorites().first { $0.role == .home })
+            let ids = places.favorites().filter { $0.role == .other }.map(\.id)
+            #expect(others(places) == ["Köln Hbf", "Düsseldorf Hbf", "Neuss Hbf"])
+
+            #expect(places.moveFavorite(ids[1], up: true))
+            #expect(others(places) == ["Düsseldorf Hbf", "Köln Hbf", "Neuss Hbf"])
+            #expect(places.moveFavorite(ids[1], up: true)) // schon vorn: nichts
+            #expect(others(places) == ["Düsseldorf Hbf", "Köln Hbf", "Neuss Hbf"])
+            #expect(places.moveFavorite(ids[1], up: false))
+            #expect(places.moveFavorite(ids[2], up: false)) // schon hinten: nichts
+            #expect(others(places) == ["Köln Hbf", "Düsseldorf Hbf", "Neuss Hbf"])
+            #expect(places.moveFavorite(ids[2], up: true))
+            #expect(others(places) == ["Köln Hbf", "Neuss Hbf", "Düsseldorf Hbf"])
+            #expect(places.favorites().first { $0.role == .home }?.id == home.id)
+            #expect(!places.moveFavorite(home.id, up: false)) // Rollen-Favoriten werden nicht verschoben
+            #expect(!places.moveFavorite(UUID(), up: true))
+        }
+    }
+
+    @Test func flowMovesFavoritesAndReportsFailure() {
+        let places = MemoryPlaces(favorites: [Self.stopEndpoint, Self.otherStopEndpoint])
+        let f = AppFlow(.fakes(onboarding: .withLocation, places: places))
+        f.loadSuggestions()
+        f.moveFavorite(f.favorites[1].id, up: true)
+        #expect(f.favorites.map(\.endpoint.label) == ["Düsseldorf Hbf", "Köln Hbf"])
+        places.failsWrites = true
+        f.moveFavorite(f.favorites[1].id, up: true)
+        #expect(f.banner == .storageUnavailable)
+        #expect(f.favorites.map(\.endpoint.label) == ["Düsseldorf Hbf", "Köln Hbf"])
+    }
+
     @Test func nearbyLoadsOncePerStartAndAtMostEveryTwoMinutes() async {
         let calls = Mutex(0)
         let now = Mutex(Date())

@@ -771,6 +771,12 @@ final class AppFlow {
         reloadSaved()
     }
 
+    /// Weiteren Favoriten um einen Platz verschieben (Pfeile im Bearbeiten-Modus, VoiceOver-Aktionen).
+    func moveFavorite(_ id: UUID, up: Bool) {
+        if !deps.places.moveFavorite(id, up: up) { banner = .storageUnavailable }
+        reloadSaved()
+    }
+
     func removeFavorite(_ id: UUID) {
         if !deps.places.removeFavorite(id) { banner = .storageUnavailable }
         reloadSaved()

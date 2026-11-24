@@ -182,6 +182,8 @@ Tests: Backend 94/0 (ein neuer Test mit drei Fällen: Fußweg 10 min mit schnell
 
 **Favoriten, Scheibe 2, Commit 2 von 3 (24.11., Umbenennen A2):** `TripEndpoint.normalizedLabel` (trimmen, leer ablehnen, höchstens 60 Zeichen) und `relabeled` in TransitCore; `PlaceStoring.renameFavorite` (neu versiegeln, gleiche Zeile, Rolle und Platz; Rollback bei Fehler); `AppFlow.renameFavorite` mit Banner bei Speicherfehler. Oberfläche: Wischaktion "Umbenennen" auf "Weitere Favoriten" mit Dialog (Textfeld). Tests: TransitCore 247/0, App 262/0, Klartext-Prüfung deckt den neuen Namen ab, Gegenprobe rot. Nicht am Gerät oder Simulator angesehen (Dialog, Wischen, VoiceOver). Review durch `security-hig-reviewer` nach Commit 3. Weiter: Commit 3 (Reihenfolge).
 
+**Favoriten, Scheibe 2, Commit 3 von 3 (24.11., Reihenfolge A3):** `PlaceStoring.moveFavorite(_:up:)` tauscht nur weitere Favoriten untereinander (Plätze streng aufsteigend neu verteilt, Rollen-Favoriten unberührt, Rand = keine Änderung, Rollen-Favorit oder unbekannte ID = `false`), Rollback bei Fehler, Banner im Flow. Oberfläche: Pfeile im Bearbeiten-Modus (statt Ziehgriffen, ponytail: Ziehen nur bei Bedarf), VoiceOver-Aktionen "Nach oben/unten" immer; "Bearbeiten" auch bei nur weiteren Favoriten (ab zwei). Tests: TransitCore 247/0, App 264/0, Gegenprobe rot. Nicht am Gerät oder Simulator angesehen (Pfeile, Abschnittskopf mit Knopf, große Schrift, VoiceOver). Review über Scheibe 2 steht aus.
+
 **Als Nächstes (Plan, Carlo 24.11.):** Favoriten, dann Tickets anzeigen. Gleis Köln später. U5-Ursache ist nicht belegt; die ersten Berichte klären sie. Ungeklärt: "Fahrten aus der Vergangenheit" (laufende Fahrt prüfen oder Verlauf-Liste).
 
 ## Ideen (nicht geplant, nicht begonnen)
