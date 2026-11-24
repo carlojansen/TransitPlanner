@@ -117,6 +117,7 @@ import TransitCore
 
 @MainActor @Suite struct AppFlowTests {
     static let stopEndpoint = TripEndpoint.stop(id: "de-DELFI_de:05315:11201", label: "Köln Hbf")
+    static let otherStopEndpoint = TripEndpoint.stop(id: "de-DELFI_de:05111:18235", label: "Düsseldorf Hbf")
     static let addressEndpoint = TripEndpoint.coordinate(GeoCoordinate(latitude: 51.2201, longitude: 6.7905), label: "Musterstraße 1")
 
     func flow(search: FakeStopSearch = FakeStopSearch(), planner: FakeRoutePlanner = FakeRoutePlanner(),
@@ -361,7 +362,8 @@ import TransitCore
         #expect(f.favorites.count == 1) // Entfernen ist nicht gelungen
     }
 
-    /// A4: Favorit mit veralteter Haltestelle (NOT_FOUND): das Banner bietet "Favorit neu festlegen", sonst nichts Neues.
+    /// A4: Favorit mit veralteter Haltestelle (NOT_FOUND): das Banner bietet "Favorit neu festlegen". Der alte Favorit
+    /// bleibt, bis der neue gespeichert ist.
     @Test func staleFavoriteCanBeReplaced() async {
         let places = MemoryPlaces()
         places.addFavorite(Self.stopEndpoint, role: .uni)
@@ -377,11 +379,50 @@ import TransitCore
         f.perform(.replaceFavorite)
         #expect(f.phase == .plan(.destination))
         #expect(f.assigningRole == .uni)
-        #expect(f.favorites.map(\.role) == [.other]) // nur der veraltete ist weg
+        #expect(f.favorites.count == 2) // noch nichts verloren
         planner.setFailure(nil)
-        f.choose(Self.stopEndpoint)
+        f.choose(Self.otherStopEndpoint)
         #expect(f.phase == .start)
-        #expect(f.favorites.contains { $0.role == .uni })
+        #expect(f.favorites.map(\.endpoint).contains(Self.otherStopEndpoint))
+        #expect(!f.favorites.map(\.endpoint).contains(Self.stopEndpoint))
+        #expect(f.favorites.count == 2)
+    }
+
+    /// Abbruch und Speicherfehler lassen den alten Favoriten stehen; bei einem Fehler zeigt das Banner ihn.
+    @Test func replacingFavoriteLosesNothingOnCancelOrFailure() async {
+        let places = MemoryPlaces()
+        places.addFavorite(Self.stopEndpoint, role: .other)
+        let f = AppFlow(.fakes(planner: FakeRoutePlanner(failure: .notFound), onboarding: .withLocation, places: places))
+        f.loadSuggestions()
+        f.choose(Self.stopEndpoint)
+        await f.waitForWork()
+        f.perform(.replaceFavorite)
+        f.send(.back)
+        #expect(f.favorites.count == 1)
+        #expect(f.replacingFavorite == nil)
+
+        f.choose(Self.stopEndpoint)
+        await f.waitForWork()
+        f.perform(.replaceFavorite)
+        places.failsWrites = true
+        f.choose(Self.otherStopEndpoint)
+        #expect(f.banner == .storageUnavailable)
+        #expect(f.favorites.map(\.endpoint) == [Self.stopEndpoint])
+    }
+
+    /// Zwei Haltestellen in der Anfrage: unklar, welche veraltet ist; ein gueltiger Favorit wird nie geloescht.
+    @Test func ambiguousStopsOfferOnlyNewSearch() async {
+        let places = MemoryPlaces()
+        places.addFavorite(Self.stopEndpoint, role: .uni)
+        let f = AppFlow(.fakes(planner: FakeRoutePlanner(failure: .notFound), onboarding: .withLocation, places: places))
+        f.loadSuggestions()
+        f.send(.editEndpoint(.origin))
+        f.choose(Self.otherStopEndpoint)
+        f.send(.editEndpoint(.destination))
+        f.choose(Self.stopEndpoint)
+        await f.waitForWork()
+        #expect(f.banner == .notFound)
+        #expect(f.actions(for: .notFound) == [.newSearch])
     }
 
     /// Ohne Favorit (normale Suche) bleibt "Neu suchen" die einzige Aktion; "Mein Standort" ist nie ein Favorit.

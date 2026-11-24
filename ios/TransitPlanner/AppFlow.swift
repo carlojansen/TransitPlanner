@@ -248,6 +248,8 @@ final class AppFlow {
     private(set) var viaRejections = 0
     /// Leere Favoriten-Kachel angetippt: die naechste Wahl in Planen wird dieser Favorit (keine Suche).
     private(set) var assigningRole: FavoritePlace.Role?
+    /// Veralteter Favorit, den der neu festgelegte Ort ersetzt; faellt erst nach erfolgreichem Speichern weg.
+    private(set) var replacingFavorite: UUID?
 
     // Fahrt
     /// Standard "Mein Standort" (aufgeloest erst beim Planen; ohne Erlaubnis muss ein Start gewaehlt werden).
@@ -593,7 +595,7 @@ final class AppFlow {
         if new == .start || new.isPlan { replacedReminder = nil }
         // Start und Planen zeigen beide die Naehe; erst danach wird der Abruf abgebrochen.
         if !new.isPlan, new != .start { nearbyTask?.cancel() }
-        if !new.isPlan { assigningRole = nil }
+        if !new.isPlan { assigningRole = nil; replacingFavorite = nil }
         movedBackward = event.isBackward
         phase = new
         if plans, new == .routeSelection { startPlanning() }
@@ -797,7 +799,8 @@ final class AppFlow {
         switch phase {
         case .plan(let slot):
             if let role = assigningRole {
-                let saved = saveFavorite(endpoint, role: role)
+                var saved = saveFavorite(endpoint, role: role)
+                if saved, let old = replacingFavorite { saved = deps.places.removeFavorite(old); reloadSaved() }
                 send(.back)
                 if !saved { banner = .storageUnavailable }
                 return
@@ -1978,14 +1981,18 @@ final class AppFlow {
             actions = actions.map { $0 == .openSettings ? .allowLocation : $0 }
         }
         // Unbekannte Haltestelle an einem Favoriten (Datenaktualisierung): den Favoriten neu festlegen koennen.
-        if error == .notFound, staleFavorite != nil { actions.insert(.replaceFavorite, at: 0) }
+        if error == .notFound, phase == .routeSelection, staleFavorite != nil { actions.insert(.replaceFavorite, at: 0) }
         return actions
     }
 
-    /// Favorit, dessen Haltestelle als Start oder Ziel gerade gesucht wurde. Nur Haltestellen haben eine ID, die veralten kann.
+    /// Der Favorit, dessen Haltestelle veraltet ist. Das Backend sagt bei NOT_FOUND nicht, welche ID unbekannt ist:
+    /// nur eindeutig, wenn unter Start, Ziel und Zwischenstopps genau eine Haltestelle vorkommt und sie ein Favorit ist.
     private var staleFavorite: SavedPlace? {
-        let used = [origin.place, destination?.place].compactMap { $0 }.filter { if case .stop = $0 { true } else { false } }
-        return favorites.first { used.contains($0.endpoint) }
+        let ids = Set([origin.place, destination?.place].compactMap { endpoint -> String? in
+            if case .stop(let id, _) = endpoint { id } else { nil }
+        } + via.map(\.id))
+        guard ids.count == 1, let id = ids.first else { return nil }
+        return favorites.first { if case .stop(let favoriteID, _) = $0.endpoint { favoriteID == id } else { false } }
     }
 
     func perform(_ action: BannerAction) {
@@ -2008,11 +2015,11 @@ final class AppFlow {
             Task { await allowLocation() }
         case .newSearch: send(.reset)
         case .replaceFavorite:
-            // Der veraltete Favorit ist ohne gueltige ID nutzlos; die Rolle bleibt fuer den neuen Ort frei.
+            // Der alte Favorit bleibt, bis ein neuer Ort gespeichert ist (Abbruch oder Speicherfehler verlieren nichts).
             guard let stale = staleFavorite else { return }
-            removeFavorite(stale.id)
             send(.reset)
             assignFavorite(stale.role)
+            replacingFavorite = stale.id
         case .openSettings: break // oeffnet die View per openURL
         }
     }
