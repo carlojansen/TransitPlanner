@@ -1,0 +1,119 @@
+# Plan: Favoriten ausbauen, dann Tickets anzeigen
+
+Stand: 24.11.2026. Entwurf zur Freigabe durch Carlo, noch kein Code.
+Herkunft: `docs/STATUS.md`, "Als Nächstes (Plan, Carlo 24.11.): Favoriten, dann Tickets anzeigen."
+
+## 1. Ausgangslage (aus dem Code, nicht geraten)
+
+Favoriten gibt es schon in einer Grundform:
+
+- Modell `FavoritePlace` (SwiftData, Ort AES-GCM-verschlüsselt, Feld `sortIndex`), Rollen Zuhause, Uni, Arbeit, weitere.
+- Start-Sheet mit Kacheln, "Bearbeiten"/"Fertig", Entfernen per Minus, Wischen oder Kontextmenü.
+- Hinzufügen nur über zwei Wege: leere Kachel belegen oder Wischen auf einer Verlaufszeile.
+- Tipp auf einen Favoriten sucht sofort ab "Mein Standort", Zeit "Jetzt".
+
+Tickets gibt es noch nicht: im Code und in den Docs kommt nichts dazu vor (kein Wallet, kein PassKit, kein Tarif).
+
+## 2. Vorhaben
+
+### Teil A: Favoriten (zuerst)
+
+Die Grundform ist da. Der Ausbau schließt Lücken im Alltag. Vorschlag, klein gehalten:
+
+| Nr. | Baustein | Nutzen |
+|---|---|---|
+| A1 | Favorit aus einer Suchzeile, einer Haltestelle oder dem Ziel einer Route setzen (Stern) | Heute geht es nur über Verlauf oder leere Kachel |
+| A2 | Umbenennen (Label) | "Weyertal 119a" wird "Wohnung Oma" |
+| A3 | Reihenfolge ändern (`sortIndex` wird schon gespeichert, aber nie verändert) | Wichtigstes nach vorn |
+| A4 | Fehlerfall Haltestelle unbekannt (`NOT_FOUND`, API.md): Favorit nicht stumm scheitern lassen, sondern "Neu suchen" anbieten | Stop-IDs ändern sich nach Datenaktualisierung |
+| A5 | Speicherfehler sichtbar machen statt `try?` zu verschlucken | Heute wirkt ein fehlgeschlagenes Speichern wie ein Erfolg |
+
+Nicht dabei, bewusst: Rückweg-Knopf, Widget, Siri-Kurzbefehl, iCloud-Sync. Jedes davon ist ein eigenes Vorhaben (Familie braucht es noch nicht, Scope bleibt klein).
+
+### Teil B: Tickets zeigen (Entscheidung Carlo, 24.11.)
+
+Die Leute kaufen ihre Tickets woanders und zeigen sie im Fahrzeug in echt vor. Die App verkauft nichts, prüft nichts und rechnet keinen Tarif. Sie zeigt nur das Ticket schnell an.
+
+- **Hinzufügen auf zwei Wegen:** aus der Wallet oder selbst (Foto/Screenshot, PDF, Datei).
+- **Anzeigen:** ein Ticket groß und sofort, ohne Umweg. Meistens braucht man nur eins. Der Knopf erscheint nur, wenn eine Route offen ist.
+- **Wechseln:** weitere Tickets liegen einen Wisch oder Tipp entfernt (Seitenpunkte oder kleine Liste), kein eigener Bildschirm.
+- **Daten:** Ticketbild und Name liegen nur lokal und verschlüsselt (gleiche Verschlüsselung wie die Favoriten), nie im Backend, nie im Fallbericht, nie im Backup im Klartext.
+
+Technische Annahme, die vor dem Bau geprüft wird:
+
+| Frage | Stand | Prüfung |
+|---|---|---|
+| Kann die App fremde Wallet-Pässe (z. B. Deutschlandticket der Bahn) auflisten? | Vermutlich nein: `PKPassLibrary` liefert nur Pässe, die zur eigenen App gehören | Apple-Doku und kleiner Test am Gerät, bevor wir planen |
+| Dann was heißt "aus der Wallet"? | Nutzer teilt den Pass als `.pkpass`-Datei oder Bild in die App (Teilen-Menü, Dateien) | Entscheidung nach der Prüfung |
+| Hell/dunkel beim Vorzeigen | Barcode und QR brauchen hohe Helligkeit und weißen Grund | Bildschirm beim Anzeigen aufhellen, danach zurücksetzen |
+
+Stufen (jede einzeln freigebbar):
+
+1. **B1 Hinzufügen per Foto, Bild oder PDF, Anzeigen eines Tickets**, Löschen. Kein Wallet.
+2. **B2 Mehrere Tickets, Wechseln, Umbenennen** (z. B. "Deutschlandticket", "Tageskarte").
+3. **B3 Wallet-Weg** (`.pkpass` importieren, sonst fotografieren oder scannen), erst nach der Prüfung oben.
+
+Nicht dabei: Ticketkauf, Gültigkeitsprüfung, Tarif- und Preisanzeige, Kontrolle durch die App.
+
+## 3. Umsetzung in Teilen
+
+Zu viel für einen Durchlauf. Darum Scheiben, jede mit eigenem Test, Review und Freigabe:
+
+| Scheibe | Inhalt | Agent |
+|---|---|---|
+| 1 | A5 Speicherfehler sichtbar, A4 unbekannte Haltestelle "Neu suchen" | `ios-architect` |
+| 2 | A2 Umbenennen, A3 Reihenfolge | `ios-architect` |
+| 3 | A1 Stern aus Suche, Haltestelle und Ziel | `ios-architect` |
+| 4 | Prüfung Wallet-Zugriff (Doku und Gerät), dann B1 | `ios-architect` |
+| 5 | B2, danach B3 falls die Prüfung es trägt | `ios-architect` |
+
+Ablauf je Scheibe (nach `CLAUDE.md` und den Lehren aus dem Zwischenstopp-Feature):
+
+1. **Test zuerst:** roter Test, dann Code. Gegenprobe: Regel entfernen, Test wird rot.
+2. **Logik ins Modell:** Regeln in `TransitCore`/`PlaceStore`, nicht in Views. Jede Regel einmal.
+3. **Tests laufen lassen:** `cd ios/TransitCore && swift test`, dann die App-Tests mit `xcodebuild test` und eigenem `-derivedDataPath`. Wenn `project.yml` sich ändert, vorher `cd ios && xcodegen generate`. Backend bleibt unberührt (`npm test` nur zur Sicherheit).
+4. **Review:** `security-hig-reviewer` auf den Diff, Blocker beheben. Bei Scheibe 4 und 5 zusätzlich Datenschutz der Ticketdaten.
+5. **Doku:** `docs/STATUS.md`, bei neuer Oberfläche `docs/DESIGN.md`.
+6. **Commit** klein und thematisch, nie `git commit -a`, Tests vorher grün.
+7. **Stopp** und Freigabe von Carlo abwarten, dann nächste Scheibe.
+
+Teil A (Scheiben 1 bis 3) ist freigegeben. Teil B beginnt mit der Prüfung in Scheibe 4.
+
+### Prüfung der Workflows (24.11.)
+
+- Agenten `backend-engineer`, `ios-architect`, `security-hig-reviewer`, `report-analyst` liegen in `.claude/agents/`, passend zur Tabelle in `CLAUDE.md`.
+- `npm test` und `xcodegen generate` stimmen mit `backend/package.json` und `ios/project.yml` überein.
+- Lücke: `CLAUDE.md` nennt nur "`xcodebuild test`" ohne Ziel und ohne `swift test` für TransitCore. Vorschlag: den Befehl dort ergänzen (kleine Änderung, nur mit Freigabe).
+- Warnungen gelten als Fehler (`SWIFT_TREAT_WARNINGS_AS_ERRORS`): neuer Code muss ohne Warnung bauen.
+
+## 4. Wo Fehler passieren können
+
+| Risiko | Warum | Gegenmaßnahme |
+|---|---|---|
+| Datenschutz: Label oder Ort landet im Klartext | Neue Felder (Umbenennen) vergessen die Verschlüsselung | Label nur im versiegelten `TripEndpoint`, Test, der den Rohwert in der Datenbank prüft |
+| Backend sieht Favoriten-Namen | "Zuhause" könnte in Anfrage oder Bericht rutschen | Anfragen nur mit Koordinaten oder Stop-ID (CLAUDE.md), vorhandener Test in `TripSnapshotTests` als Vorbild |
+| Verlorene Favoriten durch Migration | Neue Felder am SwiftData-Modell | Neue Felder optional (wie `earlierMinutes`), Migration am Gerät mit altem Store testen |
+| Doppelte Favoriten | Gleicher Ort über Stern und Kachel | `addFavorite` prüft schon auf gleichen Endpunkt; für A1 Test ergänzen |
+| Rolle Zuhause doppelt belegt | Umsortieren und Belegen greifen ineinander | Rolle bleibt eindeutig, Test auf "ersetzt statt verdoppelt" |
+| Veraltete Stop-ID | Datenaktualisierung bei Transitous | A4: Fehler abfangen, neu suchen anbieten |
+| Stilles Scheitern beim Speichern | `try?` in `PlaceStore` | A5: Fehler als `TransitError` melden |
+| Bedienung: Umsortieren per Drag kollidiert mit waagerechtem Scroll | Kacheln liegen in einem horizontalen Scroll | Umsortieren nur im Bearbeiten-Modus, am Gerät prüfen |
+| Barrierefreiheit | Neue Aktionen ohne VoiceOver-Alternative | Jede Geste hat eine Accessibility-Aktion (wie "Entfernen" heute) |
+| Ticketbild im Klartext oder im Bericht | Ticket enthält Name und Code, ist sensibel | Verschlüsselt speichern wie Favoriten, aus Fallbericht und Backup ausschließen, Test auf den Rohwert |
+| Wallet-Zugriff geht gar nicht | `PKPassLibrary` zeigt fremde Pässe vermutlich nicht | Scheibe 4 prüft zuerst; Import per Datei oder Teilen als Ersatz |
+| Ticket unlesbar beim Vorzeigen | Zu dunkel, Bild verzerrt oder gespiegelt | Aufhellen, Seitenverhältnis erhalten, am Gerät prüfen |
+| Falscher Eindruck "gültig" | App zeigt nur ein Bild | Kein Gültigkeitshinweis, kein Haken, keine Prüfung |
+| Bildschirm sperrt beim Vorzeigen | Kontrolle dauert | Display nicht sperren, solange das Ticket offen ist, danach zurücksetzen |
+| Scope wächst | Rückweg, Widget, Sync wirken naheliegend | Liste "Nicht dabei" oben, Erweiterungen als eigenes Ticket |
+
+## 5. Entscheidungen
+
+Entschieden (Carlo, 24.11.):
+- Teil A wie beschrieben.
+- Tickets nur zeigen. Hinzufügen aus der Wallet oder selbst, meist ein Ticket, einfach wechseln. Gekauft wird woanders.
+- **Wallet-Weg:** Teilen oder Datei, wenn die App fremde Pässe nicht lesen darf. Sonst bieten wir an, das Ticket zu fotografieren oder zu scannen (Kamera oder Foto, kein eigener Ticket-Leser).
+- **Ticket-Knopf nur bei offener Route** (Routenauswahl, Details, Navigation). Nicht im Start und nicht in den Einstellungen. Grund: Mit offener Route spart der Knopf Schritte (Wallet suchen, Pass wählen). Ohne Route ist die Wallet selbst der kürzere Weg (Seitentaste doppelt drücken). Wir wollen nicht besser als die Wallet sein, nur näher an der Fahrt.
+
+Offen:
+1. Wo genau sitzt der Knopf in Routenauswahl, Details und Navigation? (Entwurf in Scheibe 4, mit Blick auf `docs/DESIGN.md`.)
+2. Ergebnis der Wallet-Prüfung aus Scheibe 4.
