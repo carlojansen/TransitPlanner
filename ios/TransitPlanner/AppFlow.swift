@@ -738,6 +738,31 @@ final class AppFlow {
         }
     }
 
+    /// Favorit am gleichen Ort (gleicher `routePoint`, der Name darf abweichen). Die Regel steht nur hier und im Store.
+    func favorite(at endpoint: TripEndpoint) -> SavedPlace? {
+        favorites.first { $0.endpoint.routePoint == endpoint.routePoint }
+    }
+
+    /// Stern anbieten? Nicht beim Festlegen einer Kachel (auch A4), nicht bei Zwischenstopps (nie Favorit, Plan) und
+    /// nicht ohne brauchbaren Namen. "Mein Standort" hat keinen `TripEndpoint`, also nie einen Stern.
+    func offersFavoriteStar(for endpoint: TripEndpoint) -> Bool {
+        assigningRole == nil && activeSlot != .via && TripEndpoint.normalizedLabel(endpoint.label) != nil
+    }
+
+    /// Stern: setzt einen weiteren Favoriten oder entfernt ihn. Zuhause, Uni und Arbeit bleiben (Entfernen ueber
+    /// "Bearbeiten" an der Kachel). Ein Speicherfehler verdraengt kein Banner, das schon steht (Restzeit, Leerzustand).
+    func toggleFavorite(_ endpoint: TripEndpoint) {
+        guard let label = TripEndpoint.normalizedLabel(endpoint.label) else { return }
+        let ok: Bool
+        if let saved = favorite(at: endpoint) {
+            ok = saved.role == .other ? deps.places.removeFavorite(saved.id) : true
+        } else {
+            ok = deps.places.addFavorite(endpoint.relabeled(label), role: .other)
+        }
+        if !ok, banner == nil { banner = .storageUnavailable }
+        reloadSaved()
+    }
+
     func addFavorite(_ endpoint: TripEndpoint) {
         saveFavorite(endpoint, role: .other)
     }

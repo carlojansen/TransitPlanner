@@ -694,6 +694,57 @@ import TransitCore
         }
     }
 
+    /// A1: Stern setzt einen weiteren Favoriten und entfernt ihn wieder; Rollen bleiben; umbenannt wird erkannt.
+    @Test func starTogglesOtherFavoritesButKeepsRoles() {
+        let places = MemoryPlaces()
+        places.addFavorite(Self.addressEndpoint, role: .home)
+        let f = AppFlow(.fakes(onboarding: .withLocation, places: places))
+        f.loadSuggestions()
+        #expect(f.favorite(at: Self.stopEndpoint) == nil)
+        f.toggleFavorite(Self.stopEndpoint)
+        #expect(f.favorite(at: Self.stopEndpoint)?.role == .other)
+        // Gleicher Ort unter anderem Namen gilt als Favorit; ein zweiter Tipp entfernt ihn.
+        #expect(f.favorite(at: Self.stopEndpoint.relabeled("Wohnung Oma")) != nil)
+        f.toggleFavorite(Self.stopEndpoint.relabeled("Wohnung Oma"))
+        #expect(f.favorite(at: Self.stopEndpoint) == nil)
+        // Zuhause bleibt: der Stern ist gefuellt, ein Tipp entfernt nichts (Entfernen ueber Bearbeiten an der Kachel).
+        f.toggleFavorite(Self.addressEndpoint)
+        #expect(f.favorite(at: Self.addressEndpoint)?.role == .home)
+        #expect(f.favorites.count == 1)
+    }
+
+    /// Kein Stern beim Festlegen einer Kachel, bei Zwischenstopps und ohne brauchbaren Namen.
+    @Test func starIsOfferedOnlyWhereItMakesSense() {
+        let f = AppFlow(.fakes(onboarding: .withLocation))
+        #expect(f.offersFavoriteStar(for: Self.stopEndpoint))
+        #expect(!f.offersFavoriteStar(for: .stop(id: "x", label: "  ")))
+        f.send(.editEndpoint(.via))
+        #expect(!f.offersFavoriteStar(for: Self.stopEndpoint))
+        f.send(.back)
+        f.assignFavorite(.work)
+        #expect(!f.offersFavoriteStar(for: Self.stopEndpoint))
+    }
+
+    /// Scheitert das Speichern, bleibt der Zustand; ein schon sichtbares Banner (z. B. Restzeit) wird nicht verdraengt.
+    @Test func starFailureShowsBannerButKeepsExistingOne() async {
+        let places = MemoryPlaces()
+        let f = AppFlow(.fakes(planner: FakeRoutePlanner(failure: .offline), onboarding: .withLocation, places: places))
+        f.choose(Self.stopEndpoint)
+        await f.waitForWork()
+        #expect(f.banner == .offline)
+        places.failsWrites = true
+        f.toggleFavorite(Self.addressEndpoint)
+        #expect(f.banner == .offline) // nicht verdraengt
+        f.send(.reset)
+        f.toggleFavorite(Self.stopEndpoint)
+        #expect(f.banner == .storageUnavailable)
+        #expect(f.favorites.isEmpty)
+        f.send(.editEndpoint(.destination)) // Phasenwechsel loescht das Banner
+        #expect(f.banner == nil)
+        f.toggleFavorite(Self.stopEndpoint)
+        #expect(f.banner == .storageUnavailable)
+    }
+
     @Test func flowMovesFavoritesAndReportsFailure() {
         let places = MemoryPlaces(favorites: [Self.stopEndpoint, Self.otherStopEndpoint])
         let f = AppFlow(.fakes(onboarding: .withLocation, places: places))

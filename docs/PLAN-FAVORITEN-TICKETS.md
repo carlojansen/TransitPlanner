@@ -89,6 +89,16 @@ Ablauf je Scheibe (nach `CLAUDE.md` und den Lehren aus dem Zwischenstopp-Feature
 7. Drei Commits: Store-Regeln, Umbenennen (A2), Reihenfolge (A3); danach `DESIGN.md` Zeile 110 und `STATUS.md`.
 8. Annahmen, bis Carlo anders entscheidet: Umbenennen nur für weitere Favoriten; A4 übernimmt den Namen des neuen Orts.
 
+### Auflagen aus der Auswirkungsprüfung Scheibe 3 (24.11.)
+
+1. Stern nur auf Suchtreffer, Nähe-Haltestellen und das gewählte Ziel (`flow.destination?.place`), nie auf GPS ("Mein Standort" hat keinen `TripEndpoint`). Kein Stern bei Zwischenstopps und beim Festlegen einer Kachel (auch A4).
+2. "Ist Favorit" einmal im Modell (`favorite(at:)`, gleicher `routePoint`), nicht in den Views. Namen über `normalizedLabel`, ohne Namen kein Stern.
+3. Rollen-Favoriten: Stern gefüllt, aber ohne Wirkung; Entfernen nur über Bearbeiten an der Kachel (Annahme, bis Carlo anders sagt).
+4. Speicherfehler verdrängt kein Banner, das schon steht (Restzeit, Leerzustand der Routenauswahl).
+5. Stern ist ein eigenes VoiceOver-Element (Label je Zustand, `.isSelected`), eigener Identifier `favoriteStar`, 44 pt mit `.contentShape`, Haptik, Reduce Motion beachten, nicht in `EndpointRow` einbauen (sonst auch auf Favoritenzeilen).
+6. Commits: (1) Modell und Tests, (2) Stern in Suche und Nähe, (3) Stern an der offenen Route (Details rechts frei; Routenauswahl hat nur Platz neben der Zeit, Platz mit dem Ticket-Knopf aus Scheibe 4 gemeinsam festlegen).
+7. Am Gerät prüfen: Stern neben der Gehzeit bei AX3, Sprung der Liste nach dem Stern, stabile Koordinaten für dieselbe Adresse aus Apple Karten.
+
 Teil A (Scheiben 1 bis 3) ist freigegeben. Teil B beginnt mit der Prüfung in Scheibe 4.
 
 ### Prüfung der Workflows (24.11.)
