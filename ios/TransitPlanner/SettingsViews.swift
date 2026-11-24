@@ -1,5 +1,7 @@
+import PhotosUI
 import SwiftUI
 import TransitCore
+import UniformTypeIdentifiers
 
 // MARK: - A1 / A2 Erster Start
 
@@ -202,7 +204,7 @@ struct ServerKeyView: View {
 // MARK: - G1 Einstellungen
 
 struct SettingsSheet: View {
-    enum Route: Hashable { case server, sources, report }
+    enum Route: Hashable { case server, ticket, sources, report }
 
     @Environment(AppFlow.self) private var flow
     @Environment(\.dismiss) private var dismiss
@@ -227,6 +229,12 @@ struct SettingsSheet: View {
                                     value: flow.hasServerKey ? String(localized: "Schlüssel gespeichert") : String(localized: "Schlüssel fehlt"))
                     }
                     .accessibilityIdentifier("serverKeyLink")
+                    NavigationLink(value: Route.ticket) {
+                        SettingsRow(title: "Ticket",
+                                    value: flow.shownTicket != nil ? String(localized: "Gespeichert")
+                                        : flow.hasUnreadableTicket ? String(localized: "Nicht lesbar") : String(localized: "Kein Ticket"))
+                    }
+                    .accessibilityIdentifier("ticketLink")
                 }
                 .buttonStyle(.plain)
                 Section {
@@ -258,6 +266,7 @@ struct SettingsSheet: View {
             .navigationDestination(for: Route.self) { route in
                 switch route {
                 case .server: ServerKeyView()
+                case .ticket: TicketSettingsView()
                 case .sources: SourcesView(attribution: flow.attribution)
                 case .report: ReportView()
                 }
@@ -271,6 +280,7 @@ struct SettingsSheet: View {
         }
         .presentationDetents([.large])
         .task { await flow.detectTestFlight() }
+        .task { await flow.loadTickets() }
     }
 
     /// Echter iOS-Status (wird bei Rueckkehr in die App neu gelesen).
@@ -439,5 +449,113 @@ private struct StationBufferStepper: View {
         .frame(minHeight: 44)
         .accessibilityValue(Text("\(reminders.stationBufferMinutes) Minuten"))
         .accessibilityIdentifier("stationBufferStepper")
+    }
+}
+
+// MARK: - Ticket (nur zeigen, nie pruefen)
+
+struct TicketSettingsView: View {
+    @Environment(AppFlow.self) private var flow
+    @State private var photo: PhotosPickerItem?
+    @State private var picksFile = false
+    @State private var confirmsDelete = false
+    /// Der Fehler steht hier selbst: das Banner der Karte laege unter dem Sheet.
+    @State private var problem: String?
+
+    var body: some View {
+        Form {
+            Section {
+                Text("Dein Ticket liegt verschlüsselt nur auf diesem iPhone. Die App zeigt es nur, sie prüft es nicht.")
+                    .font(.subheadline)
+            }
+            if let ticket = flow.shownTicket {
+                Section("Gespeichert") {
+                    preview(ticket)
+                    Button("Ticket löschen", role: .destructive) { confirmsDelete = true }
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("ticketDelete")
+                }
+            } else if flow.hasUnreadableTicket {
+                Section {
+                    Label("Das gespeicherte Ticket lässt sich nicht lesen.", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Color(.statusWarn))
+                    Button("Ticket löschen", role: .destructive) { confirmsDelete = true }
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("ticketDelete")
+                }
+            }
+            Section {
+                PhotosPicker(selection: $photo, matching: .images) {
+                    Label("Foto wählen", systemImage: "photo").frame(minHeight: 44)
+                }
+                .accessibilityIdentifier("ticketPhoto")
+                Button { picksFile = true } label: {
+                    Label("Datei wählen", systemImage: "doc").frame(minHeight: 44)
+                }
+                .accessibilityIdentifier("ticketFile")
+            } footer: {
+                Text(flow.shownTicket == nil ? "Bild oder PDF bis 10 MB." : "Ein neues Ticket ersetzt das gespeicherte.")
+            }
+            if let problem {
+                Section {
+                    Label(problem, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Color(.statusWarn))
+                        .accessibilityIdentifier("ticketProblem")
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .navigationTitle("Ticket")
+        .navigationBarTitleDisplayMode(.inline)
+        .fileImporter(isPresented: $picksFile, allowedContentTypes: [.image, .pdf]) { result in
+            Task { await importFile(result) }
+        }
+        .onChange(of: photo) {
+            guard let item = photo else { return }
+            photo = nil
+            Task { await add { try? await item.loadTransferable(type: Data.self) } }
+        }
+        .confirmationDialog("Ticket löschen?", isPresented: $confirmsDelete, titleVisibility: .visible) {
+            Button("Löschen", role: .destructive) {
+                Task {
+                    for entry in flow.tickets { await flow.deleteTicket(entry.id) }
+                    problem = nil
+                }
+            }
+        } message: {
+            Text("Du kannst es danach neu hinzufügen.")
+        }
+    }
+
+    @ViewBuilder private func preview(_ ticket: StoredTicket) -> some View {
+        switch ticket.kind {
+        case .image:
+            if let image = UIImage(data: ticket.data) {
+                Image(uiImage: image).resizable().scaledToFit()
+                    .frame(maxHeight: 220)
+                    .accessibilityLabel("Vorschau des Tickets")
+            }
+        case .pdf:
+            Label("PDF-Ticket", systemImage: "doc.richtext")
+        }
+    }
+
+    private func importFile(_ result: Result<URL, any Error>) async {
+        guard case .success(let url) = result else { return } // Abbruch ist kein Fehler
+        await add {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            // Grenze vor dem Lesen, sonst laedt eine riesige Datei erst in den Speicher.
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? .max
+            guard size <= TicketImport.maxRawBytes else { return nil }
+            return try? Data(contentsOf: url)
+        }
+    }
+
+    /// Daten holen (nil = nicht lesbar), speichern, Fehler hier zeigen.
+    private func add(_ load: () async -> Data?) async {
+        problem = nil
+        guard let data = await load() else { problem = TransitError.ticketUnreadable.errorDescription; return }
+        do throws(TransitError) { try await flow.addTicket(data) } catch { problem = error.errorDescription }
     }
 }

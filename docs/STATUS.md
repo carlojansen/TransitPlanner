@@ -192,7 +192,7 @@ Tests: Backend 94/0 (ein neuer Test mit drei Fällen: Fußweg 10 min mit schnell
 
 **Tickets, Scheibe 4 / B1, Commit 2 von 5 (24.11., App-Logik):** `TicketStoring` (live `TicketStore`, Fake `MemoryTickets`), `beginTicketDisplay` (live: Helligkeit über die Szene statt `UIScreen.main`, `isIdleTimerDisabled`; Rückgabe stellt beides her) mit Fake `FakeTicketDisplay`. `AppFlow`: `offersTicket` (nur mit lesbarem Ticket und nur bei offener Route, Regel `showsRouteContent(phase)` einmal), `showTicket`/`closeTicket`, Schließen beim Verlassen der Route-Phasen, Ende der Anzeige im Hintergrund und Neubeginn beim Aktivwerden, `addTicket` (Aufbereiten, Verschlüsseln, Schreiben außerhalb des Main Actors, altes Ticket erst nach dem Speichern ersetzt, Fehler wird an den Aufrufer gereicht), `deleteTicket`. Tests: App 275/0 (3 neu, Gegenprobe beider Regeln rot), keine Warnungen. Neue Datei verlangt `xcodegen generate`. Weiter: Commit 3 (Einstellungen: Hinzufügen, Vorschau, Löschen).
 
-**Als Nächstes (Plan, Carlo 24.11.):** Favoriten, dann Tickets anzeigen. Gleis Köln später. U5-Ursache ist nicht belegt; die ersten Berichte klären sie. Ungeklärt: "Fahrten aus der Vergangenheit" (laufende Fahrt prüfen oder Verlauf-Liste).
+**Als Nächstes (Plan, Carlo 24.11.):** Favoriten, dann Tickets anzeigen. Gleis Köln später. U5-Ursache ist nicht belegt; die ersten Berichte klären sie. Ungeklärt: "Fahrten aus der Vergangenheit" (laufende Fahrt prüfen oder Verlauf-Liste). Tickets: Scheibe 4 Commit 3 fertig (Einstellungen: Foto/Datei, Vorschau, Löschen, Fehler); als Nächstes Commit 4 (Vollbild-Anzeige), dann 5 (Knopf an der Route).
 
 ## Ideen (nicht geplant, nicht begonnen)
 
