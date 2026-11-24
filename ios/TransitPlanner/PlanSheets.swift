@@ -16,6 +16,9 @@ struct StartSheet: View {
     /// Bearbeiten: belegte Kacheln zeigen ein Minus, ein Tipp entfernt genau diesen Favoriten (bewusst ohne
     /// Rueckfrage: Favoriten sind in Sekunden neu gesetzt, Familiennutzung).
     @State private var editingFavorites = false
+    /// Umbenennen eines weiteren Favoriten: Eintrag und Eingabe des Dialogs.
+    @State private var renaming: SavedPlace?
+    @State private var newName = ""
 
     var body: some View {
         // Kopf ausserhalb der Liste (wie Planen): bleibt bei 140 pt sichtbar, die Liste scrollt darunter.
@@ -72,6 +75,8 @@ struct StartSheet: View {
                                 EndpointRow(endpoint: saved.endpoint, symbol: saved.role.symbol)
                                     .swipeActions {
                                         Button("Entfernen", systemImage: "star.slash", role: .destructive) { flow.removeFavorite(saved.id) }
+                                        Button("Umbenennen", systemImage: "pencil") { newName = saved.endpoint.label; renaming = saved }
+                                            .tint(Color(.accentBlue))
                                     }
                             }
                         }
@@ -96,6 +101,11 @@ struct StartSheet: View {
         .frame(maxHeight: .infinity, alignment: .top)
         // Beim Erscheinen und bei geaenderter Erlaubnis; die Naehe hoechstens alle 2 Min.
         .task(id: flow.locationAllowed) { flow.loadSuggestions() }
+        .alert("Favorit umbenennen", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Name", text: $newName)
+            Button("Abbrechen", role: .cancel) {}
+            Button("Speichern") { if let renaming { flow.renameFavorite(renaming.id, to: newName) } }
+        }
         // Letzter Favorit entfernt: nichts mehr zu bearbeiten.
         .onChange(of: flow.favorites.contains { $0.role != .other }) { if !flow.favorites.contains(where: { $0.role != .other }) { editingFavorites = false } }
     }

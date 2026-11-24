@@ -594,6 +594,40 @@ import TransitCore
         #expect(memory.favorites().map(\.endpoint) == [Self.stopEndpoint, Self.addressEndpoint]) // nichts halb ersetzt
     }
 
+    /// A2: Umbenennen aendert nur den Namen (gleiche Zeile, Rolle, Platz), bleibt im Store verschluesselt und scheitert sichtbar.
+    @Test func renamingFavoriteKeepsPlaceAndStaysSealed() throws {
+        let container = try TransitStore.makeContainer(inMemory: true)
+        let sql = SwiftDataPlaces(container: container, sealer: LocalSealer(secrets: InMemorySecretStore()))
+        for places in [MemoryPlaces(), sql] as [any PlaceStoring] {
+            for e in [Self.stopEndpoint, Self.addressEndpoint, Self.otherStopEndpoint] { places.addFavorite(e, role: .other) }
+            let before = places.favorites()
+            #expect(places.renameFavorite(before[1].id, to: "Wohnung Oma"))
+            let after = places.favorites()
+            #expect(after.map(\.id) == before.map(\.id))
+            #expect(after.map(\.endpoint.label) == ["Köln Hbf", "Wohnung Oma", "Düsseldorf Hbf"])
+            #expect(after[1].endpoint.routePoint == before[1].endpoint.routePoint)
+            #expect(!places.renameFavorite(UUID(), to: "Gibt es nicht"))
+        }
+        let blobs = try container.mainContext.fetch(FetchDescriptor<FavoritePlace>()).map(\.sealedEndpoint)
+        #expect(blobs.allSatisfy { $0.range(of: Data("Wohnung Oma".utf8)) == nil }, "Klartext im Store")
+    }
+
+    @Test func flowRenamesWithValidNameAndReportsFailure() {
+        let places = MemoryPlaces(favorites: [Self.stopEndpoint])
+        let f = AppFlow(.fakes(onboarding: .withLocation, places: places))
+        f.loadSuggestions()
+        let id = f.favorites[0].id
+        f.renameFavorite(id, to: "   ") // leer: nichts
+        #expect(f.favorites[0].endpoint.label == "Köln Hbf")
+        #expect(f.banner == nil)
+        f.renameFavorite(id, to: " Uni ")
+        #expect(f.favorites[0].endpoint.label == "Uni")
+        places.failsWrites = true
+        f.renameFavorite(id, to: "Arbeit")
+        #expect(f.banner == .storageUnavailable)
+        #expect(f.favorites[0].endpoint.label == "Uni")
+    }
+
     @Test func nearbyLoadsOncePerStartAndAtMostEveryTwoMinutes() async {
         let calls = Mutex(0)
         let now = Mutex(Date())

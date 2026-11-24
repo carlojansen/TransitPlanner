@@ -251,6 +251,24 @@ public enum TripEndpoint: Sendable, Hashable, Codable {
     }
 }
 
+public extension TripEndpoint {
+    static let maxLabelLength = 60
+
+    /// Name eines Favoriten: getrimmt, nicht leer, auf `maxLabelLength` gekuerzt. `nil` = ungueltig.
+    static func normalizedLabel(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : String(trimmed.prefix(maxLabelLength))
+    }
+
+    /// Derselbe Ort unter anderem Namen (`routePoint` bleibt gleich).
+    func relabeled(_ label: String) -> TripEndpoint {
+        switch self {
+        case .stop(let id, _): .stop(id: id, label: label)
+        case .coordinate(let c, _): .coordinate(c, label: label)
+        }
+    }
+}
+
 /// Woher eine Fahrt stammt. Kalenderdaten (Kennung) bleiben lokal und gehen nie ans Backend.
 public enum TripTrigger: Sendable, Hashable, Codable {
     case manual

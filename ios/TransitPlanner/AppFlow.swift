@@ -764,6 +764,13 @@ final class AppFlow {
         reloadSaved()
     }
 
+    /// Neuer Name fuer einen Favoriten; ein leerer Name aendert nichts, ein Speicherfehler zeigt das Banner.
+    func renameFavorite(_ id: UUID, to name: String) {
+        guard let label = TripEndpoint.normalizedLabel(name) else { return }
+        if !deps.places.renameFavorite(id, to: label) { banner = .storageUnavailable }
+        reloadSaved()
+    }
+
     func removeFavorite(_ id: UUID) {
         if !deps.places.removeFavorite(id) { banner = .storageUnavailable }
         reloadSaved()

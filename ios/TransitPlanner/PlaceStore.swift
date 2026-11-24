@@ -28,6 +28,8 @@ protocol PlaceStoring: Sendable {
     /// einem einzigen Speichern. Gleicher Ort heisst gleicher `routePoint` (das Label darf abweichen, z. B. umbenannt).
     /// `false`, wenn nichts gespeichert werden konnte (der Zustand bleibt dann wie vorher).
     @MainActor @discardableResult func addFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role, replacing: UUID?) -> Bool
+    /// Neuer Name fuer einen Favoriten (Ort, Rolle und Platz bleiben). Der Name ist schon geprueft (`TripEndpoint.normalizedLabel`).
+    @MainActor @discardableResult func renameFavorite(_ id: UUID, to label: String) -> Bool
     @MainActor @discardableResult func removeFavorite(_ id: UUID) -> Bool
     @MainActor func removeRecent(_ id: UUID)
     @MainActor func clearRecents()
@@ -106,6 +108,13 @@ final class SwiftDataPlaces: PlaceStoring {
         let index = old?.sortIndex ?? (rows.map(\.sortIndex).max() ?? -1) + 1
         replaced.forEach(context.delete)
         context.insert(FavoritePlace(role: role, sealedEndpoint: sealed, sortIndex: index))
+        return saveOrRollBack()
+    }
+
+    @discardableResult func renameFavorite(_ id: UUID, to label: String) -> Bool {
+        guard let row = favoriteRows().first(where: { $0.id == id }), let endpoint = open(row.sealedEndpoint),
+              let sealed = try? sealer.seal(endpoint.relabeled(label)) else { return false }
+        row.sealedEndpoint = sealed
         return saveOrRollBack()
     }
 
@@ -193,6 +202,15 @@ final class MemoryPlaces: PlaceStoring {
             $0.favorites.removeAll { samePlace($0) || (role != .other && $0.role == role) || $0.id == replacing }
             // Platz des ersetzten Favoriten behalten (wie `sortIndex` im SwiftData-Speicher).
             $0.favorites.insert(place, at: min(oldIndex ?? $0.favorites.count, $0.favorites.count))
+            return true
+        }
+    }
+
+    @discardableResult func renameFavorite(_ id: UUID, to label: String) -> Bool {
+        if failsWrites { return false }
+        return state.withLock { s in
+            guard let i = s.favorites.firstIndex(where: { $0.id == id }) else { return false }
+            s.favorites[i] = SavedPlace(id: id, endpoint: s.favorites[i].endpoint.relabeled(label), isFavorite: true, role: s.favorites[i].role)
             return true
         }
     }
