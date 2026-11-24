@@ -332,17 +332,26 @@ struct FavoriteStar: View {
     var body: some View {
         if flow.offersFavoriteStar(for: endpoint) {
             let saved = flow.favorite(at: endpoint)
-            Button { flow.toggleFavorite(endpoint) } label: {
-                Image(systemName: saved == nil ? "star" : "star.fill")
+            if let saved, saved.role != .other {
+                // Zuhause, Uni, Arbeit: Anzeige ohne Knopf (ein Tipp ginge ins Leere).
+                Image(systemName: "star.fill")
                     .foregroundStyle(Color(.accentBlue))
                     .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(.rect)
+                    .accessibilityLabel(label(for: saved))
+                    .accessibilityAddTraits(.isSelected)
+            } else {
+                Button { flow.toggleFavorite(endpoint) } label: {
+                    Image(systemName: saved == nil ? "star" : "star.fill")
+                        .foregroundStyle(Color(.accentBlue))
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.borderless)
+                .sensoryFeedback(.selection, trigger: saved == nil)
+                .accessibilityLabel(label(for: saved))
+                .accessibilityAddTraits(saved == nil ? [] : .isSelected)
+                .accessibilityIdentifier("favoriteStar")
             }
-            .buttonStyle(.borderless)
-            .sensoryFeedback(.selection, trigger: saved?.id)
-            .accessibilityLabel(label(for: saved))
-            .accessibilityAddTraits(saved == nil ? [] : .isSelected)
-            .accessibilityIdentifier("favoriteStar")
         }
     }
 
@@ -791,7 +800,10 @@ struct PlanSheet: View {
         let all = flow.favorites.map { ($0.endpoint, "star.fill") }
             + flow.recents.map { ($0.endpoint, "clock.arrow.circlepath") }
             + nearby.map { ($0, "mappin.and.ellipse") }
-        var seen = Set<RoutePoint>() // gleicher Ort nur einmal, auch unter anderem Namen
+        // Gleicher Ort nur einmal, auch unter anderem Namen; was schon als Treffer darunter steht, nicht doppelt (die Liste
+        // spraenge sonst nach einem Stern unter dem Finger).
+        var seen = Set(flow.results.addresses.map { RoutePoint.coordinate($0.coordinate) }
+            + flow.results.stops.compactMap { $0.id.map { RoutePoint.stop(id: $0) } })
         return all.filter { $0.0.label.localizedCaseInsensitiveContains(text) && seen.insert($0.0.routePoint).inserted }
             .prefix(5)
             .map { (endpoint: $0.0, symbol: $0.1) }
@@ -950,7 +962,7 @@ struct RouteSheet: View {
                 .accessibilityIdentifier("backToPlan")
         }
         // Stern fuer das gewaehlte Ziel ("Mein Standort" hat keinen); der Ticket-Knopf teilt sich diese Stelle spaeter.
-        if let destination = flow.destination?.place {
+        if let destination = flow.routeStarEndpoint {
             ToolbarItem(placement: .topBarTrailing) { FavoriteStar(endpoint: destination) }
         }
         ToolbarItem(placement: .topBarTrailing) {

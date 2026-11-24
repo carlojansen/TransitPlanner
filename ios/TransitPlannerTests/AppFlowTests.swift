@@ -757,6 +757,33 @@ import TransitCore
         #expect(f.destination?.place == nil) // Ziel ist jetzt "Mein Standort": kein Stern
     }
 
+    /// Blocker-Fix: Das Ziel kann ein GPS-Punkt namens "Ziel" sein (Erinnerung mit "Mein Standort", dann "Naechste
+    /// Verbindung"). Stern nur fuer Haltestellen und Orte, die man bewusst gewaehlt hat (Verlauf oder Favorit).
+    @Test func routeStarNeverOffersAnUnchosenCoordinate() async {
+        let places = MemoryPlaces()
+        let f = AppFlow(.fakes(onboarding: .withLocation, places: places))
+        f.choose(Self.addressEndpoint)
+        await f.waitForWork()
+        #expect(f.routeStarEndpoint == Self.addressEndpoint) // gewaehlt, steht im Verlauf
+        places.clearRecents()
+        f.loadSuggestions()
+        #expect(f.routeStarEndpoint == nil) // nicht gemerkt: kein Stern fuer eine Koordinate
+        f.toggleFavorite(Self.addressEndpoint)
+        #expect(f.routeStarEndpoint == Self.addressEndpoint) // bewusst gesetzt
+        f.send(.reset)
+        f.choose(Self.stopEndpoint)
+        await f.waitForWork()
+        #expect(f.routeStarEndpoint == Self.stopEndpoint) // Haltestellen sind nie ein GPS-Punkt
+    }
+
+    /// Rollen-Favoriten: ausgefuellter Stern ohne Wirkung; ohne Stern-Angebot (Zwischenstopp) aendert toggle nichts.
+    @Test func toggleRespectsOfferRules() {
+        let f = AppFlow(.fakes(onboarding: .withLocation))
+        f.send(.editEndpoint(.via))
+        f.toggleFavorite(Self.stopEndpoint)
+        #expect(f.favorites.isEmpty)
+    }
+
     @Test func flowMovesFavoritesAndReportsFailure() {
         let places = MemoryPlaces(favorites: [Self.stopEndpoint, Self.otherStopEndpoint])
         let f = AppFlow(.fakes(onboarding: .withLocation, places: places))

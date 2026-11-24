@@ -749,10 +749,20 @@ final class AppFlow {
         assigningRole == nil && activeSlot != .via && TripEndpoint.normalizedLabel(endpoint.label) != nil
     }
 
+    /// Ziel der offenen Route, fuer das ein Stern angeboten wird. Nach "Naechste Verbindung" aus einer Erinnerung kann das
+    /// Ziel ein GPS-Punkt sein (Name "Ziel"); der darf nie Favorit werden (AGENT.md 3.1.2). Darum nur Haltestellen und
+    /// Orte, die man bewusst gewaehlt hat (Verlauf oder Favorit).
+    var routeStarEndpoint: TripEndpoint? {
+        guard let place = destination?.place else { return nil }
+        if case .stop = place { return place }
+        let chosen = favorite(at: place) != nil || recents.contains { $0.endpoint.routePoint == place.routePoint }
+        return chosen ? place : nil
+    }
+
     /// Stern: setzt einen weiteren Favoriten oder entfernt ihn. Zuhause, Uni und Arbeit bleiben (Entfernen ueber
     /// "Bearbeiten" an der Kachel). Ein Speicherfehler verdraengt kein Banner, das schon steht (Restzeit, Leerzustand).
     func toggleFavorite(_ endpoint: TripEndpoint) {
-        guard let label = TripEndpoint.normalizedLabel(endpoint.label) else { return }
+        guard offersFavoriteStar(for: endpoint), let label = TripEndpoint.normalizedLabel(endpoint.label) else { return }
         let ok: Bool
         if let saved = favorite(at: endpoint) {
             ok = saved.role == .other ? deps.places.removeFavorite(saved.id) : true

@@ -151,7 +151,9 @@ final class PlanFlowUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] %@", "Weitere Favoriten")).firstMatch.waitForExistence(timeout: 5), "Der Ort steht unter Weitere Favoriten")
         tap(saved)
         XCTAssertTrue(app.buttons["favoriteStar"].firstMatch.waitForExistence(timeout: 5))
-        XCTAssertEqual(app.buttons["favoriteStar"].firstMatch.label, "Als Favorit sichern", "Zweiter Tipp entfernt ihn wieder")
+        let empty = app.buttons.matching(identifier: "favoriteStar").matching(NSPredicate(format: "label == %@", "Als Favorit sichern")).firstMatch
+        XCTAssertTrue(empty.waitForExistence(timeout: 5), "Zweiter Tipp entfernt ihn wieder")
+        XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] %@", "Weitere Favoriten")).firstMatch.exists)
     }
 
     /// Start (B1, 27.10.): Leerzustand "Zuhause festlegen", Wahl wird Favorit ohne Suche; Tipp auf die Kachel sucht sofort.
