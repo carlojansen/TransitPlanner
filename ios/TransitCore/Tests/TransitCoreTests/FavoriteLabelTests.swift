@@ -7,6 +7,7 @@ import Testing
     @Test func normalizedLabelTrimsRejectsEmptyAndLimitsLength() {
         #expect(TripEndpoint.normalizedLabel("  Wohnung Oma \n") == "Wohnung Oma")
         #expect(TripEndpoint.normalizedLabel("   \n") == nil)
+        #expect(TripEndpoint.normalizedLabel("Wohnung\nOma") == "Wohnung Oma")
         #expect(TripEndpoint.normalizedLabel("") == nil)
         let long = String(repeating: "a", count: 200)
         #expect(TripEndpoint.normalizedLabel(long)?.count == TripEndpoint.maxLabelLength)

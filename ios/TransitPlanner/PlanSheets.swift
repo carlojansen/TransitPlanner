@@ -94,6 +94,7 @@ struct StartSheet: View {
                                 // Ohne Rollen-Favoriten gibt es sonst keinen Bearbeiten-Knopf (er sitzt bei den Chips).
                                 if !hasRoleFavorites, others.count > 1 { editButton }
                             }
+                            .textCase(nil)
                         }
                     }
                     if !flow.recents.isEmpty {
@@ -120,6 +121,7 @@ struct StartSheet: View {
             TextField("Name", text: $newName)
             Button("Abbrechen", role: .cancel) {}
             Button("Speichern") { if let renaming { flow.renameFavorite(renaming.id, to: newName) } }
+                .disabled(TripEndpoint.normalizedLabel(newName) == nil)
         }
         // Nichts mehr zu bearbeiten (keine Rollen-Favoriten, keine zwei weiteren): Modus beenden.
         .onChange(of: canEditFavorites) { if !canEditFavorites { editingFavorites = false } }
@@ -137,13 +139,13 @@ struct StartSheet: View {
     // ponytail: Pfeile; Ziehen (onMove) nur, wenn die Familie es vermisst.
     private func moveButtons(_ saved: SavedPlace, index: Int, count: Int) -> some View {
         HStack(spacing: 0) {
-            Button { withAnimation(Motion.micro) { flow.moveFavorite(saved.id, up: true) } } label: {
-                Image(systemName: "chevron.up").frame(minWidth: 44, minHeight: 44)
+            Button { withAnimation(reduceMotion ? nil : Motion.micro) { flow.moveFavorite(saved.id, up: true) } } label: {
+                Image(systemName: "chevron.up").frame(minWidth: 44, minHeight: 44).contentShape(.rect)
             }
             .disabled(index == 0)
             .accessibilityLabel("Nach oben")
-            Button { withAnimation(Motion.micro) { flow.moveFavorite(saved.id, up: false) } } label: {
-                Image(systemName: "chevron.down").frame(minWidth: 44, minHeight: 44)
+            Button { withAnimation(reduceMotion ? nil : Motion.micro) { flow.moveFavorite(saved.id, up: false) } } label: {
+                Image(systemName: "chevron.down").frame(minWidth: 44, minHeight: 44).contentShape(.rect)
             }
             .disabled(index == count - 1)
             .accessibilityLabel("Nach unten")

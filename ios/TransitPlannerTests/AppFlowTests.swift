@@ -655,6 +655,45 @@ import TransitCore
         }
     }
 
+    /// Gleichstand bei `sortIndex` (alte Daten): Verschieben vergibt wieder eindeutige, aufsteigende Plaetze.
+    @Test func movingWorksWithTiedSortIndexes() throws {
+        let container = try TransitStore.makeContainer(inMemory: true)
+        let sealer = LocalSealer(secrets: InMemorySecretStore())
+        let places = SwiftDataPlaces(container: container, sealer: sealer)
+        for (n, e) in [Self.stopEndpoint, Self.otherStopEndpoint].enumerated() {
+            container.mainContext.insert(FavoritePlace(role: .other, sealedEndpoint: try sealer.seal(e), sortIndex: 5, createdAt: Date(timeIntervalSince1970: Double(n))))
+        }
+        try container.mainContext.save()
+        let ids = places.favorites().map(\.id)
+        #expect(places.moveFavorite(ids[1], up: true))
+        #expect(places.favorites().map(\.endpoint.label) == ["Düsseldorf Hbf", "Köln Hbf"])
+        let indexes = try container.mainContext.fetch(FetchDescriptor<FavoritePlace>(sortBy: [SortDescriptor(\.sortIndex)])).map(\.sortIndex)
+        #expect(indexes == [5, 6])
+    }
+
+    /// Ersetzen zusammen mit "Ort ist schon anderer Favorit" und mit Rolle: in beiden Speichern gleich.
+    @Test func replacingFavoriteHandlesDuplicateAndRole() throws {
+        let container = try TransitStore.makeContainer(inMemory: true)
+        let stores: [any PlaceStoring] = [MemoryPlaces(), SwiftDataPlaces(container: container, sealer: LocalSealer(secrets: InMemorySecretStore()))]
+        let neuss = TripEndpoint.stop(id: "de-DELFI_de:05162:99999", label: "Neuss Hbf")
+        for places in stores {
+            places.addFavorite(Self.stopEndpoint, role: .other)
+            places.addFavorite(Self.otherStopEndpoint, role: .other)
+            let first = try #require(places.favorites().first)
+            // Neuer Ort ist schon der zweite Favorit: der ersetzte faellt weg, nichts kommt dazu.
+            #expect(places.addFavorite(Self.otherStopEndpoint, role: .other, replacing: first.id))
+            #expect(places.favorites().map(\.endpoint) == [Self.otherStopEndpoint])
+            // Mit Rolle: Platz und eindeutige Rolle
+            places.addFavorite(Self.stopEndpoint, role: .uni)
+            let uni = try #require(places.favorites().first { $0.role == .uni })
+            #expect(places.addFavorite(neuss, role: .uni, replacing: uni.id))
+            #expect(places.favorites().filter { $0.role == .uni }.map(\.endpoint) == [neuss])
+            #expect(places.favorites().count == 2)
+            places.removeFavorite(try #require(places.favorites().first { $0.role == .uni }).id)
+            places.removeFavorite(try #require(places.favorites().first).id)
+        }
+    }
+
     @Test func flowMovesFavoritesAndReportsFailure() {
         let places = MemoryPlaces(favorites: [Self.stopEndpoint, Self.otherStopEndpoint])
         let f = AppFlow(.fakes(onboarding: .withLocation, places: places))

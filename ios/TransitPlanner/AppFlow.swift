@@ -766,13 +766,15 @@ final class AppFlow {
 
     /// Neuer Name fuer einen Favoriten; ein leerer Name aendert nichts, ein Speicherfehler zeigt das Banner.
     func renameFavorite(_ id: UUID, to name: String) {
-        guard let label = TripEndpoint.normalizedLabel(name) else { return }
+        // Zwischenzeitlich entfernt: nichts zu tun (kein falsches Speicherfehler-Banner).
+        guard let label = TripEndpoint.normalizedLabel(name), favorites.contains(where: { $0.id == id }) else { return }
         if !deps.places.renameFavorite(id, to: label) { banner = .storageUnavailable }
         reloadSaved()
     }
 
     /// Weiteren Favoriten um einen Platz verschieben (Pfeile im Bearbeiten-Modus, VoiceOver-Aktionen).
     func moveFavorite(_ id: UUID, up: Bool) {
+        guard favorites.contains(where: { $0.id == id && $0.role == .other }) else { return }
         if !deps.places.moveFavorite(id, up: up) { banner = .storageUnavailable }
         reloadSaved()
     }

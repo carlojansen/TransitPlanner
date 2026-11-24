@@ -256,7 +256,9 @@ public extension TripEndpoint {
 
     /// Name eines Favoriten: getrimmt, nicht leer, auf `maxLabelLength` gekuerzt. `nil` = ungueltig.
     static func normalizedLabel(_ raw: String) -> String? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Zeilenumbrueche (z. B. eingefuegt) werden Leerzeichen: der Name steht einzeilig in Listen und VoiceOver.
+        let oneLine = raw.components(separatedBy: .newlines).joined(separator: " ")
+        let trimmed = oneLine.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : String(trimmed.prefix(maxLabelLength))
     }
 
