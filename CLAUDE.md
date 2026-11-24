@@ -18,7 +18,8 @@ Die Subagents in `.claude/agents/` haben feste Rollen:
 | `ios-architect` | Swift 6, SwiftUI, SwiftData, MapKit, WidgetKit, ActivityKit | Meilensteine 2–5 |
 | `security-hig-reviewer` | Unabhängiges Review gegen AGENT.md, schreibt keinen Code | Nach jedem Modul, vor jeder Freigabe |
 
-Ablauf pro Meilenstein:
+Ablauf pro Meilenstein (bei Scheiben und Features sinngemäß):
+0. **Auswirkungsprüfung vor dem Bau:** `code-reviewer` (nur lesen) prüft, was die Änderung im Repo berührt (Datenmodell und Migration, andere Nutzer der Daten wie Widgets und Berichte, Protokolle und Fakes, Tests, Docs, Projektdatei). Auflagen daraus kommen in den Plan, bevor Code entsteht.
 1. Umsetzung durch den passenden Engineer-Agent.
 2. Tests laufen lassen (`cd backend && npm test`, bzw. `xcodebuild test`).
 3. `security-hig-reviewer` prüft den Diff. Blocker werden behoben, bevor weitergemacht wird.

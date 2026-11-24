@@ -69,6 +69,7 @@ Zu viel für einen Durchlauf. Darum Scheiben, jede mit eigenem Test, Review und 
 
 Ablauf je Scheibe (nach `CLAUDE.md` und den Lehren aus dem Zwischenstopp-Feature):
 
+0. **Auswirkungsprüfung vor dem Bau** (`code-reviewer`, nur lesen): Datenmodell, andere Nutzer der Daten, Fakes, Tests, Docs, Projektdatei. Auflagen kommen in diesen Plan, bevor Code entsteht.
 1. **Test zuerst:** roter Test, dann Code. Gegenprobe: Regel entfernen, Test wird rot.
 2. **Logik ins Modell:** Regeln in `TransitCore`/`PlaceStore`, nicht in Views. Jede Regel einmal.
 3. **Tests laufen lassen:** `cd ios/TransitCore && swift test`, dann die App-Tests mit `xcodebuild test` und eigenem `-derivedDataPath`. Wenn `project.yml` sich ändert, vorher `cd ios && xcodegen generate`. Backend bleibt unberührt (`npm test` nur zur Sicherheit).
