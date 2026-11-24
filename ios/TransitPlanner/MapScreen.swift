@@ -473,6 +473,7 @@ struct SheetRoot: View {
         .sheet(isPresented: $flow.showsSettings, onDismiss: { flow.settingsOpensServer = false }) {
             SettingsSheet(opensServer: flow.settingsOpensServer)
         }
+        .fullScreenCover(isPresented: Binding(get: { flow.showsTicket }, set: { if !$0 { flow.closeTicket() } })) { TicketView() }
         .sheet(isPresented: $flow.showsReminders) { RemindersSheet() }
         .sheet(isPresented: Binding(get: { flow.reminderJourneyIndex != nil }, set: { if !$0 { flow.reminderJourneyIndex = nil } })) {
             if let index = flow.reminderJourneyIndex {
