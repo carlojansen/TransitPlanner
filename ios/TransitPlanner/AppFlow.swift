@@ -737,8 +737,17 @@ final class AppFlow {
     }
 
     func addFavorite(_ endpoint: TripEndpoint) {
-        deps.places.addFavorite(endpoint, role: .other)
+        saveFavorite(endpoint, role: .other)
+    }
+
+    /// Favoriten setzt man bewusst: scheitert das Speichern, zeigt ein Banner es (der Verlauf bleibt dagegen still).
+    /// Aufrufer, die danach die Phase wechseln, setzen das Banner nach dem Wechsel (der loescht es).
+    @discardableResult
+    private func saveFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role) -> Bool {
+        let saved = deps.places.addFavorite(endpoint, role: role)
+        if !saved { banner = .storageUnavailable }
         reloadSaved()
+        return saved
     }
 
     /// Leere Kachel (Zuhause, Uni, Arbeit, "+"): Planen oeffnen; die Wahl dort wird der Favorit.
@@ -754,7 +763,7 @@ final class AppFlow {
     }
 
     func removeFavorite(_ id: UUID) {
-        deps.places.removeFavorite(id)
+        if !deps.places.removeFavorite(id) { banner = .storageUnavailable }
         reloadSaved()
     }
 
@@ -788,9 +797,9 @@ final class AppFlow {
         switch phase {
         case .plan(let slot):
             if let role = assigningRole {
-                deps.places.addFavorite(endpoint, role: role)
-                reloadSaved()
+                let saved = saveFavorite(endpoint, role: role)
                 send(.back)
+                if !saved { banner = .storageUnavailable }
                 return
             }
             if slot == .via { return addVia(endpoint, coordinate: coordinate) }

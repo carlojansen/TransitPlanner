@@ -338,6 +338,29 @@ import TransitCore
         #expect(f.recents.isEmpty)
     }
 
+    /// A5: Scheitert das Speichern eines Favoriten, sieht man es; nichts wirkt gespeichert. Der Verlauf bleibt still (Komfort).
+    @Test func favoriteWriteFailureShowsBanner() {
+        let places = MemoryPlaces(recents: [Self.stopEndpoint])
+        let f = AppFlow(.fakes(onboarding: .withLocation, places: places))
+        places.failsWrites = true
+        f.addFavorite(Self.stopEndpoint)
+        #expect(f.banner == .storageUnavailable)
+        #expect(f.favorites.isEmpty)
+
+        f.assignFavorite(.home)
+        f.choose(Self.addressEndpoint)
+        #expect(f.banner == .storageUnavailable)
+        #expect(f.favorites.isEmpty)
+
+        places.failsWrites = false
+        f.addFavorite(Self.stopEndpoint)
+        #expect(f.favorites.count == 1)
+        places.failsWrites = true
+        f.removeFavorite(f.favorites[0].id)
+        #expect(f.banner == .storageUnavailable)
+        #expect(f.favorites.count == 1) // Entfernen ist nicht gelungen
+    }
+
     /// A4: Favorit mit veralteter Haltestelle (NOT_FOUND): das Banner bietet "Favorit neu festlegen", sonst nichts Neues.
     @Test func staleFavoriteCanBeReplaced() async {
         let places = MemoryPlaces()

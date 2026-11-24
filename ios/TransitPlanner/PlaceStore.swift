@@ -14,8 +14,8 @@ struct SavedPlace: Identifiable, Hashable, Sendable {
     var earlierMinutes: Int?
 }
 
-/// Favoriten und Verlauf der Planen-Ansicht. Lokal und verschluesselt; Fehler beim Speichern bleiben still,
-/// weil beides nur Komfort ist und die Suche nie blockieren darf.
+/// Favoriten und Verlauf der Planen-Ansicht. Lokal und verschluesselt. Der Verlauf ist Komfort: Fehler beim Speichern
+/// bleiben still, die Suche wird nie blockiert. Favoriten setzt man bewusst: Scheitern meldet `false`.
 protocol PlaceStoring: Sendable {
     @MainActor func favorites() -> [SavedPlace]
     @MainActor func recents() -> [SavedPlace]
@@ -24,8 +24,9 @@ protocol PlaceStoring: Sendable {
     // ponytail: lebt mit dem Verlauf (10 Orte, "Suchverlauf löschen"); eigenes Modell, falls Werte laenger halten sollen.
     @MainActor func setEarlierMinutes(_ minutes: Int, for endpoint: TripEndpoint)
     /// Je Rolle (ausser `.other`) ein Ort; derselbe Ort nie doppelt (eine neue Rolle ersetzt die alte).
-    @MainActor func addFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role)
-    @MainActor func removeFavorite(_ id: UUID)
+    /// `false`, wenn nichts gespeichert werden konnte (der Zustand bleibt dann wie vorher).
+    @MainActor @discardableResult func addFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role) -> Bool
+    @MainActor @discardableResult func removeFavorite(_ id: UUID) -> Bool
     @MainActor func removeRecent(_ id: UUID)
     @MainActor func clearRecents()
 }
@@ -81,20 +82,25 @@ final class SwiftDataPlaces: PlaceStoring {
         try? context.save()
     }
 
-    func addFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role) {
+    @discardableResult func addFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role) -> Bool {
         let rows = favoriteRows()
         let replaced = rows.filter { open($0.sealedEndpoint) == endpoint || (role != .other && $0.role == role) }
-        if role == .other, !replaced.isEmpty { return }
-        guard let sealed = try? sealer.seal(endpoint) else { return }
+        if role == .other, !replaced.isEmpty { return true } // schon Favorit: nichts zu tun
+        guard let sealed = try? sealer.seal(endpoint) else { return false }
         replaced.forEach(context.delete)
         context.insert(FavoritePlace(role: role, sealedEndpoint: sealed, sortIndex: (rows.map(\.sortIndex).max() ?? -1) + 1))
-        try? context.save()
+        return saveOrRollBack()
     }
 
-    func removeFavorite(_ id: UUID) {
+    @discardableResult func removeFavorite(_ id: UUID) -> Bool {
         let rows = (try? context.fetch(FetchDescriptor<FavoritePlace>(predicate: #Predicate { $0.id == id }))) ?? []
         rows.forEach(context.delete)
-        try? context.save()
+        return saveOrRollBack()
+    }
+
+    /// Ein gescheiterter Schreibvorgang bleibt nicht halb im Kontext haengen (sonst taucht er beim naechsten Speichern auf).
+    private func saveOrRollBack() -> Bool {
+        do { try context.save(); return true } catch { context.rollback(); return false }
     }
 
     func removeRecent(_ id: UUID) {
@@ -150,16 +156,29 @@ final class MemoryPlaces: PlaceStoring {
         }
     }
 
-    func addFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role) {
-        state.withLock {
+    /// Nur Tests: Schreiben scheitert wie ein voller Speicher.
+    let failure = Mutex(false)
+    var failsWrites: Bool {
+        get { failure.withLock { $0 } }
+        set { failure.withLock { $0 = newValue } }
+    }
+
+    @discardableResult func addFavorite(_ endpoint: TripEndpoint, role: FavoritePlace.Role) -> Bool {
+        if failsWrites { return false }
+        return state.withLock {
             let replaced = { (p: SavedPlace) in p.endpoint == endpoint || (role != .other && p.role == role) }
-            if role == .other, $0.favorites.contains(where: replaced) { return }
+            if role == .other, $0.favorites.contains(where: replaced) { return true }
             $0.favorites.removeAll(where: replaced)
             $0.favorites.append(SavedPlace(id: UUID(), endpoint: endpoint, isFavorite: true, role: role))
+            return true
         }
     }
 
-    func removeFavorite(_ id: UUID) { state.withLock { $0.favorites.removeAll { $0.id == id } } }
+    @discardableResult func removeFavorite(_ id: UUID) -> Bool {
+        if failsWrites { return false }
+        state.withLock { $0.favorites.removeAll { $0.id == id } }
+        return true
+    }
     func removeRecent(_ id: UUID) { state.withLock { $0.recents.removeAll { $0.id == id } } }
     func clearRecents() { state.withLock { $0.recents = [] } }
 }
