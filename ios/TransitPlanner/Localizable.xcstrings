@@ -282,6 +282,9 @@
         }
       }
     },
+    "Als Favorit sichern" : {
+
+    },
     "Bericht nicht erstellt" : {
 
     },
@@ -294,7 +297,13 @@
     "Etwas stimmt nicht" : {
 
     },
+    "Favorit entfernen" : {
+
+    },
     "Favorit umbenennen" : {
+
+    },
+    "Favorit, entfernen über Bearbeiten" : {
 
     },
     "Markiert" : {

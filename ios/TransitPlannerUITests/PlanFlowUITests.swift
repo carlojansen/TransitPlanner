@@ -135,6 +135,25 @@ final class PlanFlowUITests: XCTestCase {
         XCTAssertTrue(recenter.waitForExistence(timeout: 5), "Zeile zeigt den Punkt, Folgen pausiert")
     }
 
+    /// Stern (Scheibe 3): an einer Haltestelle in der Nähe setzt er einen weiteren Favoriten; ein zweiter Tipp entfernt ihn.
+    @MainActor
+    func testStarSavesNearbyStopAsFavorite() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestFakes", "-fakeOnboarded"]
+        app.launch()
+        XCTAssertTrue(app.buttons["nearbyStop"].firstMatch.waitForExistence(timeout: 10))
+        let star = app.buttons["favoriteStar"].firstMatch
+        XCTAssertTrue(star.waitForExistence(timeout: 5))
+        XCTAssertEqual(star.label, "Als Favorit sichern")
+        tap(star)
+        let saved = app.buttons.matching(identifier: "favoriteStar").matching(NSPredicate(format: "label == %@", "Favorit entfernen")).firstMatch
+        XCTAssertTrue(saved.waitForExistence(timeout: 5), "Der Stern zeigt: gespeichert")
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] %@", "Weitere Favoriten")).firstMatch.waitForExistence(timeout: 5), "Der Ort steht unter Weitere Favoriten")
+        tap(saved)
+        XCTAssertTrue(app.buttons["favoriteStar"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["favoriteStar"].firstMatch.label, "Als Favorit sichern", "Zweiter Tipp entfernt ihn wieder")
+    }
+
     /// Start (B1, 27.10.): Leerzustand "Zuhause festlegen", Wahl wird Favorit ohne Suche; Tipp auf die Kachel sucht sofort.
     @MainActor
     func testStartFavoriteTileSearchesImmediately() {

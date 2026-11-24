@@ -323,6 +323,38 @@ struct EndpointRow: View {
     }
 }
 
+/// Stern an einer Ortszeile (zweites Tippziel neben der Zeile): setzt einen weiteren Favoriten oder entfernt ihn.
+/// Zuhause, Uni und Arbeit zeigen den gefuellten Stern, entfernt werden sie ueber "Bearbeiten" an der Kachel.
+struct FavoriteStar: View {
+    @Environment(AppFlow.self) private var flow
+    let endpoint: TripEndpoint
+
+    var body: some View {
+        if flow.offersFavoriteStar(for: endpoint) {
+            let saved = flow.favorite(at: endpoint)
+            Button { flow.toggleFavorite(endpoint) } label: {
+                Image(systemName: saved == nil ? "star" : "star.fill")
+                    .foregroundStyle(Color(.accentBlue))
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.borderless)
+            .sensoryFeedback(.selection, trigger: saved?.id)
+            .accessibilityLabel(label(for: saved))
+            .accessibilityAddTraits(saved == nil ? [] : .isSelected)
+            .accessibilityIdentifier("favoriteStar")
+        }
+    }
+
+    private func label(for saved: SavedPlace?) -> Text {
+        switch saved?.role {
+        case nil: Text("Als Favorit sichern")
+        case .other: Text("Favorit entfernen")
+        default: Text("Favorit, entfernen über Bearbeiten")
+        }
+    }
+}
+
 /// Haltestelle in der Naehe mit Gehzeit (Luftlinie im gelernten Tempo).
 struct NearbyStopRow: View {
     @Environment(AppFlow.self) private var flow
@@ -331,21 +363,24 @@ struct NearbyStopRow: View {
     var body: some View {
         if let id = stop.id, let name = stop.name {
             let mode = stop.modes?.first ?? .unknown
-            Button { flow.choose(.stop(id: id, label: name), coordinate: stop.coordinate) } label: {
-                ListRow(symbol: mode.symbolName, tint: mode.color, title: name) {
-                    if let meters = stop.distanceMeters {
-                        let minutes = flow.pace.walkMinutes(meters: meters)
-                        Text("\(minutes) Min. zu Fuß")
-                            .monospacedDigit()
-                            .contentTransition(.numericText())
-                            .animation(Motion.micro, value: minutes)
-                            .accessibilityLabel(Text("\(minutes) Minuten zu Fuß"))
+            HStack(spacing: 0) {
+                Button { flow.choose(.stop(id: id, label: name), coordinate: stop.coordinate) } label: {
+                    ListRow(symbol: mode.symbolName, tint: mode.color, title: name) {
+                        if let meters = stop.distanceMeters {
+                            let minutes = flow.pace.walkMinutes(meters: meters)
+                            Text("\(minutes) Min. zu Fuß")
+                                .monospacedDigit()
+                                .contentTransition(.numericText())
+                                .animation(Motion.micro, value: minutes)
+                                .accessibilityLabel(Text("\(minutes) Minuten zu Fuß"))
+                        }
                     }
+                    .accessibilityElement(children: .combine)
                 }
-                .accessibilityElement(children: .combine)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("nearbyStop")
+                FavoriteStar(endpoint: .stop(id: id, label: name))
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("nearbyStop")
         }
     }
 }
@@ -788,11 +823,14 @@ struct PlanSheet: View {
             if !flow.results.addresses.isEmpty, flow.activeSlot != .via {
                 Section {
                     ForEach(flow.results.addresses, id: \.self) { address in
-                        Button { flow.choose(.coordinate(address.coordinate, label: address.name)) } label: {
-                            ListRow(symbol: "mappin.circle.fill", tint: Color(.accentBlue), title: address.name, subtitle: address.subtitle)
+                        HStack(spacing: 0) {
+                            Button { flow.choose(.coordinate(address.coordinate, label: address.name)) } label: {
+                                ListRow(symbol: "mappin.circle.fill", tint: Color(.accentBlue), title: address.name, subtitle: address.subtitle)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("searchResult")
+                            FavoriteStar(endpoint: .coordinate(address.coordinate, label: address.name))
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("searchResult")
                     }
                 } footer: {
                     Label("Adressen werden nur mit Apple Karten auf dem Gerät gesucht.", systemImage: "lock")
@@ -824,11 +862,14 @@ struct PlanSheet: View {
             ForEach(flow.results.stops, id: \.self) { stop in
                 if let id = stop.id, let name = stop.name {
                     let mode = stop.modes?.first ?? .unknown
-                    Button { flow.choose(.stop(id: id, label: name), coordinate: stop.coordinate) } label: {
-                        ListRow(symbol: mode.symbolName, tint: mode.color, title: name, subtitle: stop.area)
+                    HStack(spacing: 0) {
+                        Button { flow.choose(.stop(id: id, label: name), coordinate: stop.coordinate) } label: {
+                            ListRow(symbol: mode.symbolName, tint: mode.color, title: name, subtitle: stop.area)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("searchResult")
+                        FavoriteStar(endpoint: .stop(id: id, label: name))
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("searchResult")
                 }
             }
         } footer: {
