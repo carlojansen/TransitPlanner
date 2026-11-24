@@ -41,11 +41,7 @@ Die Leute kaufen ihre Tickets woanders und zeigen sie im Fahrzeug in echt vor. D
 
 Technische Annahme, die vor dem Bau geprüft wird:
 
-| Frage | Stand | Prüfung |
-|---|---|---|
-| Kann die App fremde Wallet-Pässe (z. B. Deutschlandticket der Bahn) auflisten? | Vermutlich nein: `PKPassLibrary` liefert nur Pässe, die zur eigenen App gehören | Apple-Doku und kleiner Test am Gerät, bevor wir planen |
-| Dann was heißt "aus der Wallet"? | Nutzer teilt den Pass als `.pkpass`-Datei oder Bild in die App (Teilen-Menü, Dateien) | Entscheidung nach der Prüfung |
-| Hell/dunkel beim Vorzeigen | Barcode und QR brauchen hohe Helligkeit und weißen Grund | Bildschirm beim Anzeigen aufhellen, danach zurücksetzen |
+Ergebnis der Wallet-Prüfung (24.11., Apple-Doku `PKPassLibrary.passes()`: "Your app only has access to certain passes according to its entitlements. PassKit doesn't return passes that your app can't access."): Die App kann fremde Pässe (Deutschlandticket der Bahn, Handyticket des Verbunds) **nicht** aus der Wallet lesen. Nicht am Gerät getestet, die Doku ist eindeutig. Folge: B1 geht über Foto, Bild und PDF (Fotos-Auswahl, Dateien); Fotografieren und Scannen mit der Kamera sowie ein `.pkpass`-Import (die App kann einen Pass nicht selbst darstellen) sind B3 und brauchen eigene Entscheidungen.
 
 Stufen (jede einzeln freigebbar):
 
@@ -98,6 +94,17 @@ Ablauf je Scheibe (nach `CLAUDE.md` und den Lehren aus dem Zwischenstopp-Feature
 5. Stern ist ein eigenes VoiceOver-Element (Label je Zustand, `.isSelected`), eigener Identifier `favoriteStar`, 44 pt mit `.contentShape`, Haptik, Reduce Motion beachten, nicht in `EndpointRow` einbauen (sonst auch auf Favoritenzeilen).
 6. Commits: (1) Modell und Tests, (2) Stern in Suche und Nähe, (3) Stern an der offenen Route (Details rechts frei; Routenauswahl hat nur Platz neben der Zeit, Platz mit dem Ticket-Knopf aus Scheibe 4 gemeinsam festlegen).
 7. Am Gerät prüfen: Stern neben der Gehzeit bei AX3, Sprung der Liste nach dem Stern, stabile Koordinaten für dieselbe Adresse aus Apple Karten.
+
+### Auflagen aus der Auswirkungsprüfung Scheibe 4 / B1 (24.11.)
+
+1. **Speicher:** verschlüsselte Datei in `Application Support/Tickets/<uuid>.ticket` (nicht SwiftData, nicht App Group), Inhalt `LocalSealer`-Chiffrat (Schlüssel `.coordinateKey`), `.atomic`, Dateischutz `.completeFileProtectionUntilFirstUserAuthentication` (AGENT.md 3.3.1), `isExcludedFromBackup` nach jedem Schreiben. Ersetzen: erst neues schreiben, dann altes löschen. Kein Datei-Zeitstempel (`createdAt` im Chiffrat), kein Speicherplatz abfragen (PrivacyInfo).
+2. **Import:** Bild per ImageIO auf längste Seite 3000 px, JPEG 0,9 (entfernt EXIF/GPS); PDF unverändert, höchstens 10 MB, mindestens eine Seite, nicht verschlüsselt; roh über 20 MB ablehnen. Nur PhotosPicker und `fileImporter` (keine Berechtigung, keine Info.plist-Änderung). Kein QuickLook, keine temporäre Datei.
+3. **Fehler:** neuer `TransitError.ticketUnreadable` (`CLIENT_TICKET_UNREADABLE`); ein unlesbares Ticket (z. B. Schlüsselwechsel) wird sichtbar und lässt sich löschen, nie eine leere Ansicht. Fehler in den Einstellungen direkt anzeigen (das Banner läge unter dem Sheet).
+4. **Anzeige:** `fullScreenCover`, heller Grund nur auf dem Inhalt, Helligkeit über die Szene (`UIScreen.main` ist veraltet und Warnungen sind Fehler), `isIdleTimerDisabled`, zurücksetzen beim Schließen und bei inaktiver oder Hintergrund-App; Platzhalter statt Ticket, solange die App nicht aktiv ist (App-Umschalter). Entschlüsseln nicht auf dem Main Actor. Kein Teilen, kein Kopieren.
+5. **Knopf:** nur mit Ticket und nur bei offener Route (Routenauswahl, Details, Navigation, Ankunft), Regel einmal im Modell (`offersTicket`). Reihenfolge in der Leiste: Ticket, Stern, Zeit. Ohne Ticket ausgeblendet (Annahme, bis Carlo anders sagt); Hinzufügen nur in den Einstellungen.
+6. **Datenschutz:** Ticket nie in Fallbericht, Snapshot, Live Activity, Widget, Log, Backend. Rohwert-Test und Backup-Ausschluss-Test.
+7. **Commits:** (1) TransitCore `TicketFile`, Import-Aufbereitung, Fehlercode, Tests; (2) App-Abhängigkeiten, Fakes, AppFlow-Regeln; (3) Einstellungen (Hinzufügen, Vorschau, Löschen); (4) Anzeige mit Helligkeit, Sperre, Maskierung; (5) Knopf an der Route, UITest mit `-fakeTicket`. Danach Review mit Fokus Ticket-Datenschutz, dann Doku (STATUS, DESIGN, `docs/index.html`).
+8. **Am Gerät prüfen:** Leiste der Routenauswahl bei AX3, Helligkeit nach Kontrollzentrum und App-Wechsel, Textauswahl in `PDFView`.
 
 Teil A (Scheiben 1 bis 3) ist freigegeben. Teil B beginnt mit der Prüfung in Scheibe 4.
 

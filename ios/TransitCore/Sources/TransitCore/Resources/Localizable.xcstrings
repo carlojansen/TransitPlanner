@@ -63,6 +63,9 @@
     "Das kann gerade nicht gespeichert werden." : {
 
     },
+    "Diese Datei lässt sich nicht als Ticket zeigen. Bilder oder PDF bis 10 MB." : {
+
+    },
     "Fahrplandaten antworten zu langsam." : {
       "extractionState" : "manual"
     },

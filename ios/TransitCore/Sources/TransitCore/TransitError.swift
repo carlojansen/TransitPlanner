@@ -24,6 +24,7 @@ public enum TransitError: String, LocalizedError, Codable, Sendable, CaseIterabl
     case locationDenied = "CLIENT_LOCATION_DENIED"
     case locationUnavailable = "CLIENT_LOCATION_UNAVAILABLE"
     case cancelled = "CLIENT_CANCELLED"
+    case ticketUnreadable = "CLIENT_TICKET_UNREADABLE"
 
     /// Codes, die das Backend senden kann.
     public static let backendCodes: [TransitError] = [
@@ -50,6 +51,7 @@ public enum TransitError: String, LocalizedError, Codable, Sendable, CaseIterabl
         case .locationDenied: String(localized: "Standortzugriff ist nicht erlaubt.", bundle: .module)
         case .locationUnavailable: String(localized: "Standort ist gerade nicht verfügbar.", bundle: .module)
         case .cancelled: String(localized: "Abgebrochen.", bundle: .module)
+        case .ticketUnreadable: String(localized: "Diese Datei lässt sich nicht als Ticket zeigen. Bilder oder PDF bis 10 MB.", bundle: .module)
         }
     }
 

@@ -124,7 +124,7 @@ extension TransitError {
         case .refreshExpired, .notFound: [.newSearch]
         // rateLimited: Restzeit statt Knopf (kein Neuversuch-Haemmern); pinningFailed: keine Umgehung anbieten.
         case .rateLimited, .pinningFailed, .noConnections, .cancelled,
-             .invalidRequest, .internal, .decodingFailed, .keychainFailure, .storageUnavailable: []
+             .invalidRequest, .internal, .decodingFailed, .keychainFailure, .storageUnavailable, .ticketUnreadable: []
         }
     }
 }
