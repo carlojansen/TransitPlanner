@@ -745,6 +745,18 @@ import TransitCore
         #expect(f.banner == .storageUnavailable)
     }
 
+    /// Stern am Ziel der offenen Route: nur fuer ein gewaehltes Ziel, nie fuer "Mein Standort" (auch nach dem Tauschen).
+    @Test func routeStarFollowsTheChosenDestination() async {
+        let f = AppFlow(.fakes(onboarding: .withLocation))
+        f.choose(Self.stopEndpoint)
+        await f.waitForWork()
+        #expect(f.destination?.place == Self.stopEndpoint)
+        f.toggleFavorite(Self.stopEndpoint)
+        #expect(f.favorite(at: f.destination?.place ?? Self.addressEndpoint) != nil)
+        f.swapEndpoints()
+        #expect(f.destination?.place == nil) // Ziel ist jetzt "Mein Standort": kein Stern
+    }
+
     @Test func flowMovesFavoritesAndReportsFailure() {
         let places = MemoryPlaces(favorites: [Self.stopEndpoint, Self.otherStopEndpoint])
         let f = AppFlow(.fakes(onboarding: .withLocation, places: places))

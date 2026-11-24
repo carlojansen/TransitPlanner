@@ -949,6 +949,10 @@ struct RouteSheet: View {
             Button("Zurück zur Planung", systemImage: "chevron.backward") { flow.send(.back) }
                 .accessibilityIdentifier("backToPlan")
         }
+        // Stern fuer das gewaehlte Ziel ("Mein Standort" hat keinen); der Ticket-Knopf teilt sich diese Stelle spaeter.
+        if let destination = flow.destination?.place {
+            ToolbarItem(placement: .topBarTrailing) { FavoriteStar(endpoint: destination) }
+        }
         ToolbarItem(placement: .topBarTrailing) {
             Button { flow.send(.editOptions) } label: {
                 HStack(spacing: 4) {
