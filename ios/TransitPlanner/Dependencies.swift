@@ -232,7 +232,8 @@ extension AppDependencies {
         }
         var deps = AppDependencies.fakes(planner: planner,
                                          secrets: InMemorySecretStore(token: onboarded ? String(repeating: "k", count: 40) : nil),
-                                         onboarding: onboarded ? .withLocation : nil)
+                                         onboarding: onboarded ? .withLocation : nil,
+                                         tickets: MemoryTickets(tickets: arguments.contains("-fakeTicket") ? [Self.fakeTicket()] : []))
         // Navigation (Screenshot-Tour): feste Uhrzeit und fester Standort, z. B. `-fakeNow 2026-10-24T06:05:00Z -fakePosition 51.21996,6.79432`.
         if let raw = value(after: "-fakeNow", in: arguments), let base = try? Date.ISO8601FormatStyle().parse(raw) {
             let offset = base.timeIntervalSince(Date())
@@ -247,6 +248,15 @@ extension AppDependencies {
             }
         }
         return deps
+    }
+
+    /// Ein graues Bild als Ticket fuer UI-Tests (`-fakeTicket`).
+    private static func fakeTicket() -> StoredTicket {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 200, height: 200)).image { context in
+            UIColor.gray.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 200, height: 200))
+        }
+        return StoredTicket(kind: .image, data: image.jpegData(compressionQuality: 0.9) ?? Data())
     }
 
     private static func value(after flag: String, in arguments: [String]) -> String? {

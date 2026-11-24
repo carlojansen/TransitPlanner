@@ -63,3 +63,20 @@ private struct PDFContent: UIViewRepresentable {
 
     func updateUIView(_ view: PDFView, context: Context) {}
 }
+
+/// Knopf in der Leiste: nur mit lesbarem Ticket und offener Route (Regel im Modell: `offersTicket`).
+struct TicketButton: View {
+    @Environment(AppFlow.self) private var flow
+
+    var body: some View {
+        if flow.offersTicket {
+            Button { flow.showTicket() } label: {
+                Label("Ticket zeigen", systemImage: "ticket")
+                    .labelStyle(.iconOnly)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
+            }
+            .accessibilityIdentifier("ticketButton")
+        }
+    }
+}

@@ -310,8 +310,8 @@ struct NavigationSheet: View {
     @ViewBuilder private func top(_ overview: RouteOverview?) -> some View {
         // AX: Kopf untereinander statt abgeschnitten.
         ViewThatFits(in: .horizontal) {
-            HStack { header(overview); Spacer(); stale; mapButton; endButton }
-            VStack(alignment: .leading, spacing: 4) { header(overview); stale; mapButton; endButton }
+            HStack { header(overview); Spacer(); stale; TicketButton(); mapButton; endButton }
+            VStack(alignment: .leading, spacing: 4) { header(overview); stale; TicketButton(); mapButton; endButton }
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)

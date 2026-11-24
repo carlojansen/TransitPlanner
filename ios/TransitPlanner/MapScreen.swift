@@ -162,6 +162,7 @@ struct MapScreen: View {
         .overlay(alignment: .topLeading) { if !guiding { StatusIndicator().padding(16) } }
         .animation(Motion.standard, value: guiding)
         .mapScope(mapScope)
+        .task { await flow.loadTickets() }
         .onChange(of: flow.overlay?.id) { moveCamera() }
         // Sheet eingerastet (Polster 300 ms stabil): Route neu einpassen, damit sie zum aktuellen Detent passt.
         // Hat der Nutzer die Karte bewegt, bleibt sie; unterwegs steuert die Navigation die Kamera.

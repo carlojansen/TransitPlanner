@@ -70,6 +70,33 @@ final class PlanFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Schlüssel gespeichert"].waitForExistence(timeout: 5))
     }
 
+    /// Ticket-Knopf: erst mit offener Route, zeigt das Ticket im Vollbild, schliesst wieder. Ohne Ticket fehlt er.
+    @MainActor
+    func testTicketButtonOpensTicketOnlyWithRoute() {
+        for hasTicket in [true, false] {
+            let app = XCUIApplication()
+            app.launchArguments = ["-uiTestFakes", "-fakeOnboarded"] + (hasTicket ? ["-fakeTicket"] : [])
+            app.launch()
+            XCTAssertFalse(app.buttons["ticketButton"].exists, "Im Start gibt es keinen Ticket-Knopf")
+            tap(app.buttons["searchEntry"])
+            let search = app.textFields["searchField"]
+            XCTAssertTrue(search.waitForExistence(timeout: 5))
+            search.typeText("Köln\n")
+            tap(app.buttons["serverSearchRow"])
+            tap(app.buttons["searchResult"].firstMatch)
+            XCTAssertTrue(app.buttons["startButton"].firstMatch.waitForExistence(timeout: 10))
+            if hasTicket {
+                tap(app.buttons["ticketButton"])
+                XCTAssertTrue(app.images["ticketImage"].waitForExistence(timeout: 5))
+                tap(app.buttons["ticketClose"])
+                XCTAssertTrue(app.buttons["ticketButton"].waitForExistence(timeout: 5))
+            } else {
+                XCTAssertFalse(app.buttons["ticketButton"].exists)
+            }
+            app.terminate()
+        }
+    }
+
     /// Unterwegs ist die Karte bedienbar: Verschieben stoppt das Folgen, "Zentrieren" holt es zurueck.
     @MainActor
     func testNavigationMapIsInteractive() {

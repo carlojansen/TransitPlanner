@@ -20,6 +20,7 @@ struct TripDetailsSheet: View {
                             .accessibilityLabel(Text(verbatim: "Zurück zu Verbindungen"))
                             .accessibilityIdentifier("backToRoutes")
                     }
+                    ToolbarItem(placement: .topBarTrailing) { TicketButton() }
                     if let destination = flow.routeStarEndpoint {
                         ToolbarItem(placement: .topBarTrailing) { FavoriteStar(endpoint: destination) }
                     }

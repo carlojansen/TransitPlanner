@@ -282,51 +282,6 @@
         }
       }
     },
-    "Als Favorit sichern" : {
-
-    },
-    "Bericht nicht erstellt" : {
-
-    },
-    "Die App notiert knappe oder späte Fälle unterwegs, Abstürze und deine Markierungen über den Knopf auf der Karte." : {
-
-    },
-    "Die Datei ließ sich nicht schreiben. Versuche es später noch einmal." : {
-
-    },
-    "Etwas stimmt nicht" : {
-
-    },
-    "Favorit entfernen" : {
-
-    },
-    "Favorit umbenennen" : {
-
-    },
-    "Favorit, entfernen über Bearbeiten" : {
-
-    },
-    "Markiert" : {
-
-    },
-    "Merkt den Moment für den Bericht an die Entwickler" : {
-
-    },
-    "Nach oben" : {
-
-    },
-    "Nach unten" : {
-
-    },
-    "Name" : {
-
-    },
-    "Noch nichts aufgezeichnet" : {
-
-    },
-    "Umbenennen" : {
-
-    },
     "© OpenStreetMap-Mitwirkende, verfügbar unter der Open Database License (ODbL)." : {
 
     },
@@ -390,6 +345,9 @@
 
     },
     "Aktuelle Fahrt" : {
+
+    },
+    "Als Favorit sichern" : {
 
     },
     "Alternativen" : {
@@ -517,6 +475,9 @@
     "Beim Verwenden" : {
 
     },
+    "Bericht nicht erstellt" : {
+
+    },
     "Bericht senden" : {
 
     },
@@ -527,6 +488,9 @@
 
     },
     "Beste Verbindung:" : {
+
+    },
+    "Bild oder PDF bis 10 MB." : {
 
     },
     "bis %@" : {
@@ -556,13 +520,22 @@
     "Danach: %@" : {
 
     },
+    "Das gespeicherte Ticket lässt sich nicht lesen." : {
+
+    },
     "Das reicht nicht mehr." : {
+
+    },
+    "Datei wählen" : {
 
     },
     "Dein Server" : {
 
     },
     "Dein Standort bleibt auf dem iPhone. Der Fahrplan-Server bekommt nur eine gerundete Koordinate." : {
+
+    },
+    "Dein Ticket liegt verschlüsselt nur auf diesem iPhone. Die App zeigt es nur, sie prüft es nicht." : {
 
     },
     "Der Schlüssel liegt nur auf diesem iPhone im Schlüsselbund (ohne iCloud) und wird nicht wieder angezeigt." : {
@@ -580,6 +553,12 @@
     "Die App fragt Fahrpläne über deinen eigenen Server ab. Der Schlüssel zeigt dem Server, dass die Anfrage von dir kommt." : {
 
     },
+    "Die App notiert knappe oder späte Fälle unterwegs, Abstürze und deine Markierungen über den Knopf auf der Karte." : {
+
+    },
+    "Die Datei ließ sich nicht schreiben. Versuche es später noch einmal." : {
+
+    },
     "Die Fahrt bleibt unverändert" : {
 
     },
@@ -590,6 +569,9 @@
 
     },
     "Direkt." : {
+
+    },
+    "Du kannst es danach neu hinzufügen." : {
 
     },
     "Ebene %@" : {
@@ -606,6 +588,9 @@
       }
     },
     "Echtzeit pausiert" : {
+
+    },
+    "Ein neues Ticket ersetzt das gespeicherte." : {
 
     },
     "Einige Verbindungen wurden ausgeblendet (Fernverkehr)." : {
@@ -691,6 +676,9 @@
         }
       }
     },
+    "Etwas stimmt nicht" : {
+
+    },
     "Fähre" : {
 
     },
@@ -718,10 +706,19 @@
     "Favorit" : {
 
     },
+    "Favorit entfernen" : {
+
+    },
     "Favorit hinzufügen" : {
 
     },
     "Favorit neu festlegen" : {
+
+    },
+    "Favorit umbenennen" : {
+
+    },
+    "Favorit, entfernen über Bearbeiten" : {
 
     },
     "Favoriten" : {
@@ -734,6 +731,9 @@
 
     },
     "Flugzeug" : {
+
+    },
+    "Foto wählen" : {
 
     },
     "Früher losgehen" : {
@@ -767,6 +767,9 @@
 
     },
     "Geradeaus" : {
+
+    },
+    "Gespeichert" : {
 
     },
     "Gilt für neue Erinnerungen, bestehende übernehmen den Wert bei der nächsten Neuberechnung. Bei 0 Min. entfällt „Später erinnern“ in der Losgehen-Mitteilung, außer du gehst früher los. Umstiege bewertet die App davon unabhängig." : {
@@ -890,6 +893,9 @@
     "Karten- und Wegdaten" : {
 
     },
+    "Kein Ticket" : {
+
+    },
     "Keine Erinnerungen" : {
 
     },
@@ -950,6 +956,9 @@
     "Losgehen in %@" : {
 
     },
+    "Markiert" : {
+
+    },
     "Mein Standort" : {
 
     },
@@ -957,6 +966,9 @@
 
     },
     "Meldungen des Betreibers" : {
+
+    },
+    "Merkt den Moment für den Bericht an die Entwickler" : {
 
     },
     "Merkt den Wechsel vor, die Fahrt läuft bis zum Umstieg weiter" : {
@@ -972,6 +984,12 @@
 
     },
     "Nach dem Einfügen den Schlüssel aus der Zwischenablage des anderen Geräts entfernen." : {
+
+    },
+    "Nach oben" : {
+
+    },
+    "Nach unten" : {
 
     },
     "Nächste Station" : {
@@ -992,10 +1010,16 @@
     "Nahverkehr und Regio" : {
 
     },
+    "Name" : {
+
+    },
     "Neu suchen" : {
 
     },
     "Nicht gefragt" : {
+
+    },
+    "Nicht lesbar" : {
 
     },
     "Noch" : {
@@ -1014,6 +1038,9 @@
         }
       }
     },
+    "Noch nichts aufgezeichnet" : {
+
+    },
     "Offene Fahrplan- und Echtzeitdaten über Transitous (MOTIS 2), u. a. DELFI." : {
 
     },
@@ -1030,6 +1057,9 @@
 
     },
     "Ohne Standort fortfahren" : {
+
+    },
+    "PDF-Ticket" : {
 
     },
     "Platzhalter für die Leg-Bar" : {
@@ -1099,6 +1129,9 @@
 
     },
     "Scharf rechts" : {
+
+    },
+    "Schließen" : {
 
     },
     "Schlüssel" : {
@@ -1185,6 +1218,15 @@
     "Sucht Verbindungen ab deinem Standort" : {
 
     },
+    "Ticket" : {
+
+    },
+    "Ticket löschen" : {
+
+    },
+    "Ticket löschen?" : {
+
+    },
     "Tippe einen Ort, eine Adresse oder eine Haltestelle." : {
 
     },
@@ -1207,6 +1249,9 @@
 
     },
     "Übernehmen" : {
+
+    },
+    "Umbenennen" : {
 
     },
     "Umstieg" : {
@@ -1293,6 +1338,9 @@
       }
     },
     "Vorschau" : {
+
+    },
+    "Vorschau des Tickets" : {
 
     },
     "Vorschlag zur laufenden Fahrt" : {
