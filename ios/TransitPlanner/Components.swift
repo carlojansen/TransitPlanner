@@ -420,6 +420,7 @@ extension BannerAction {
         case .allowLocation: "Standort erlauben"
         case .chooseOrigin: "Start wählen"
         case .newSearch: "Neu suchen"
+        case .replaceFavorite: "Favorit neu festlegen"
         }
     }
 }

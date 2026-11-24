@@ -108,7 +108,7 @@ enum OnboardingStep: Sendable, Hashable {
 
 /// Aktionen, die ein Inline-Banner anbietet (DESIGN.md H1). Keine Alerts.
 enum BannerAction: Sendable, Hashable {
-    case retry, enterKey, openSettings, allowLocation, chooseOrigin, newSearch
+    case retry, enterKey, openSettings, allowLocation, chooseOrigin, newSearch, replaceFavorite
 }
 
 extension TransitError {
@@ -1968,7 +1968,15 @@ final class AppFlow {
         if error == .locationDenied, locationAuthorization == .notDetermined {
             actions = actions.map { $0 == .openSettings ? .allowLocation : $0 }
         }
+        // Unbekannte Haltestelle an einem Favoriten (Datenaktualisierung): den Favoriten neu festlegen koennen.
+        if error == .notFound, staleFavorite != nil { actions.insert(.replaceFavorite, at: 0) }
         return actions
+    }
+
+    /// Favorit, dessen Haltestelle als Start oder Ziel gerade gesucht wurde. Nur Haltestellen haben eine ID, die veralten kann.
+    private var staleFavorite: SavedPlace? {
+        let used = [origin.place, destination?.place].compactMap { $0 }.filter { if case .stop = $0 { true } else { false } }
+        return favorites.first { used.contains($0.endpoint) }
     }
 
     func perform(_ action: BannerAction) {
@@ -1990,6 +1998,12 @@ final class AppFlow {
             banner = nil
             Task { await allowLocation() }
         case .newSearch: send(.reset)
+        case .replaceFavorite:
+            // Der veraltete Favorit ist ohne gueltige ID nutzlos; die Rolle bleibt fuer den neuen Ort frei.
+            guard let stale = staleFavorite else { return }
+            removeFavorite(stale.id)
+            send(.reset)
+            assignFavorite(stale.role)
         case .openSettings: break // oeffnet die View per openURL
         }
     }

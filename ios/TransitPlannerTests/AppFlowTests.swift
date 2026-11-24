@@ -338,6 +338,39 @@ import TransitCore
         #expect(f.recents.isEmpty)
     }
 
+    /// A4: Favorit mit veralteter Haltestelle (NOT_FOUND): das Banner bietet "Favorit neu festlegen", sonst nichts Neues.
+    @Test func staleFavoriteCanBeReplaced() async {
+        let places = MemoryPlaces()
+        places.addFavorite(Self.stopEndpoint, role: .uni)
+        places.addFavorite(Self.addressEndpoint, role: .other)
+        let planner = FakeRoutePlanner(failure: .notFound)
+        let f = AppFlow(.fakes(planner: planner, onboarding: .withLocation, places: places))
+        f.loadSuggestions()
+        f.choose(Self.stopEndpoint)
+        await f.waitForWork()
+        #expect(f.banner == .notFound)
+        #expect(f.actions(for: .notFound) == [.replaceFavorite, .newSearch])
+
+        f.perform(.replaceFavorite)
+        #expect(f.phase == .plan(.destination))
+        #expect(f.assigningRole == .uni)
+        #expect(f.favorites.map(\.role) == [.other]) // nur der veraltete ist weg
+        planner.setFailure(nil)
+        f.choose(Self.stopEndpoint)
+        #expect(f.phase == .start)
+        #expect(f.favorites.contains { $0.role == .uni })
+    }
+
+    /// Ohne Favorit (normale Suche) bleibt "Neu suchen" die einzige Aktion; "Mein Standort" ist nie ein Favorit.
+    @Test func notFoundWithoutFavoriteOffersOnlyNewSearch() async {
+        let f = flow(planner: FakeRoutePlanner(failure: .notFound))
+        f.send(.editEndpoint(.destination))
+        f.choose(Self.stopEndpoint)
+        await f.waitForWork()
+        #expect(f.banner == .notFound)
+        #expect(f.actions(for: .notFound) == [.newSearch])
+    }
+
     // MARK: Start (DESIGN.md B1, Ueberarbeitung 27.10.)
 
     /// Tipp auf Favorit/Verlauf im Start: wie die Wahl eines Orts in Planen, aber immer ab "Mein Standort" und jetzt.
