@@ -778,10 +778,15 @@ import TransitCore
 
     /// Rollen-Favoriten: ausgefuellter Stern ohne Wirkung; ohne Stern-Angebot (Zwischenstopp) aendert toggle nichts.
     @Test func toggleRespectsOfferRules() {
-        let f = AppFlow(.fakes(onboarding: .withLocation))
+        let places = MemoryPlaces()
+        places.addFavorite(Self.addressEndpoint, role: .home)
+        let f = AppFlow(.fakes(onboarding: .withLocation, places: places))
+        f.loadSuggestions()
+        f.toggleFavorite(Self.addressEndpoint) // Rolle: bleibt
+        #expect(f.favorites.map(\.role) == [.home])
         f.send(.editEndpoint(.via))
-        f.toggleFavorite(Self.stopEndpoint)
-        #expect(f.favorites.isEmpty)
+        f.toggleFavorite(Self.stopEndpoint) // Zwischenstopp: kein Favorit
+        #expect(f.favorites.map(\.role) == [.home])
     }
 
     @Test func flowMovesFavoritesAndReportsFailure() {

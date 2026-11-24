@@ -803,7 +803,7 @@ struct PlanSheet: View {
         // Gleicher Ort nur einmal, auch unter anderem Namen; was schon als Treffer darunter steht, nicht doppelt (die Liste
         // spraenge sonst nach einem Stern unter dem Finger).
         var seen = Set(flow.results.addresses.map { RoutePoint.coordinate($0.coordinate) }
-            + flow.results.stops.compactMap { $0.id.map { RoutePoint.stop(id: $0) } })
+            + flow.results.stops.compactMap { stop in stop.name == nil ? nil : stop.id.map { RoutePoint.stop(id: $0) } })
         return all.filter { $0.0.label.localizedCaseInsensitiveContains(text) && seen.insert($0.0.routePoint).inserted }
             .prefix(5)
             .map { (endpoint: $0.0, symbol: $0.1) }
