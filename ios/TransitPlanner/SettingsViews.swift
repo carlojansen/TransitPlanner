@@ -244,7 +244,7 @@ struct SettingsSheet: View {
                         NavigationLink(value: Route.report) { SettingsRow(title: "Bericht senden") }
                             .accessibilityIdentifier("reportLink")
                     } footer: {
-                        Text("Für Tester: ein anonymer Bericht über knappe Abfahrten, späte Vorschläge und Ankünfte. Du siehst ihn vor dem Teilen.")
+                        Text("Für Tester: ein anonymer Bericht über knappe Abfahrten, späte Vorschläge, Ankünfte, Abstürze und deine Markierungen (Knopf auf der Karte). Du siehst ihn vor dem Teilen.")
                     }
                 }
                 Section {
@@ -294,44 +294,53 @@ struct ReportView: View {
     @Environment(AppFlow.self) private var flow
     @State private var file: URL?
     @State private var text = ""
+    /// Datei liess sich nicht schreiben: nicht als "leer" ausgeben, sonst glaubt der Tester, es gebe nichts zu senden.
+    @State private var failed = false
 
     var body: some View {
-        List {
-            if let file, flow.caseCount > 0 {
-                Section {
-                    ShareLink(item: file) { Label("Bericht teilen", systemImage: "square.and.arrow.up") }
-                        .accessibilityIdentifier("reportShare")
-                } footer: {
-                    Text("Enthält nur Zahlen, Uhrzeit auf 5 Minuten und Ort auf etwa 1 km gerundet. Keine Namen, Adressen oder Geräte-Kennung.")
-                }
-                Section {
-                    Button("Protokoll löschen", role: .destructive) {
-                        flow.clearCaseLog()
-                        try? FileManager.default.removeItem(at: file)
-                        self.file = nil
-                        text = ""
-                    }
-                    .accessibilityIdentifier("reportClear")
-                }
-                Section {
-                    Text(text)
-                        .font(.caption.monospaced())
-                        .textSelection(.enabled)
-                } header: {
-                    Text("Vorschau")
-                }
+        Group {
+            if failed {
+                ContentUnavailableView("Bericht nicht erstellt", systemImage: "exclamationmark.triangle",
+                                       description: Text("Die Datei ließ sich nicht schreiben. Versuche es später noch einmal."))
+            } else if flow.caseCount == 0 {
+                ContentUnavailableView("Noch nichts aufgezeichnet", systemImage: "doc.text.magnifyingglass",
+                                       description: Text("Die App notiert knappe oder späte Fälle unterwegs, Abstürze und deine Markierungen über den Knopf auf der Karte."))
             } else {
-                Section {
-                    Text("Noch keine Fälle aufgezeichnet. Die App notiert sie, sobald unterwegs etwas knapp oder spät ist.")
+                List {
+                    if let file {
+                        Section {
+                            ShareLink(item: file) { Label("Bericht teilen", systemImage: "square.and.arrow.up") }
+                                .accessibilityIdentifier("reportShare")
+                        } footer: {
+                            Text("Enthält nur Zahlen, Uhrzeit auf 5 Minuten und Ort auf etwa 1 km gerundet. Keine Namen, Adressen oder Geräte-Kennung.")
+                        }
+                    }
+                    Section {
+                        Button("Protokoll löschen", role: .destructive) {
+                            flow.clearCaseLog()
+                            if let file { try? FileManager.default.removeItem(at: file) }
+                            file = nil
+                            text = ""
+                        }
+                        .accessibilityIdentifier("reportClear")
+                    }
+                    Section {
+                        Text(text)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                    } header: {
+                        Text("Vorschau")
+                    }
                 }
+                .scrollContentBackground(.hidden)
             }
         }
-        .scrollContentBackground(.hidden)
         .navigationTitle("Bericht senden")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             guard flow.caseCount > 0 else { return }
             file = flow.writeReport()
+            failed = file == nil
             text = file.flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
         }
         .onDisappear { if let file { try? FileManager.default.removeItem(at: file) } }

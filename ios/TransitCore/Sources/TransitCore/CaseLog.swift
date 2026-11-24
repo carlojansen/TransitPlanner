@@ -8,6 +8,15 @@ public enum CaseKind: String, Codable, Sendable, CaseIterable {
     case replanLate
     /// Fahrt nur per Zeit beendet, Position aber nicht am Ziel.
     case arrivalWithoutGPS
+    /// Tester hat "Etwas stimmt nicht" getippt: Phase und Verspaetung zum Abgleich mit dem TestFlight-Screenshot.
+    case userMark
+    /// MetricKit, taeglich: CPU, Speicher, GPS, Mobilfunk, Abbrueche (Effizienz).
+    case metrics
+    /// MetricKit: Abstuerze, Haenger und Ressourcen-Ausnahmen als Zaehler (Stack liefert TestFlight).
+    case diagnostics
+
+    /// Nie zusammenfassen: jeder Tipp gehoert zu einem eigenen Screenshot, jedes Diagnosepaket zu eigenen Abstuerzen.
+    var countsEach: Bool { self == .userMark || self == .diagnostics }
 }
 
 /// Ein Eintrag im lokalen Protokoll. Anonym by design: Zeit auf 5 Min., Ort auf 2 Stellen (~1 km), nur benannte Zahlen.
@@ -38,10 +47,10 @@ public struct CaseLog: Codable, Sendable, Equatable {
     public init() {}
 
     /// Gleiche Art, Zeit (auf 5 Min. gerundet) und Ort nur einmal, die Zahlen des letzten Mals gelten: Neuplanen verdraengt
-    /// keine seltenen Faelle.
+    /// keine seltenen Faelle. Ausnahme: jede Markierung und jede Absturzmeldung zaehlt einzeln.
     public mutating func record(_ event: CaseEvent?) {
         guard let event else { return }
-        if let i = events.firstIndex(where: { $0.kind == event.kind && $0.time == event.time && $0.latitude == event.latitude && $0.longitude == event.longitude }) {
+        if !event.kind.countsEach, let i = events.firstIndex(where: { $0.kind == event.kind && $0.time == event.time && $0.latitude == event.latitude && $0.longitude == event.longitude }) {
             events[i] = event
             return
         }

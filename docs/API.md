@@ -162,13 +162,16 @@ Die App führt lokal ein anonymes Fall-Protokoll (Ringpuffer, höchstens 200 Ein
 ```
 
 - Zeit auf 5 Minuten abgerundet, Koordinaten auf 2 Nachkommastellen (etwa 1 km), keine Namen, Adressen, Haltestellen, Geräte-IDs.
-- `kind` und Zahlen (alle in Sekunden, Distanz in Metern):
+- `kind` und Zahlen (Zeiten in Sekunden, Distanz in Metern, Mengen in KB):
 
 | `kind` | Auslöser | `numbers` |
 |---|---|---|
 | `departureNearMiss` | Aufbruch mit Apple-Gehzeit zu spät, mit MOTIS-Gehzeit rechtzeitig (nur wenn der Zugangsweg von Apple Maps kommt, nicht beim Fahrplan-Fallback) | `slack`, `walkApple`, `walkMotis` |
 | `replanLate` | Vorschlag kam mehr als 60 s nach dem Anschlussbruch | `buffer`, `delay` |
 | `arrivalWithoutGPS` | Fahrt per Zeit beendet, Position weiter als 25 m vom Ziel | `distance` |
+| `userMark` | Tester tippt "Etwas stimmt nicht" (Kartenknopf). Ort: Einstieg des Zielfahrzeugs, sonst keiner | `phase` (0 Start, 1 Planen, 2 Auswahl, 3 Details, 4 unterwegs, 5 Ankunft); unterwegs zusätzlich `step` (0 warten, 1 Weg zum Halt, 2 am Gleis, 3 im Fahrzeug, 4 Umstieg, 5 verpasst, 6 Zielweg, 7 angekommen), `delay`, `buffer` |
+| `metrics` | MetricKit, einmal täglich, ohne Ort | `cpu`, `foreground`, `background`, `backgroundLocation`, `gpsBest` (s), `memoryPeakKB`, `cellularKB`, `exitsForegroundAbnormal`, `exitsBackgroundAbnormal`, `exitsBackgroundMemoryPressure` |
+| `diagnostics` | MetricKit, nach Absturz oder Hänger, ohne Ort; Stack nur über TestFlight | `crashes`, `hangs`, `cpuExceptions`, `diskWriteExceptions`, `signal`, `exceptionType` |
 
 ---
 

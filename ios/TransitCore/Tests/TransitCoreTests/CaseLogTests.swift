@@ -127,4 +127,15 @@ struct CaseReportTests {
         // genug Zeit: kein Fall
         #expect(CaseTrigger.departureNearMisses(in: items, now: departure.addingTimeInterval(-600)).isEmpty)
     }
+
+    /// Zwei Markierungen im selben 5-Minuten-Fenster ohne Ort bleiben zwei Eintraege.
+    @Test func userMarksAreNeverMerged() {
+        var log = CaseLog()
+        let t = Date(timeIntervalSince1970: 1_800_000_000)
+        log.record(CaseEvent(kind: .userMark, time: t, numbers: ["phase": 0]))
+        log.record(CaseEvent(kind: .userMark, time: t.addingTimeInterval(60), numbers: ["phase": 0]))
+        log.record(CaseEvent(kind: .diagnostics, time: t, numbers: ["crashes": 1]))
+        log.record(CaseEvent(kind: .diagnostics, time: t, numbers: ["crashes": 1]))
+        #expect(log.events.count == 4)
+    }
 }

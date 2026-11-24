@@ -957,6 +957,42 @@ final class AppFlow {
         deps.saveCaseLog(caseLog)
     }
 
+    /// "Etwas stimmt nicht": Phase, Navigationsschritt, Verspaetung und Puffer zum Zeitpunkt des Tipps (Codes in docs/API.md).
+    /// Ort ist der Einstieg des Zielfahrzeugs, nie die Position. Ohne Freitext, damit der Bericht anonym bleibt.
+    func markProblem() {
+        let phaseCode = switch phase {
+        case .start: 0
+        case .plan: 1
+        case .routeSelection: 2
+        case .tripDetails: 3
+        case .navigation: 4
+        case .arrival: 5
+        }
+        var numbers = ["phase": phaseCode]
+        var near: GeoCoordinate?
+        if case .navigation = phase, let step = navStep {
+            numbers["step"] = switch step {
+            case .waitingToLeave: 0
+            case .approachingFirstStop: 1
+            case .waitingAtPlatform: 2
+            case .onBoardTransit: 3
+            case .transferRouting: 4
+            case .missedDeparture: 5
+            case .finalWalkToDestination: 6
+            case .arrived: 7
+            }
+            if let v = NavigationEngine.targetVehicle(step), let leg = navJourney?.legs.first(where: { $0.index == v }) {
+                numbers["delay"] = leg.departureDelaySeconds
+                near = leg.origin.coordinate
+            }
+            numbers["buffer"] = currentBuffer?.seconds
+        }
+        record([CaseEvent(kind: .userMark, time: deps.now(), near: near, numbers: numbers)])
+    }
+
+    /// MetricKit-Eintraege (Abstuerze, Effizienz), siehe `AppDelegate`.
+    func recordMetrics(_ events: [CaseEvent]) { record(events) }
+
     /// Nur wo der Bericht angeboten wird: im App Store gibt es keine Stelle, das Protokoll zu sehen oder zu loeschen.
     private func record(_ events: [CaseEvent?]) {
         guard offersReport else { return }

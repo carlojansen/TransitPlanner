@@ -282,6 +282,27 @@
         }
       }
     },
+    "Bericht nicht erstellt" : {
+
+    },
+    "Die App notiert knappe oder späte Fälle unterwegs, Abstürze und deine Markierungen über den Knopf auf der Karte." : {
+
+    },
+    "Die Datei ließ sich nicht schreiben. Versuche es später noch einmal." : {
+
+    },
+    "Etwas stimmt nicht" : {
+
+    },
+    "Markiert" : {
+
+    },
+    "Merkt den Moment für den Bericht an die Entwickler" : {
+
+    },
+    "Noch nichts aufgezeichnet" : {
+
+    },
     "© OpenStreetMap-Mitwirkende, verfügbar unter der Open Database License (ODbL)." : {
 
     },
@@ -472,6 +493,12 @@
     "Beim Verwenden" : {
 
     },
+    "Bericht senden" : {
+
+    },
+    "Bericht teilen" : {
+
+    },
     "BESTE VERBINDUNG" : {
 
     },
@@ -574,6 +601,9 @@
       }
     },
     "Entfernen" : {
+
+    },
+    "Enthält nur Zahlen, Uhrzeit auf 5 Minuten und Ort auf etwa 1 km gerundet. Keine Namen, Adressen oder Geräte-Kennung." : {
 
     },
     "Erinnern" : {
@@ -680,6 +710,9 @@
 
     },
     "Früher losgehen" : {
+
+    },
+    "Für Tester: ein anonymer Bericht über knappe Abfahrten, späte Vorschläge, Ankünfte, Abstürze und deine Markierungen (Knopf auf der Karte). Du siehst ihn vor dem Teilen." : {
 
     },
     "Fußweg" : {
@@ -975,6 +1008,9 @@
     "Platzhalter für die Leg-Bar" : {
 
     },
+    "Protokoll löschen" : {
+
+    },
     "Puffer" : {
 
     },
@@ -1228,6 +1264,9 @@
           }
         }
       }
+    },
+    "Vorschau" : {
+
     },
     "Vorschlag zur laufenden Fahrt" : {
 

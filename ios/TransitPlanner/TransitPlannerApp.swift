@@ -1,3 +1,4 @@
+import MetricKit
 import SwiftUI
 import TransitCore
 import UserNotifications
@@ -14,6 +15,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         center.delegate = self
         center.setNotificationCategories([SystemNotifier.category, SystemNotifier.replanCategory])
         TripRefreshHandler.run = { [flow] in await flow.refreshFromActivity() }
+        // Vor der ersten Fahrt: sonst verwirft das Protokoll in TestFlight alles, bis die Einstellungen offen waren.
+        Task { [flow] in await flow.detectTestFlight() }
+        MXMetricManager.shared.add(self)
         return true
     }
 
@@ -45,6 +49,51 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             }
             completionHandler()
         }
+    }
+}
+
+/// MetricKit liefert einmal am Tag Effizienzwerte und Abstuerze (auch aus vorherigen Laeufen). Nur Zahlen ins Protokoll;
+/// Stacks und Geraeteangaben bleiben bei MetricKit, symbolisierte Abstuerze liefert TestFlight.
+extension AppDelegate: MXMetricManagerSubscriber {
+    nonisolated func didReceive(_ payloads: [MXMetricPayload]) {
+        let events = payloads.map { p in
+            let s = { (m: Measurement<UnitDuration>?) in m.map { Int($0.converted(to: .seconds).value) } }
+            let kb = { (m: Measurement<UnitInformationStorage>?) in m.map { Int($0.converted(to: .kilobytes).value) } }
+            let gps = p.locationActivityMetrics
+            let fg = p.applicationExitMetrics?.foregroundExitData
+            let bg = p.applicationExitMetrics?.backgroundExitData
+            let numbers: [String: Int?] = [
+                "cpu": s(p.cpuMetrics?.cumulativeCPUTime),
+                "memoryPeakKB": kb(p.memoryMetrics?.peakMemoryUsage),
+                "foreground": s(p.applicationTimeMetrics?.cumulativeForegroundTime),
+                "background": s(p.applicationTimeMetrics?.cumulativeBackgroundTime),
+                "backgroundLocation": s(p.applicationTimeMetrics?.cumulativeBackgroundLocationTime),
+                "gpsBest": s(gps.map { $0.cumulativeBestAccuracyForNavigationTime + $0.cumulativeBestAccuracyTime }),
+                "cellularKB": kb(p.networkTransferMetrics.map { $0.cumulativeCellularDownload + $0.cumulativeCellularUpload }),
+                "exitsForegroundAbnormal": fg.map { $0.cumulativeAbnormalExitCount + $0.cumulativeBadAccessExitCount
+                    + $0.cumulativeIllegalInstructionExitCount + $0.cumulativeAppWatchdogExitCount + $0.cumulativeMemoryResourceLimitExitCount },
+                "exitsBackgroundAbnormal": bg.map { $0.cumulativeAbnormalExitCount + $0.cumulativeBadAccessExitCount
+                    + $0.cumulativeIllegalInstructionExitCount + $0.cumulativeAppWatchdogExitCount + $0.cumulativeMemoryResourceLimitExitCount
+                    + $0.cumulativeCPUResourceLimitExitCount + $0.cumulativeBackgroundTaskAssertionTimeoutExitCount },
+                "exitsBackgroundMemoryPressure": bg?.cumulativeMemoryPressureExitCount,
+            ]
+            return CaseEvent(kind: .metrics, time: p.timeStampEnd, numbers: numbers.compactMapValues { $0 })
+        }
+        // Diagnosen kommen direkt beim Start: erst die TestFlight-Erkennung abwarten, sonst verwirft das Protokoll sie.
+        Task { @MainActor in await flow.detectTestFlight(); flow.recordMetrics(events) }
+    }
+
+    nonisolated func didReceive(_ payloads: [MXDiagnosticPayload]) {
+        let events = payloads.map { p in
+            var numbers = ["crashes": p.crashDiagnostics?.count ?? 0, "hangs": p.hangDiagnostics?.count ?? 0,
+                           "cpuExceptions": p.cpuExceptionDiagnostics?.count ?? 0,
+                           "diskWriteExceptions": p.diskWriteExceptionDiagnostics?.count ?? 0]
+            numbers["signal"] = p.crashDiagnostics?.first?.signal?.intValue
+            numbers["exceptionType"] = p.crashDiagnostics?.first?.exceptionType?.intValue
+            return CaseEvent(kind: .diagnostics, time: p.timeStampEnd, numbers: numbers)
+        }
+        // Diagnosen kommen direkt beim Start: erst die TestFlight-Erkennung abwarten, sonst verwirft das Protokoll sie.
+        Task { @MainActor in await flow.detectTestFlight(); flow.recordMetrics(events) }
     }
 }
 

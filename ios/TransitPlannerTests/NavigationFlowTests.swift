@@ -58,6 +58,39 @@ private func iso(_ time: String) -> Date {
         #expect(f.pace.learned != 1.0)
     }
 
+    /// "Etwas stimmt nicht": unterwegs mit Schritt, Puffer und Einstieg des Zielfahrzeugs, nie die Position.
+    @Test func markProblemRecordsNavigationContext() async throws {
+        let clock = Clock()
+        let f = await navigatingFlow(clock: clock)
+        f.markProblem()
+        let url = try #require(f.writeReport())
+        defer { try? FileManager.default.removeItem(at: url) }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let event = try #require(try decoder.decode(CaseReport.self, from: Data(contentsOf: url)).events.last)
+        #expect(event.kind == .userMark)
+        #expect(event.numbers["phase"] == 4)
+        #expect(event.numbers["step"] == 1)
+        #expect(event.numbers["buffer"] == f.currentBuffer?.seconds)
+        #expect(event.numbers["buffer"] != nil)
+        let stop = try #require(f.navJourney?.legs.first { $0.index == 1 }?.origin.coordinate?.rounded(decimals: 2))
+        #expect(event.latitude == stop.latitude && event.longitude == stop.longitude)
+    }
+
+    /// Ausserhalb der Fahrt: nur die Phase, kein Ort, kein Schritt.
+    @Test func markProblemAtStartHasNoPlace() throws {
+        let f = AppFlow(AppDependencies.fakes(onboarding: .withLocation))
+        f.markProblem()
+        f.markProblem()
+        let url = try #require(f.writeReport())
+        defer { try? FileManager.default.removeItem(at: url) }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let events = try decoder.decode(CaseReport.self, from: Data(contentsOf: url)).events
+        #expect(events.count == 2)
+        #expect(events.allSatisfy { $0.numbers == ["phase": 0] && $0.latitude == nil && $0.longitude == nil })
+    }
+
     @Test func walkThroughAllStates() async throws {
         let clock = Clock()
         let f = await navigatingFlow(clock: clock)

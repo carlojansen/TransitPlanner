@@ -12,7 +12,10 @@ Format: `docs/API.md`, Abschnitt "Bericht" (JSON, `schema` 1: `app`, `os`, `even
 ## Vorgehen
 1. Lies jede Datei vollständig.
 2. **Datenschutz zuerst:** Enthält ein Bericht Haltestellennamen, Adressen, genaue Koordinaten (mehr als 2 Nachkommastellen), Geräte-IDs oder Klartext-Namen, melde das als erste Zeile `DATENSCHUTZ-BEFUND: <Datei>, <Feld>`, gib den Wert nicht weiter und wertet diese Datei nicht aus.
-3. Gruppiere die Auffälligkeiten nach Art, zum Beispiel: Abfahrt knapp verworfen, Umplanung zu spät, Ankunft ohne GPS, Gleis-Widerspruch, Absturz, Akku.
+3. Gruppiere die Auffälligkeiten nach Art, zum Beispiel: Abfahrt knapp verworfen, Umplanung zu spät, Ankunft ohne GPS, Gleis-Widerspruch, Absturz, Akku. Für die drei folgenden Arten gilt:
+   - `userMark` (Tester tippte "Etwas stimmt nicht"): Phase und Schritt über die Codes in `docs/API.md` in Worte übersetzen. Liste je Markierung Zeit, Phase/Schritt, `delay` und `buffer`, damit Carlo sie mit den TestFlight-Screenshots gleicher Zeit (plus 0 bis 5 Minuten) abgleichen kann. Fällt eine Markierung zeitlich mit einem anderen Fall zusammen, nenne den Bezug als Vermutung.
+   - `metrics` (MetricKit, ein Eintrag je Tag): Je Tag `cpu`, `memoryPeakKB`, `foreground`, `background`, `backgroundLocation`, `gpsBest` und `cellularKB`. Auffällig ist: `backgroundLocation` oder `gpsBest` deutlich länger als die Fahrzeit des Tages (GPS läuft nach), `cpu` über 10 % von `foreground` plus `background`, Speicher über 300 MB, jeder `exits…`-Wert über 0. Das sind Richtwerte, keine Grenzen von Apple; nenne sie als solche.
+   - `diagnostics`: `crashes`, `hangs` und Ausnahmen je Build zählen, `signal` und `exceptionType` nennen (etwa 11 = SIGSEGV, 6 = SIGABRT). Der Stack steht nicht im Bericht. Verweise dafür auf die TestFlight-Abstürze in App Store Connect zur gleichen Zeit.
 4. Zähle je Art die Häufigkeit und nenne die Kennzahlen, die einen Test bestimmen (Puffer in Sekunden, Gehzeit Apple gegen MOTIS, Verzögerung bis zum Vorschlag, App-Build, iOS-Version).
 5. Leite je Art höchstens einen **Testfall-Entwurf** ab: Eingaben (Uhrzeit-Abstand, Position relativ, Gehzeit, Fahrplan) und erwartetes Verhalten. Das ist Text, kein Code.
 6. Trenne Beleg und Vermutung: "belegt" nur, wenn es in den Dateien steht.

@@ -151,6 +151,7 @@ struct MapScreen: View {
                                 .accessibilityIdentifier("recenterMap")
                                 .transition(.opacity)
                         }
+                        if flow.offersReport { ProblemMarkButton() }
                     }
                 }
                 .padding(.top, buttonsTop)
@@ -335,8 +336,43 @@ private struct MapButtons: View {
                 .accessibilityLabel(Text("Erinnerungen"))
                     .accessibilityValue(active ? Text("Heute aktiv") : Text(verbatim: ""))
                     .accessibilityIdentifier("remindersButton")
+                if flow.offersReport { ProblemMarkButton() }
             }
         }
+    }
+}
+
+/// Nur TestFlight/Debug: setzt eine anonyme Markierung im Fall-Protokoll ("Bericht senden"). Kurz ein Haken als Bestaetigung.
+private struct ProblemMarkButton: View {
+    @Environment(AppFlow.self) private var flow
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Zaehlt Tipps: Haptik und Haken bei jedem Tipp, auch zweimal kurz hintereinander.
+    @State private var taps = 0
+    @State private var marked = false
+
+    var body: some View {
+        Button {
+            flow.markProblem()
+            taps += 1
+            withAnimation(Motion.standard) { marked = true }
+            AccessibilityNotification.Announcement(String(localized: "Markiert")).post()
+        } label: {
+            Image(systemName: marked ? "checkmark" : "exclamationmark.bubble")
+                .font(.title3)
+                .frame(width: 30, height: 30)
+                .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+        }
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+        .sensoryFeedback(.success, trigger: taps)
+        .task(id: taps) {
+            guard taps > 0 else { return }
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation(Motion.standard) { marked = false }
+        }
+        .accessibilityLabel(Text("Etwas stimmt nicht"))
+        .accessibilityHint(Text("Merkt den Moment für den Bericht an die Entwickler"))
+        .accessibilityIdentifier("markProblem")
     }
 }
 
