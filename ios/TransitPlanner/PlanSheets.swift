@@ -552,7 +552,7 @@ struct PlanSheet: View {
         .animation(Motion.micro, value: flow.via)
         if !focused { timeRow }
         if !focused { modePills }
-        if !focused { StepFreeToggle().font(.subheadline).padding(.horizontal, 6).padding(.top, -6) } // Rand wie die Pillen-Beschriftung
+        if !focused { StepFreeToggle().font(.subheadline) }
         if !focused, flow.endpointsFilled, flow.assigningRole == nil {
             PrimaryButton(title: "Verbindungen suchen", systemImage: "magnifyingglass") { flow.send(.planTapped) }
                 .disabled(!flow.canPlan)
@@ -591,7 +591,7 @@ struct PlanSheet: View {
 
     /// Verkehrsmittel-Pillen (Figma): Punkt in Modusfarbe + Name; aus = abgeblendet. Mindestens eine bleibt an.
     private var modePills: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 2) {
             Text("VERKEHRSMITTEL").font(.caption2.weight(.semibold)).foregroundStyle(Color(.labelSecondary))
                 .accessibilityHidden(true)
             HFlow(spacing: 8) {
@@ -617,6 +617,7 @@ struct PlanSheet: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading) // sonst sitzt der Block zentriert und ragt nach rechts versetzt ein
         .sensoryFeedback(.selection, trigger: flow.modeFilter)
     }
 
