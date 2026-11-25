@@ -82,6 +82,8 @@ public enum NavigationEngine {
     public static let transferLead: TimeInterval = 120
     /// Gehgeschwindigkeit ohne kalibrierte Gehzeit (m/s), wird mit dem WalkingPaceFactor multipliziert
     public static let defaultWalkSpeed: Double = 1.3
+    /// Ab dieser Geschwindigkeit (m/s, ca. 18 km/h) sitzt man in einem Fahrzeug: nie "verpasst", egal wie weit vom Halt.
+    public static let vehicleSpeed: Double = 5
     /// "Verpasst" nur mit einem Fix, der hoechstens so alt ist (s); sonst entscheidet die Fahrplanzeit.
     public static let freshFix: TimeInterval = 30
     /// Warten, bis das Losgehen (Beginn des ersten Abschnitts) hoechstens so nah ist (s).
@@ -119,7 +121,7 @@ public enum NavigationEngine {
             }
             // Verpasst: abgefahren, frischer Fix sicher (abzueglich Genauigkeit) nicht am Halt und nie "am Gleis".
             // Veralteter oder ungenauer Fix (U-Bahn): Fahrplanzeit wie ohne Position.
-            if now < arrival, let fix, now.timeIntervalSince(fix.timestamp) <= freshFix, let stop = leg.origin.coordinate,
+            if now < arrival, let fix, now.timeIntervalSince(fix.timestamp) <= freshFix, (fix.speed ?? 0) < vehicleSpeed, let stop = leg.origin.coordinate,
                fix.coordinate.distance(to: stop) - fix.horizontalAccuracy > platformRadius,
                (previous?.rank ?? 0) < NavigationStep.waitingAtPlatform(vehicle: leg.index).rank {
                 return .missedDeparture(vehicle: leg.index)

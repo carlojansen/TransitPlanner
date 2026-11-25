@@ -1191,7 +1191,7 @@ final class AppFlow {
         positionTask = Task {
             for await fix in positions() {
                 guard !Task.isCancelled else { return }
-                navigationUpdate(position: fix.coordinate, accuracy: fix.horizontalAccuracy, now: deps.now())
+                navigationUpdate(position: fix.coordinate, accuracy: fix.horizontalAccuracy, speed: fix.speed, now: deps.now())
             }
         }
     }
@@ -1216,9 +1216,9 @@ final class AppFlow {
 
     /// Neubewertung aus Position (falls neu) und Zeit. Reine Logik in `NavigationEngine.resolve`.
     /// `accuracy` in Metern; Empfangszeit = `now`.
-    func navigationUpdate(position: GeoCoordinate?, accuracy: Double = 0, now: Date) {
+    func navigationUpdate(position: GeoCoordinate?, accuracy: Double = 0, speed: Double? = nil, now: Date) {
         guard case .navigation = phase, let journey = navJourney else { return }
-        if let position { navFix = LocationFix(coordinate: position, horizontalAccuracy: accuracy, timestamp: now) }
+        if let position { navFix = LocationFix(coordinate: position, horizontalAccuracy: accuracy, timestamp: now, speed: speed) }
         // Akku und Ruhe: nur beobachtete Werte aendern, wenn sich sichtbar etwas tut. GPS-Rauschen unter 3 m
         // und Ticks innerhalb derselben Minute zeichnen nichts neu (Ausnahme: knapper Puffer zaehlt Sekunden).
         var moved = false

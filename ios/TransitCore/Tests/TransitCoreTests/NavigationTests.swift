@@ -83,6 +83,14 @@ import Testing
         #expect(buffer?.status == .missed)
     }
 
+    @Test func movingFixIsNeverMissed() throws {
+        let journey = try Fixture.routes().journeys[0]
+        let now = Date.iso("2026-10-24T06:09:00Z")
+        let fix = LocationFix(coordinate: Self.start, horizontalAccuracy: 5, timestamp: now, speed: NavigationEngine.vehicleSpeed + 1)
+        let step = NavigationEngine.resolve(journey: journey, fix: fix, now: now, previous: .approachingFirstStop(vehicle: 1))
+        #expect(step == .onBoardTransit(vehicle: 1)) // im Zug, auch wenn der Halt weit weg liegt
+    }
+
     @Test(arguments: table)
     func resolve(_ row: Row) throws {
         let journey = try Fixture.routes().journeys[0]

@@ -5,11 +5,14 @@ public struct LocationFix: Sendable, Hashable {
     public let coordinate: GeoCoordinate
     public let horizontalAccuracy: Double
     public let timestamp: Date
+    /// m/s laut CoreLocation, nil oder negativ = unbekannt.
+    public let speed: Double?
 
-    public init(coordinate: GeoCoordinate, horizontalAccuracy: Double, timestamp: Date) {
+    public init(coordinate: GeoCoordinate, horizontalAccuracy: Double, timestamp: Date, speed: Double? = nil) {
         self.coordinate = coordinate
         self.horizontalAccuracy = horizontalAccuracy
         self.timestamp = timestamp
+        self.speed = speed
     }
 }
 
@@ -72,7 +75,8 @@ public struct CoreLocationService: LocationProviding {
             return LocationFix(
                 coordinate: GeoCoordinate(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude),
                 horizontalAccuracy: location.horizontalAccuracy,
-                timestamp: location.timestamp
+                timestamp: location.timestamp,
+                speed: location.speed
             )
         }
         throw TransitError.locationUnavailable

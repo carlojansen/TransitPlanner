@@ -115,7 +115,7 @@ struct AppDependencies: Sendable {
                           l.timestamp.timeIntervalSinceNow > -NavigationEngine.freshFix else { continue }
                         continuation.yield(LocationFix(coordinate: GeoCoordinate(latitude: l.coordinate.latitude,
                                                                                  longitude: l.coordinate.longitude),
-                                                       horizontalAccuracy: l.horizontalAccuracy, timestamp: l.timestamp))
+                                                       horizontalAccuracy: l.horizontalAccuracy, timestamp: l.timestamp, speed: l.speed))
                     }
                 } catch {
                     // Abbruch oder Fehler: Stream endet, die Navigation laeuft nach Zeit weiter.
