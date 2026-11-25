@@ -490,7 +490,7 @@
     "Beste Verbindung:" : {
 
     },
-    "Bild oder PDF bis 10 MB." : {
+    "Bild oder PDF bis 10 MB. Ein PDF wird als Bild gespeichert." : {
 
     },
     "bis %@" : {
@@ -1057,9 +1057,6 @@
 
     },
     "Ohne Standort fortfahren" : {
-
-    },
-    "PDF-Ticket" : {
 
     },
     "Platzhalter für die Leg-Bar" : {
