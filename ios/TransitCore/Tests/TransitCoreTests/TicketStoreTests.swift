@@ -42,7 +42,7 @@ import UniformTypeIdentifiers
         defer { try? FileManager.default.removeItem(at: dir) }
         let marker = Data("GEHEIMES-TICKET-4711".utf8)
         let first = StoredTicket(kind: .image, createdAt: Date(timeIntervalSince1970: 100), data: marker)
-        let second = StoredTicket(kind: .pdf, createdAt: Date(timeIntervalSince1970: 200), data: Data("zweites".utf8))
+        let second = StoredTicket(kind: .image, createdAt: Date(timeIntervalSince1970: 200), data: Data("zweites".utf8))
         try store.save(second)
         try store.save(first)
         #expect(store.entries() == [.ticket(first), .ticket(second)]) // aelteste zuerst
@@ -99,10 +99,18 @@ import UniformTypeIdentifiers
         #expect(image.kind == .image)
         let pdf = Self.pdf()
         let prepared = try TicketImport.prepare(pdf)
-        #expect(prepared.kind == .pdf && prepared.data == pdf) // PDF unveraendert
+        #expect(prepared.kind == .image && prepared.data.starts(with: [0xFF, 0xD8])) // PDF wird zu JPEG
         for bad in [Data(), Data("kein Bild".utf8), Data("%PDF-kaputt".utf8), Data(count: TicketImport.maxRawBytes + 1)] {
             #expect(throws: TransitError.ticketUnreadable) { try TicketImport.prepare(bad) }
         }
+    }
+
+    @Test func loadReadsFileAndRejectsMissing() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("load-\(UUID().uuidString).bin")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data("abc".utf8).write(to: url)
+        #expect(try TicketImport.load(url: url) == Data("abc".utf8))
+        #expect(throws: TransitError.ticketUnreadable) { try TicketImport.load(url: url.appendingPathExtension("fehlt")) }
     }
 
     @Test func importShrinksBigImagesAndDropsGPS() throws {

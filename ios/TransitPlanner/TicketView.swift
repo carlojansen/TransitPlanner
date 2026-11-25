@@ -1,4 +1,3 @@
-import PDFKit
 import SwiftUI
 import TransitCore
 
@@ -33,35 +32,14 @@ struct TicketView: View {
     }
 
     @ViewBuilder private func content(_ ticket: StoredTicket) -> some View {
-        switch ticket.kind {
-        case .image:
-            if let image = UIImage(data: ticket.data) {
-                // Weisser Grund hinter dem Bild: Codes lesen sich dort am besten.
-                Image(uiImage: image).resizable().scaledToFit()
-                    .background(Color.white)
-                    .accessibilityLabel("Ticket")
-                    .accessibilityIdentifier("ticketImage")
-            }
-        case .pdf:
-            PDFContent(data: ticket.data)
+        if let image = UIImage(data: ticket.data) {
+            // Weisser Grund hinter dem Bild: Codes lesen sich dort am besten.
+            Image(uiImage: image).resizable().scaledToFit()
+                .background(Color.white)
                 .accessibilityLabel("Ticket")
-                .accessibilityIdentifier("ticketPDF")
+                .accessibilityIdentifier("ticketImage")
         }
     }
-}
-
-private struct PDFContent: UIViewRepresentable {
-    let data: Data
-
-    func makeUIView(context: Context) -> PDFView {
-        let view = PDFView()
-        view.document = PDFDocument(data: data)
-        view.autoScales = true
-        view.backgroundColor = .white
-        return view
-    }
-
-    func updateUIView(_ view: PDFView, context: Context) {}
 }
 
 /// Knopf in der Leiste: nur mit lesbarem Ticket und offener Route (Regel im Modell: `offersTicket`).

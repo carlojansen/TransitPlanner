@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// Ein Ticket, das die Person selbst hinzugefuegt hat (Foto, Bild oder PDF). Die App zeigt es nur an: sie verkauft nichts
 /// und prueft nichts. Inhalt und Zeitpunkt liegen nur im verschluesselten Chiffrat (kein Datei-Zeitstempel).
 public struct StoredTicket: Codable, Sendable, Equatable {
-    public enum Kind: String, Codable, Sendable { case image, pdf }
+    public enum Kind: String, Codable, Sendable { case image }
 
     public var id: UUID
     public var kind: Kind
@@ -30,19 +30,44 @@ public enum TicketImport {
     /// Laengste Seite eines gespeicherten Bildes: Screenshots bleiben voll, 48-MP-Fotos werden kleiner.
     public static let maxImagePixels = 3000
 
+    /// Liest eine gewaehlte Datei: Groesse vor dem Lesen pruefen (sonst laedt eine riesige Datei erst in den Speicher).
+    /// Synchron und blockierend: nicht auf dem Main-Actor aufrufen.
+    public static func load(url: URL) throws(TransitError) -> Data {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? .max
+        guard size <= maxRawBytes, let data = try? Data(contentsOf: url) else { throw .ticketUnreadable }
+        return data
+    }
+
+    /// PDFs werden als Bild der ersten Seite gespeichert: so gibt es nur einen Anzeigeweg und keinen markierbaren Text.
     public static func prepare(_ raw: Data) throws(TransitError) -> (kind: StoredTicket.Kind, data: Data) {
         guard !raw.isEmpty, raw.count <= maxRawBytes else { throw .ticketUnreadable }
         if raw.starts(with: Data("%PDF".utf8)) {
-            guard raw.count <= maxPDFBytes, isUsablePDF(raw) else { throw .ticketUnreadable }
-            return (.pdf, raw)
+            guard raw.count <= maxPDFBytes, let jpeg = renderedPDF(raw) else { throw .ticketUnreadable }
+            return (.image, jpeg)
         }
         guard let jpeg = reencodedImage(raw) else { throw .ticketUnreadable }
         return (.image, jpeg)
     }
 
-    private static func isUsablePDF(_ data: Data) -> Bool {
-        guard let provider = CGDataProvider(data: data as CFData), let document = CGPDFDocument(provider) else { return false }
-        return document.numberOfPages >= 1 && !document.isEncrypted
+    private static func renderedPDF(_ data: Data) -> Data? {
+        guard let provider = CGDataProvider(data: data as CFData), let document = CGPDFDocument(provider),
+              !document.isEncrypted, let page = document.page(at: 1) else { return nil }
+        let media = page.getBoxRect(.mediaBox)
+        let longest = max(media.width, media.height)
+        guard longest > 0 else { return nil }
+        // Lange Seite auf 2000 px: scharf genug fuer Codes, klein genug fuer den Speicher.
+        let scale = 2000 / longest
+        let rotated = page.rotationAngle % 180 != 0
+        let size = CGSize(width: (rotated ? media.height : media.width) * scale, height: (rotated ? media.width : media.height) * scale)
+        guard let context = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(origin: .zero, size: size))
+        context.concatenate(page.getDrawingTransform(.mediaBox, rect: CGRect(origin: .zero, size: size), rotate: 0, preserveAspectRatio: true))
+        context.drawPDFPage(page)
+        return context.makeImage().flatMap(jpeg)
     }
 
     private static func reencodedImage(_ data: Data) -> Data? {
@@ -52,7 +77,10 @@ public enum TicketImport {
             kCGImageSourceCreateThumbnailWithTransform: true, // Ausrichtung uebernehmen, sie faellt mit EXIF weg
             kCGImageSourceThumbnailMaxPixelSize: maxImagePixels,
         ]
-        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary).flatMap(jpeg)
+    }
+
+    private static func jpeg(_ image: CGImage) -> Data? {
         let out = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
         CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)

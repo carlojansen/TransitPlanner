@@ -456,6 +456,7 @@ private struct StationBufferStepper: View {
 
 struct TicketSettingsView: View {
     @Environment(AppFlow.self) private var flow
+    @Environment(\.scenePhase) private var scenePhase
     @State private var photo: PhotosPickerItem?
     @State private var picksFile = false
     @State private var confirmsDelete = false
@@ -494,7 +495,7 @@ struct TicketSettingsView: View {
                 }
                 .accessibilityIdentifier("ticketFile")
             } footer: {
-                Text(flow.shownTicket == nil ? "Bild oder PDF bis 10 MB." : "Ein neues Ticket ersetzt das gespeicherte.")
+                Text(flow.shownTicket == nil ? "Bild oder PDF bis 10 MB. Ein PDF wird als Bild gespeichert." : "Ein neues Ticket ersetzt das gespeicherte.")
             }
             if let problem {
                 Section {
@@ -527,29 +528,21 @@ struct TicketSettingsView: View {
         }
     }
 
+    /// Wie in `TicketView`: nicht aktiv (App-Umschalter) heisst Platzhalter statt Ticket.
     @ViewBuilder private func preview(_ ticket: StoredTicket) -> some View {
-        switch ticket.kind {
-        case .image:
-            if let image = UIImage(data: ticket.data) {
-                Image(uiImage: image).resizable().scaledToFit()
-                    .frame(maxHeight: 220)
-                    .accessibilityLabel("Vorschau des Tickets")
-            }
-        case .pdf:
-            Label("PDF-Ticket", systemImage: "doc.richtext")
+        if scenePhase == .active, let image = UIImage(data: ticket.data) {
+            Image(uiImage: image).resizable().scaledToFit()
+                .frame(maxHeight: 220)
+                .accessibilityLabel("Vorschau des Tickets")
+        } else {
+            Image(systemName: "ticket").font(.largeTitle).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 80).accessibilityHidden(true)
         }
     }
 
     private func importFile(_ result: Result<URL, any Error>) async {
         guard case .success(let url) = result else { return } // Abbruch ist kein Fehler
-        await add {
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            // Grenze vor dem Lesen, sonst laedt eine riesige Datei erst in den Speicher.
-            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? .max
-            guard size <= TicketImport.maxRawBytes else { return nil }
-            return try? Data(contentsOf: url)
-        }
+        await add { try? await Task.detached { try TicketImport.load(url: url) }.value }
     }
 
     /// Daten holen (nil = nicht lesbar), speichern, Fehler hier zeigen.
