@@ -21,3 +21,6 @@ docs/refs/
 # Anonyme Tester-Berichte (Nutzerdaten, nicht ins Repo)
 feedback/*
 !feedback/.gitkeep
+
+# Private Ideen, nicht im Repo
+IDEEN.md

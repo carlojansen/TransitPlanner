@@ -163,6 +163,10 @@ struct PreviewFlow: PreviewModifier {
     var clockMinutes: Int?
     /// Navigation: fester Standort (z. B. am Ziel fuer 4f Ankunft).
     var position: GeoCoordinate?
+    /// Zeit und Verkehrsmittel wie aus den Chips im Start bzw. den Pillen in Planen (nil = jetzt bzw. alle).
+    var time: Date?
+    var arrival = false
+    var modes: Set<ModeFilter>?
 
     func body(content: Content, context: Void) -> some View {
         PreviewFlowHost(setup: self) { content }
@@ -191,6 +195,9 @@ struct PreviewFlow: PreviewModifier {
     }
 
     @MainActor func drive(_ flow: AppFlow) async {
+        flow.customTime = time
+        flow.isArrivalTime = arrival
+        if let modes { flow.modeFilter = modes }
         switch stage {
         case .onboarding:
             return
@@ -229,6 +236,10 @@ struct PreviewFlow: PreviewModifier {
     /// Leere Liste: keine Favoriten, kein Verlauf.
     static var startEmpty: PreviewFlow { PreviewFlow(stage: .start, savedPlaces: false) }
     static var startNoLocation: PreviewFlow { PreviewFlow(stage: .start, location: .denied) }
+    /// Start mit gewaehlten Chips: Ankunft morgen (Chip mit Datum), nur S-Bahn.
+    static var startWithOptions: PreviewFlow {
+        PreviewFlow(stage: .start, time: PreviewData.base.addingTimeInterval(26 * 3600), arrival: true, modes: [.suburban])
+    }
     static func plan(query: String = "") -> PreviewFlow { PreviewFlow(stage: .plan(query: query)) }
     /// D2 mit einer gespeicherten Erinnerung.
     static var reminders: PreviewFlow { PreviewFlow(stage: .reminders, response: PreviewData.long) }

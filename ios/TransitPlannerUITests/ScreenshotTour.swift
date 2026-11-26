@@ -117,6 +117,15 @@ final class ScreenshotTour: XCTestCase {
         tap(app.buttons["searchResult"].firstMatch)
         XCTAssertTrue(app.buttons["favoriteTile.home"].waitForExistence(timeout: 5))
         shot(app, "04c-start-favorites", mode)
+        // Plan Teil A: Auswahl hinter den Options-Chips
+        tap(app.buttons["timeChip"])
+        XCTAssertTrue(app.segmentedControls["timeMode"].waitForExistence(timeout: 5))
+        shot(app, "04d-start-time", mode)
+        tap(app.buttons["optionsDone"])
+        tap(app.buttons["modeChip"])
+        XCTAssertTrue(app.buttons["modePill.suburban"].waitForExistence(timeout: 5))
+        shot(app, "04e-start-modes", mode)
+        tap(app.buttons["optionsDone"])
 
         tap(app.buttons["searchEntry"])
         XCTAssertTrue(app.textFields["searchField"].waitForExistence(timeout: 5))

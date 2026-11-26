@@ -452,6 +452,9 @@ import TransitCore
         f.loadSuggestions()
         #expect(f.favorites.first?.role == .home)
 
+        // Zeit-Regel (Plan Teil A, 26.11.): schon der Weg zurueck in den Start setzt "Jetzt", nicht erst der Tipp.
+        #expect(f.customTime == nil && !f.isArrivalTime)
+
         f.choose(Self.stopEndpoint)
         #expect(f.phase == .routeSelection)
         #expect(f.origin == .currentLocation)
@@ -460,6 +463,49 @@ import TransitCore
         let request = try #require(planner.recordedRequests.last)
         #expect(request.origin == .coordinate(FakeLocation.fix.coordinate))
         #expect(request.destination == .stop(id: "de-DELFI_de:05315:11201"))
+        #expect(!request.isArrivalTime)
+    }
+
+    /// Plan Teil A "Wert bleibt" und "Ruecksprung": Chips im Start gelten fuer den Tipp auf den Favoriten;
+    /// Ergebnisse, Zurueck, Zurueck: Verkehrsmittel bleiben, die Zeit steht wieder auf "Jetzt".
+    @Test func startChipsApplyToFavoriteTapAndTimeResetsOnTheWayBack() async throws {
+        let places = MemoryPlaces()
+        places.addFavorite(Self.stopEndpoint, role: .home)
+        let planner = FakeRoutePlanner()
+        let f = AppFlow(.fakes(planner: planner, onboarding: .withLocation, places: places))
+        f.loadSuggestions()
+        let home = try #require(f.favorites.first { $0.role == .home })
+        for mode in [ModeFilter.tram, .subway, .regional, .bus] { f.toggle(mode) }
+        #expect(f.modeChipText == "Nur S-Bahn")
+        let time = f.now.addingTimeInterval(3600)
+        f.customTime = time
+        #expect(f.timeChipText.hasPrefix("Abfahrt "))
+
+        f.choose(home.endpoint)
+        await f.waitForWork()
+        let request = try #require(planner.recordedRequests.last)
+        #expect(request.modes == [.suburban])
+        #expect(request.targetTime == time && !request.isArrivalTime)
+
+        f.send(.back)
+        f.send(.back)
+        #expect(f.phase == .start)
+        #expect(f.modeFilter == [.suburban] && f.modeChipText == "Nur S-Bahn")
+        #expect(f.customTime == nil && f.timeChipText == "Jetzt")
+    }
+
+    /// Eine im Start gesetzte, inzwischen verstrichene Zeit sucht nicht in der Vergangenheit, sondern ab jetzt.
+    @Test func expiredChipTimeIsDroppedBeforeSearching() async throws {
+        let planner = FakeRoutePlanner()
+        let f = flow(planner: planner)
+        f.customTime = f.now.addingTimeInterval(-60)
+        f.isArrivalTime = true
+        f.choose(Self.stopEndpoint)
+        await f.waitForWork()
+        #expect(f.customTime == nil && !f.isArrivalTime)
+        let request = try #require(planner.recordedRequests.last)
+        #expect(!request.isArrivalTime)
+        #expect(try #require(request.targetTime) >= f.now.addingTimeInterval(-5))
     }
 
     @Test func startTileWithoutLocationAsksForOrigin() {
@@ -1195,6 +1241,113 @@ import TransitCore
 
 /// AGENT.md 4.1.2: Linien-Badges AAA (7:1) in Hell, Dunkel und Hoher Kontrast; Hinweise mindestens 4,5:1 (HC 7:1).
 /// Rechnet aus den echten Asset-Werten (WCAG 2.x, relative Luminanz).
+/// Zustandsmatrix (Plan Teil A, Auflage 3): je Methode, ob Zeit, Ankunft und Verkehrsmittel erhalten bleiben.
+/// Verkehrsmittel bleiben immer; die Zeit faellt nur auf dem Weg zurueck in den Start und bei Neusuchen "jetzt".
+@MainActor @Suite struct TimeAndModeMatrixTests {
+    enum Expect: Sendable { case kept, now, later }
+
+    enum Case: String, CaseIterable, Sendable, CustomTestStringConvertible {
+        case chooseInStart, chooseInPlan, editEndpointFromStart, editEndpointInPlan, editOptionsFromRoutes,
+             backRoutesToPlan, backDetailsToRoutes, backPlanToStart, backArrivalToStart, resetFromRoutes,
+             resetFromNavigation, searchLater, nextConnection, openReminder, nextConnectionForReminder
+
+        var testDescription: String { rawValue }
+
+        var expect: Expect {
+            switch self {
+            case .backPlanToStart, .backArrivalToStart, .resetFromRoutes, .resetFromNavigation, .nextConnection,
+                 .openReminder, .nextConnectionForReminder: .now
+            case .searchLater: .later
+            default: .kept
+            }
+        }
+
+        var after: Phase {
+            switch self {
+            case .chooseInStart, .chooseInPlan, .backDetailsToRoutes, .searchLater, .nextConnection,
+                 .nextConnectionForReminder: .routeSelection
+            case .editEndpointFromStart, .editEndpointInPlan: .plan(.origin)
+            case .editOptionsFromRoutes, .backRoutesToPlan: .plan(nil)
+            case .backPlanToStart, .backArrivalToStart, .resetFromRoutes, .resetFromNavigation: .start
+            case .openReminder: .navigation(0)
+            }
+        }
+    }
+
+    @Test(arguments: Case.allCases)
+    func timeAndModes(_ c: Case) async throws {
+        let env = ReminderFlowTests.Env()
+        let helper = ReminderFlowTests()
+        var reminder: UUID?
+        let f: AppFlow
+        switch c {
+        case .chooseInStart, .editEndpointFromStart, .chooseInPlan, .editEndpointInPlan, .backPlanToStart:
+            env.clock.set("05:00:00")
+            f = AppFlow(env.deps())
+            if c != .chooseInStart, c != .editEndpointFromStart { f.send(.editEndpoint(.destination)) }
+        case .openReminder, .nextConnectionForReminder:
+            let (armed, id) = try await helper.armed(env)
+            f = armed
+            reminder = id
+        default:
+            f = await helper.planned(env)
+        }
+        switch c {
+        case .backDetailsToRoutes: f.send(.journeySelected(0))
+        case .resetFromNavigation, .nextConnection: f.send(.startNavigation(0))
+        case .backArrivalToStart:
+            f.send(.startNavigation(0))
+            f.send(.arrived)
+            #expect(f.phase == .arrival)
+        default: break
+        }
+
+        let time = f.now.addingTimeInterval(3600)
+        f.customTime = time
+        f.isArrivalTime = true
+        f.modeFilter = [.suburban]
+
+        switch c {
+        case .chooseInStart, .chooseInPlan: f.choose(NavigationFlowTests.stop)
+        case .editEndpointFromStart, .editEndpointInPlan: f.send(.editEndpoint(.origin))
+        case .editOptionsFromRoutes: f.send(.editOptions)
+        case .backRoutesToPlan, .backDetailsToRoutes, .backPlanToStart, .backArrivalToStart: f.send(.back)
+        case .resetFromRoutes, .resetFromNavigation: f.send(.reset)
+        case .searchLater: f.searchLater()
+        case .nextConnection: f.nextConnection()
+        case .openReminder: f.openReminder(try #require(reminder))
+        case .nextConnectionForReminder:
+            f.nextConnection(for: try #require(reminder.flatMap { f.reminders.reminder(id: $0) }))
+        }
+        await f.waitForWork()
+
+        #expect(f.phase == c.after)
+        #expect(f.modeFilter == [.suburban], "Verkehrsmittel bleiben immer")
+        switch c.expect {
+        case .kept: #expect(f.customTime == time && f.isArrivalTime)
+        case .now: #expect(f.customTime == nil && !f.isArrivalTime)
+        case .later: #expect(f.customTime == time.addingTimeInterval(1800) && f.isArrivalTime)
+        }
+    }
+
+    /// Chip zeigt das Datum, wenn die Zeit nicht heute liegt (feste App-Uhr, kein Mitternachts-Wackler).
+    @Test func timeChipShowsDateOutsideToday() {
+        let env = ReminderFlowTests.Env()
+        env.clock.set("05:00:00")
+        let f = AppFlow(env.deps())
+        #expect(f.timeChipText == "Jetzt")
+        let today = f.now.addingTimeInterval(3600)
+        f.customTime = today
+        #expect(f.timeChipText == "Abfahrt \(today.clockText)")
+        f.isArrivalTime = true
+        f.customTime = f.now.addingTimeInterval(2 * 24 * 3600)
+        #expect(f.timeChipText.hasPrefix("Ankunft "))
+        #expect(f.timeChipText != "Ankunft \(f.now.addingTimeInterval(2 * 24 * 3600).clockText)")
+        f.modeFilter = [.bus, .tram]
+        #expect(f.modeChipText == "2 Verkehrsmittel")
+    }
+}
+
 @MainActor @Suite struct ColorContrastTests {
     static let modes = ["modeTram", "modeSbahn", "modeUbahn", "modeBus", "modeRegio"]
 

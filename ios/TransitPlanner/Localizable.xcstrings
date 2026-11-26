@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "de",
   "strings" : {
+    "%lld Verkehrsmittel" : {
+
+    },
     ", dann " : {
 
     },
@@ -345,6 +348,9 @@
 
     },
     "Aktuelle Fahrt" : {
+
+    },
+    "Alle" : {
 
     },
     "Als Favorit sichern" : {
@@ -992,6 +998,9 @@
     "Nach unten" : {
 
     },
+    "Nur %@" : {
+
+    },
     "Nächste Station" : {
 
     },
@@ -1042,6 +1051,9 @@
 
     },
     "Offene Fahrplan- und Echtzeitdaten über Transitous (MOTIS 2), u. a. DELFI." : {
+
+    },
+    "Öffnet die Auswahl" : {
 
     },
     "Öffnet die Fahrtdetails" : {

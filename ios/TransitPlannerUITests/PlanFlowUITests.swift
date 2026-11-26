@@ -205,6 +205,36 @@ final class PlanFlowUITests: XCTestCase {
         XCTAssertTrue(app.buttons["heroCard"].waitForExistence(timeout: 10))
     }
 
+    /// Plan Teil A: Zeit und Verkehrsmittel sind vom Start mit einem Tipp erreichbar, suchen nicht und zeigen die Wahl.
+    @MainActor
+    func testStartOptionsAreOneTapAway() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestFakes", "-fakeOnboarded"]
+        app.launch()
+        let timeChip = app.buttons["timeChip"]
+        XCTAssertTrue(timeChip.waitForExistence(timeout: 10))
+        XCTAssertEqual(timeChip.label, "Zeit: Jetzt")
+        // Bezug ist der Einstellungsknopf (fest 44 x 44): das Sheet im mittleren Detent kann leicht skaliert sein.
+        let reference = app.buttons["settingsButton"].firstMatch.frame.height
+        XCTAssertGreaterThanOrEqual(timeChip.frame.height, reference - 0.5)
+        timeChip.tap()
+        XCTAssertTrue(app.segmentedControls["timeMode"].waitForExistence(timeout: 5), "Ein Tipp bis zur Zeit-Auswahl")
+        XCTAssertFalse(app.buttons["heroCard"].exists, "Der Chip sucht nicht")
+        tap(app.buttons["optionsDone"])
+
+        let modeChip = app.buttons["modeChip"]
+        XCTAssertTrue(modeChip.waitForExistence(timeout: 5))
+        XCTAssertEqual(modeChip.label, "Verkehrsmittel: Alle")
+        XCTAssertGreaterThanOrEqual(modeChip.frame.height, reference - 0.5)
+        modeChip.tap()
+        XCTAssertTrue(app.buttons["modePill.suburban"].waitForExistence(timeout: 5), "Ein Tipp bis zur Verkehrsmittel-Auswahl")
+        for mode in ["tram", "subway", "regional", "bus"] { tap(app.buttons["modePill.\(mode)"]) }
+        tap(app.buttons["optionsDone"])
+        let only = app.buttons.matching(identifier: "modeChip").matching(NSPredicate(format: "label == %@", "Verkehrsmittel: Nur S-Bahn"))
+        XCTAssertTrue(only.firstMatch.waitForExistence(timeout: 5), "Der Chip zeigt die Wahl")
+        XCTAssertFalse(app.buttons["heroCard"].exists)
+    }
+
     @MainActor
     private func tap(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(element.waitForExistence(timeout: 10), "fehlt: \(element)", file: file, line: line)

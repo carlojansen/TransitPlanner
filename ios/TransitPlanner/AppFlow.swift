@@ -596,9 +596,15 @@ final class AppFlow {
         guard let new = Self.next(phase, event) else { return }
         let plans = event == .planTapped || event == .replan || (event == .endpointChosen && new == .routeSelection)
         if plans, !canPlan { return }
+        if plans { dropExpiredTime() }
         let old = phase
         if new.workContext != phase.workContext { cancelWork() }
-        if new == .start { discardRoutes() }
+        if new == .start {
+            discardRoutes()
+            // Zeit-Regel (Plan Teil A, 26.11.): zurueck im Start gilt wieder "Jetzt"; die Verkehrsmittel bleiben.
+            customTime = nil
+            isArrivalTime = false
+        }
         if new.isPlan, phase != new { resetSearch() }
         if new.isPlan, !old.isPlan { loadSuggestions() }
         if new == .start || new.isPlan { replacedReminder = nil }
@@ -852,7 +858,8 @@ final class AppFlow {
         isSearching = false
     }
 
-    /// Wahl eines Orts. Im Start (Favorit, Verlauf, Naehe) wie in Planen, aber immer ab "Mein Standort" und jetzt.
+    /// Wahl eines Orts. Im Start (Favorit, Verlauf, Naehe) wie in Planen, aber immer ab "Mein Standort"; Zeit und
+    /// Verkehrsmittel kommen aus den Chips im Start (Standard jetzt, alle) und werden hier nicht zurueckgesetzt.
     /// `coordinate`: Lage des Suchtreffers, nur fuer die Erkennung eines Zwischenstopps in der Antwort.
     func choose(_ endpoint: TripEndpoint, coordinate: GeoCoordinate? = nil) {
         let focus: EndpointSlot
@@ -869,8 +876,6 @@ final class AppFlow {
         case .start:
             origin = .currentLocation
             via = []
-            customTime = nil
-            isArrivalTime = false
             focus = .destination
         default:
             return
@@ -1399,6 +1404,15 @@ final class AppFlow {
     /// Aktuelle Zeit der App-Uhr (Tests setzen sie).
     var now: Date { deps.now() }
 
+    /// Die eine Stelle, die eine abgelaufene Wunschzeit verwirft (vor jeder Suche): sonst suchte ein im Start
+    /// gesetzter Chip nach einer Weile in der Vergangenheit. Danach gilt "Jetzt".
+    private func dropExpiredTime() {
+        // 60 s Toleranz: die Vorbelegung "jetzt" beim Wechsel auf Abfahrt/Ankunft liegt sonst schon in der Vergangenheit.
+        guard let time = customTime, time < deps.now().addingTimeInterval(-60) else { return }
+        customTime = nil
+        isArrivalTime = false
+    }
+
     func searchLater() {
         // Eine verstrichene Wunschzeit zaehlt nicht: "30 Minuten spaeter" meint spaeter als jetzt.
         customTime = max(customTime ?? deps.now(), deps.now()).addingTimeInterval(30 * 60)
@@ -1617,6 +1631,7 @@ final class AppFlow {
     }
 
     /// Navigation der gespeicherten Fahrt, Start-Logik wie bei "Starten". Fehlt die Fahrt, startet die App normal.
+    /// Zeit zurueck auf "Jetzt"; der Verkehrsmittel-Filter bleibt der aktuelle (gilt fuer spaetere Neusuchen).
     private func openPendingReminder() {
         guard onboarding == nil, let id = pendingReminder else { return }
         pendingReminder = nil
@@ -1652,6 +1667,7 @@ final class AppFlow {
     }
 
     /// Hinweis Kritisch: neu suchen, jetzt, gleiches Ziel. Die Erinnerung bleibt, bis eine andere Fahrt gestartet wird.
+    /// Verkehrsmittel: es gilt der aktuelle Filter (Chips im Start, Pillen in Planen), nicht der der Erinnerung.
     func nextConnection(for reminder: StoredReminder) {
         guard !phase.isGuiding else { return }
         showsReminders = false

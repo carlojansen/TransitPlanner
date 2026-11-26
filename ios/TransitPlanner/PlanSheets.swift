@@ -4,14 +4,19 @@ import TransitCore
 // MARK: - 1 Start
 
 /// Start (DESIGN.md B1, Ueberarbeitung 27.10.): Suchfeld und Einstellungen, Favoriten-Kacheln, Zuletzt gesucht
-/// (hoechstens 4), Haltestellen in der Naehe mit Gehzeit. Ein Tipp auf ein Ziel sucht sofort ab "Mein Standort", jetzt.
+/// (hoechstens 4), Haltestellen in der Naehe mit Gehzeit. Ein Tipp auf ein Ziel sucht sofort ab "Mein Standort",
+/// mit Zeit und Verkehrsmitteln aus den Options-Chips (Standard: jetzt, alle).
 struct StartSheet: View {
     @Environment(AppFlow.self) private var flow
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sheetLevel) private var level
 
     static let recentLimit = 4
+
+    /// Offene Auswahl eines Options-Chips (Zeit oder Verkehrsmittel); sucht nicht.
+    @State private var openOption: StartOption?
 
     /// Bearbeiten: belegte Kacheln zeigen ein Minus, ein Tipp entfernt genau diesen Favoriten (bewusst ohne
     /// Rueckfrage: Favoriten sind in Sekunden neu gesetzt, Familiennutzung).
@@ -40,6 +45,13 @@ struct StartSheet: View {
             .padding(.horizontal, 16)
             .padding(.top, 16)
             .padding(.bottom, 8)
+            // Zeit und Verkehrsmittel fuer den naechsten Tipp auf ein Ziel. Im kleinen Detent (140 pt) kein Platz:
+            // dort reichen Suchfeld und Favoriten, ein Zug am Griff zeigt die Chips.
+            if level != .peek {
+                StartOptionChips(open: $openOption)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+            }
             // Favoriten-Chips gehoeren zum Kopf: schon im kleinen Detent (140 pt) erreichbar, nicht in der Liste versteckt.
             if showsFixedTiles {
                 tiles
@@ -125,6 +137,7 @@ struct StartSheet: View {
         }
         // Nichts mehr zu bearbeiten (keine Rollen-Favoriten, keine zwei weiteren): Modus beenden.
         .onChange(of: canEditFavorites) { if !canEditFavorites { editingFavorites = false } }
+        .sheet(item: $openOption) { StartOptionSheet(option: $0) }
     }
 
     /// Chips in einer festen Reihe unter dem Suchfeld (nicht bei AX: dort stehen sie untereinander in der Liste).
@@ -411,6 +424,207 @@ struct SettingsButton: View {
     }
 }
 
+// MARK: - Optionen im Start (Zeit, Verkehrsmittel)
+
+enum StartOption: String, Identifiable {
+    case time, modes
+    var id: Self { self }
+}
+
+/// Zeit- und Verkehrsmittel-Chip unter "Wohin?". Ein Tipp oeffnet die Auswahl, ohne zu suchen; die Werte gelten fuer
+/// den naechsten Tipp auf ein Ziel. Abweichung vom Standard (jetzt, alle) steht im Chip und ist Akzent.
+struct StartOptionChips: View {
+    @Environment(AppFlow.self) private var flow
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Binding var open: StartOption?
+
+    var body: some View {
+        // Bei AX-Groessen untereinander; sonst nebeneinander, solange beide in die Breite passen.
+        Group {
+            if typeSize.isAccessibilitySize {
+                stacked
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { chips }
+                    stacked
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var stacked: some View {
+        VStack(alignment: .leading, spacing: 8) { chips }
+    }
+
+    @ViewBuilder private var chips: some View {
+        chip(.time, symbol: "clock", title: String(localized: "Zeit"), value: flow.timeChipText, accent: flow.customTime != nil)
+        chip(.modes, symbol: "line.3.horizontal.decrease", title: String(localized: "Verkehrsmittel"), value: flow.modeChipText,
+             accent: flow.modeFilter.count < ModeFilter.allCases.count)
+    }
+
+    private func chip(_ option: StartOption, symbol: String, title: String, value: String, accent: Bool) -> some View {
+        Button { open = option } label: {
+            HStack(spacing: 6) {
+                Image(systemName: symbol).accessibilityHidden(true)
+                Text(value)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(Motion.micro, value: value)
+                Image(systemName: "chevron.down").imageScale(.small).accessibilityHidden(true)
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(accent ? Color(.accentBlue) : Color.primary)
+            .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 40)
+            .background(Color(.fillTertiary), in: .capsule)
+            .padding(.vertical, 2) // Tippflaeche 44 pt, sichtbar 40 pt
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(verbatim: "\(title): \(value)"))
+        .accessibilityHint("Öffnet die Auswahl")
+        .accessibilityIdentifier(option == .time ? "timeChip" : "modeChip")
+    }
+}
+
+/// Auswahl hinter einem Chip: dieselben Bausteine wie in Planen, nur ohne Von/Nach.
+struct StartOptionSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
+    let option: StartOption
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                Group {
+                    switch option {
+                    case .time: TimeOptions()
+                    // Der Titel der Leiste ersetzt die Ueberschrift ueber den Pillen.
+                    case .modes: ModePills(showsHeading: false)
+                    }
+                }
+                .padding(16)
+            }
+            .navigationTitle(option == .time ? Text("Zeit") : Text("Verkehrsmittel"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fertig") { dismiss() }
+                        .accessibilityIdentifier("optionsDone")
+                }
+            }
+        }
+        .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+}
+
+/// Zeit in einem Segment (Jetzt / Abfahrt / Ankunft); erst bei Abfahrt oder Ankunft erscheint darunter das Datumsfeld.
+/// Eine Quelle fuer Planen und den Zeit-Chip im Start.
+struct TimeOptions: View {
+    @Environment(AppFlow.self) private var flow
+
+    private enum Kind: Hashable { case now, departure, arrival }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Picker("Zeit", selection: Binding {
+                if flow.customTime == nil { Kind.now } else if flow.isArrivalTime { Kind.arrival } else { Kind.departure }
+            } set: { kind in
+                flow.isArrivalTime = kind == .arrival
+                if kind == .now { flow.customTime = nil } else if flow.customTime == nil { flow.customTime = flow.now }
+            }) {
+                Text("Jetzt").tag(Kind.now)
+                Text("Abfahrt").tag(Kind.departure)
+                Text("Ankunft").tag(Kind.arrival)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("timeMode")
+            if flow.customTime != nil {
+                let now = flow.now
+                DatePicker(flow.isArrivalTime ? "Ankunft um" : "Abfahrt um",
+                           selection: Binding { flow.customTime ?? now } set: { flow.customTime = $0 },
+                           in: now...now.addingTimeInterval(59 * 24 * 3600))
+                    .datePickerStyle(.compact)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("timePicker")
+                    .transition(.opacity)
+            }
+        }
+        .animation(Motion.micro, value: flow.customTime == nil)
+    }
+}
+
+/// Verkehrsmittel-Pillen (Figma): Punkt in Modusfarbe + Name; aus = abgeblendet. Mindestens eine bleibt an.
+/// Eine Quelle fuer Planen und den Verkehrsmittel-Chip im Start.
+struct ModePills: View {
+    @Environment(AppFlow.self) private var flow
+    var showsHeading = true
+
+    /// Abstand Ueberschrift zu Pillen (Review 25.11.); `ModePillsLayoutTests` misst ihn.
+    static let headingSpacing: CGFloat = 2
+
+    static var heading: some View {
+        Text("VERKEHRSMITTEL").font(.caption2.weight(.semibold)).foregroundStyle(Color(.labelSecondary))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Self.headingSpacing) {
+            if showsHeading { Self.heading.accessibilityHidden(true) }
+            HFlow(spacing: 8) {
+                ForEach(ModeFilter.allCases, id: \.self) { mode in
+                    let on = flow.modeFilter.contains(mode)
+                    Button { withAnimation(Motion.micro) { flow.toggle(mode) } } label: {
+                        HStack(spacing: 4) {
+                            Circle().fill(mode.transitMode.color).frame(width: 8, height: 8)
+                            Text(mode.title).font(.footnote.weight(.semibold))
+                        }
+                        .foregroundStyle(on ? Color.primary : Color(.labelSecondary))
+                        .padding(.horizontal, 8)
+                        .frame(minHeight: 44)
+                        .background(on ? Color(.surfaceCard) : .clear, in: .capsule)
+                        .overlay { if !on { Capsule().strokeBorder(.separator, lineWidth: 1) } }
+                        .opacity(on ? 1 : 0.7)
+                        .frame(minHeight: 44) // Tippflaeche 44 pt, sichtbar 32 pt
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                    .accessibilityIdentifier("modePill.\(mode.rawValue)")
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading) // sonst sitzt der Block zentriert und ragt nach rechts versetzt ein
+        .sensoryFeedback(.selection, trigger: flow.modeFilter)
+    }
+}
+
+extension AppFlow {
+    /// Gewaehlte Uhrzeit, ausserhalb von heute mit Datum; nil = jetzt. Heute nach der App-Uhr (`now`).
+    var customTimeText: String? {
+        customTime.map {
+            Calendar.current.isDate($0, inSameDayAs: now) ? $0.clockText
+                : $0.formatted(.dateTime.day().month(.abbreviated).hour(.twoDigits(amPM: .abbreviated)).minute(.twoDigits))
+        }
+    }
+
+    /// Zeit-Chip im Start: "Jetzt", "Abfahrt 17:30", "Ankunft 28. Nov., 17:30".
+    var timeChipText: String {
+        guard let time = customTimeText else { return String(localized: "Jetzt") }
+        return isArrivalTime ? String(localized: "Ankunft \(time)") : String(localized: "Abfahrt \(time)")
+    }
+
+    /// Verkehrsmittel-Chip im Start: "Alle", "Nur S-Bahn", sonst die Anzahl.
+    var modeChipText: String {
+        let on = ModeFilter.allCases.filter(modeFilter.contains)
+        if on.count == ModeFilter.allCases.count { return String(localized: "Alle") }
+        if on.count == 1, let only = on.first { return String(localized: "Nur \(only.title)") }
+        return String(localized: "\(on.count) Verkehrsmittel")
+    }
+}
+
 // MARK: - 2 Planen (Von/Nach, Zeit, Vorschlaege, Suche)
 
 /// Ein Bildschirm fuer Start, Ziel, Zeit und Suche. Ein Suchfeld ohne Modus: Treffer kommen zuerst vom Geraet
@@ -550,75 +764,14 @@ struct PlanSheet: View {
         }
         .animation(Motion.micro, value: flow.origin)
         .animation(Motion.micro, value: flow.via)
-        if !focused { timeRow }
-        if !focused { modePills }
+        if !focused { TimeOptions() }
+        if !focused { ModePills() }
         if !focused { StepFreeToggle().font(.subheadline) }
         if !focused, flow.endpointsFilled, flow.assigningRole == nil {
             PrimaryButton(title: "Verbindungen suchen", systemImage: "magnifyingglass") { flow.send(.planTapped) }
                 .disabled(!flow.canPlan)
                 .accessibilityIdentifier("planButton")
         }
-    }
-
-    /// Zeit in einem Segment (Jetzt / Abfahrt / Ankunft); erst bei Abfahrt oder Ankunft erscheint darunter das Datumsfeld.
-    @ViewBuilder private var timeRow: some View {
-        @Bindable var flow = flow
-        VStack(spacing: 8) {
-            Picker("Zeit", selection: Binding {
-                if flow.customTime == nil { TimeKind.now } else if flow.isArrivalTime { TimeKind.arrival } else { TimeKind.departure }
-            } set: { kind in
-                flow.isArrivalTime = kind == .arrival
-                if kind == .now { flow.customTime = nil } else if flow.customTime == nil { flow.customTime = Date() }
-            }) {
-                Text("Jetzt").tag(TimeKind.now)
-                Text("Abfahrt").tag(TimeKind.departure)
-                Text("Ankunft").tag(TimeKind.arrival)
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("timeMode")
-            if flow.customTime != nil {
-                DatePicker(flow.isArrivalTime ? "Ankunft um" : "Abfahrt um", selection: Binding { flow.customTime ?? Date() } set: { flow.customTime = $0 }, in: Date()...Date().addingTimeInterval(59 * 24 * 3600))
-                    .datePickerStyle(.compact)
-                    .frame(minHeight: 44)
-                    .accessibilityIdentifier("timePicker")
-                    .transition(.opacity)
-            }
-        }
-        .animation(Motion.micro, value: flow.customTime == nil)
-    }
-
-    private enum TimeKind: Hashable { case now, departure, arrival }
-
-    /// Verkehrsmittel-Pillen (Figma): Punkt in Modusfarbe + Name; aus = abgeblendet. Mindestens eine bleibt an.
-    private var modePills: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("VERKEHRSMITTEL").font(.caption2.weight(.semibold)).foregroundStyle(Color(.labelSecondary))
-                .accessibilityHidden(true)
-            HFlow(spacing: 8) {
-                ForEach(ModeFilter.allCases, id: \.self) { mode in
-                    let on = flow.modeFilter.contains(mode)
-                    Button { withAnimation(Motion.micro) { flow.toggle(mode) } } label: {
-                        HStack(spacing: 4) {
-                            Circle().fill(mode.transitMode.color).frame(width: 8, height: 8)
-                            Text(mode.title).font(.footnote.weight(.semibold))
-                        }
-                        .foregroundStyle(on ? Color.primary : Color(.labelSecondary))
-                        .padding(.horizontal, 8)
-                        .frame(minHeight: 44)
-                        .background(on ? Color(.surfaceCard) : .clear, in: .capsule)
-                        .overlay { if !on { Capsule().strokeBorder(.separator, lineWidth: 1) } }
-                        .opacity(on ? 1 : 0.7)
-                        .frame(minHeight: 44) // Tippflaeche 44 pt, sichtbar 32 pt
-                        .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(on ? .isSelected : [])
-                    .accessibilityIdentifier("modePill.\(mode.rawValue)")
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading) // sonst sitzt der Block zentriert und ragt nach rechts versetzt ein
-        .sensoryFeedback(.selection, trigger: flow.modeFilter)
     }
 
     private func circleButton(_ title: LocalizedStringKey, systemImage: String, action: @escaping () -> Void) -> some View {
@@ -981,12 +1134,7 @@ struct RouteSheet: View {
         }
     }
 
-    private var timeLabel: String {
-        flow.customTime.map {
-            Calendar.current.isDateInToday($0) ? $0.clockText
-                : $0.formatted(.dateTime.day().month(.abbreviated).hour(.twoDigits(amPM: .abbreviated)).minute(.twoDigits))
-        } ?? String(localized: "Jetzt")
-    }
+    private var timeLabel: String { flow.customTimeText ?? String(localized: "Jetzt") }
 
     private var subtitle: String {
         let from = flow.origin.label
@@ -1342,6 +1490,20 @@ private struct HFlow: Layout {
 #Preview("Start, AX3", traits: .modifier(PreviewFlow.start)) { PreviewSheetBackdrop { StartSheet() }.dynamicTypeSize(.accessibility3) }
 #Preview("Start, leer", traits: .modifier(PreviewFlow.startEmpty)) { PreviewSheetBackdrop { StartSheet() } }
 #Preview("Start, ohne Standort", traits: .modifier(PreviewFlow.startNoLocation)) { PreviewSheetBackdrop { StartSheet() } }
+// Kleinster Detent: Kopf ohne Options-Chips, nichts abgeschnitten.
+#Preview("Start, 140 pt", traits: .modifier(PreviewFlow.startWithOptions)) {
+    StartSheet().environment(\.sheetLevel, .peek).frame(height: 140).border(.separator)
+}
+#Preview("Start, Chips gewählt, Dunkel", traits: .modifier(PreviewFlow.startWithOptions)) {
+    PreviewSheetBackdrop { StartSheet() }.preferredColorScheme(.dark)
+}
+#Preview("Start, Chips gewählt, AX3", traits: .modifier(PreviewFlow.startWithOptions)) {
+    PreviewSheetBackdrop { StartSheet() }.dynamicTypeSize(.accessibility3)
+}
+#Preview("Start, Zeit-Auswahl", traits: .modifier(PreviewFlow.startWithOptions)) { PreviewSheetBackdrop { StartOptionSheet(option: .time) } }
+#Preview("Start, Verkehrsmittel-Auswahl", traits: .modifier(PreviewFlow.start)) {
+    PreviewSheetBackdrop { StartOptionSheet(option: .modes) }
+}
 
 #Preview("Planen, leer", traits: .modifier(PreviewFlow.plan())) { PreviewSheetBackdrop { PlanSheet() } }
 #Preview("Planen, Eingabe", traits: .modifier(PreviewFlow.plan(query: "Musterstraße"))) { PreviewSheetBackdrop { PlanSheet() } }
